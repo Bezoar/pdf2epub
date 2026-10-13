@@ -1,5 +1,8 @@
 # Research: scope of password-based PDF decryption
 
+> **Scope note (2026-10-13):** pdf2epub never circumvents DRM or copy controls. It opens only standard password-protected PDFs, with a password the user legitimately holds, and it **honours permission restrictions** (copy/extract forbidden ⇒ refused as `restricted` unless the owner password is supplied). Anything below that frames the feature as "DRM removal", or proposes proceeding past permission flags, is superseded. See issue #3's amendment.
+
+
 Ticket: [#3](https://github.com/Bezoar/pdf2epub/issues/3) (parent [#1](https://github.com/Bezoar/pdf2epub/issues/1)).
 Researched 2026-10-13. The question: what can "DRM removal with a supplied password
 (env or CLI), for personal backups" cover, and how should a batch run sort each
