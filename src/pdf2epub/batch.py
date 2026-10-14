@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
+from pdf2epub.access import needs_password
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
 from pdf2epub.errors import UsageError
@@ -24,7 +25,7 @@ from pdf2epub.events import Emitter, EventSink
 from pdf2epub.isolation import run_in_worker
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity, derive_outcome
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
-from pdf2epub.passwords import PasswordProvider
+from pdf2epub.passwords import Candidate, PasswordProvider, distinct
 from pdf2epub.results import BatchReport, ConversionResult, Totals
 from pdf2epub.version import TOOL_VERSION
 
@@ -280,6 +281,7 @@ def run_batch(
     "subprocess"`` each conversion runs in its own worker subprocess, under the batch's
     time limit (BAT-R19 to BAT-R21); with ``"inprocess"``, in this process.
     """
+    candidates = _preflight(plan, batch_options, passwords)
     emitter = Emitter(sink)
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     emitter.emit(
@@ -314,12 +316,13 @@ def run_batch(
         else:
             emitter.emit("conversion_started", id=planned.id)
             reporter = _Reporter(emitter, planned.id)
+            found = candidates.get(planned.id, ())
             if batch_options.isolation == "subprocess":
                 result = run_in_worker(
-                    planned, conversion_options, reporter, cancel, batch_options.timeout
+                    planned, conversion_options, reporter, cancel, batch_options.timeout, found
                 )
             else:
-                result = convert(planned, conversion_options, reporter, cancel)
+                result = convert(planned, conversion_options, reporter, cancel, found)
         emitter.emit("conversion_finished", **result.to_dict())
         results.append(result)
 
@@ -338,6 +341,34 @@ def run_batch(
     )
     emitter.emit("batch_finished", **report.to_dict())
     return report
+
+
+# PWD-R13: the most candidate passwords that may apply to one file, so pdf2epub never
+# acts as a password guesser (MAIN-R7).
+MAX_CANDIDATES = 25
+
+
+def _preflight(
+    plan: BatchPlan, batch_options: BatchOptions, passwords: PasswordProvider | None
+) -> dict[int, list[Candidate]]:
+    """The run's preflight (API-R29), before any event: the candidate passwords for each
+    conversion that will run on a password-protected PDF, by conversion id."""
+    candidates: dict[int, list[Candidate]] = {}
+    if passwords is None:
+        return candidates
+    for planned in plan.conversions:
+        if _planning_issues(planned, batch_options.overwrite):
+            continue  # settled at planning time: never opened
+        source = Path(planned.source)
+        if needs_password(source):
+            found = distinct(passwords.candidates(source))
+            if len(found) > MAX_CANDIDATES:
+                raise UsageError(
+                    f"{source}: {len(found)} candidate passwords apply to this file, "
+                    f"more than the cap of {MAX_CANDIDATES}"
+                )
+            candidates[planned.id] = found
+    return candidates
 
 
 def _not_attempted(planned: PlannedConversion) -> ConversionResult:

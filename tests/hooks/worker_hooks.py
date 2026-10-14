@@ -42,14 +42,14 @@ def environment(rules: Rules, base: Mapping[str, str] | None = None) -> dict[str
     return env
 
 
-def wrap(open_source: Callable[[Path], Any], rules: Rules) -> Callable[[Path], Any]:
+def wrap(open_source: Callable[..., Any], rules: Rules) -> Callable[..., Any]:
     """``open_source`` with ``rules`` applied before each call."""
 
-    def hooked(path: Path) -> Any:
+    def hooked(path: Path, *args: Any) -> Any:
         rule = rules.get(Path(path).name)
         if rule is not None:
             _apply(rule)
-        return open_source(path)
+        return open_source(path, *args)
 
     return hooked
 

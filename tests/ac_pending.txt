@@ -3,7 +3,6 @@
 # Each build ticket removes the IDs it implements, in the same PR as their marked tests.
 # The v1 acceptance ticket requires this list to be empty.
 
-API-AC5
 API-AC8
 API-AC12
 API-AC13
@@ -13,9 +12,7 @@ BAT-AC15
 
 CLI-AC3
 CLI-AC4
-CLI-AC5
 CLI-AC6
-CLI-AC9
 CLI-AC10
 CLI-AC11
 CLI-AC12
@@ -29,7 +26,6 @@ EPUB-AC11
 
 MAIN-AC5
 MAIN-AC-B
-MAIN-AC-C
 MAIN-AC-D
 MAIN-AC-F
 MAIN-AC-G
@@ -60,9 +56,6 @@ OCR-AC23
 OCR-AC24
 OCR-AC25
 
-PWD-AC1
-PWD-AC2
-PWD-AC3
 PWD-AC4
 PWD-AC5
 PWD-AC6
@@ -70,11 +63,9 @@ PWD-AC7
 PWD-AC8
 PWD-AC9
 PWD-AC10
-PWD-AC11
 PWD-AC12
 PWD-AC13
 PWD-AC14
-PWD-AC15
 PWD-AC16
 PWD-AC17
 PWD-AC18

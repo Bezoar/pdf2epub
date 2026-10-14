@@ -47,6 +47,7 @@ from pdfminer.psexceptions import PSException
 from pdfminer.runlength import rldecode
 from pdfminer.utils import Matrix
 
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.limits import (
     MAX_STREAM_BYTES,
     ResourceLimitExceeded,
@@ -64,10 +65,12 @@ log = logging.getLogger(__name__)
 class ParsedPdf(AbstractContextManager["ParsedPdf"]):
     """An open PDF, ready to be laid out page by page."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, password: Secret | None = None) -> None:
         self._file: BinaryIO = path.open("rb")
         try:
-            self._document = PDFDocument(PDFParser(self._file))
+            self._document = PDFDocument(
+                PDFParser(self._file), password=password.reveal() if password is not None else ""
+            )
         except PSException as error:
             self._file.close()
             raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error

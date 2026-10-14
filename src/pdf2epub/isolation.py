@@ -18,7 +18,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, Reporter
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
+from pdf2epub.passwords import Candidate
 from pdf2epub.results import ConversionResult
 
 log = logging.getLogger(__name__)
@@ -51,8 +52,10 @@ def run_in_worker(
     reporter: Reporter,
     cancel: CancelToken | None,
     timeout: float,
+    candidates: Sequence[Candidate] = (),
 ) -> ConversionResult:
-    """Run ``planned`` in a new worker subprocess and return its result."""
+    """Run ``planned`` in a new worker subprocess and return its result. The password
+    ``candidates`` reach the worker only in its request, over its stdin pipe (BAT-R22)."""
     started = time.monotonic()
     deadline = started + timeout
     env = {name: value for name, value in os.environ.items() if name != PASSWORD_VARIABLE}
@@ -60,6 +63,8 @@ def run_in_worker(
         "planned": planned,
         "options": options,
         "log_level": logging.getLogger("pdf2epub").getEffectiveLevel(),
+        # Revealed only to be written to the worker's pipe, as plain (value, label) pairs.
+        "candidates": [(c.secret.reveal(), c.source) for c in candidates],
     }
     worker = subprocess.Popen(
         [sys.executable, "-m", "pdf2epub.worker"],

@@ -8,7 +8,9 @@ touching argv or the environment:
 
 - ``planned``: the ``PlannedConversion``;
 - ``options``: the ``ConversionOptions``;
-- ``log_level``: the level of the parent's ``pdf2epub`` logger.
+- ``log_level``: the level of the parent's ``pdf2epub`` logger;
+- ``candidates``: the password candidates as (value, source label) pairs, each value
+  wrapped in a ``Secret`` again as soon as the request is read.
 
 The worker answers on its stdout with JSON Lines messages, one per line, which the parent
 turns into events and log records:
@@ -44,6 +46,7 @@ from typing import Any, BinaryIO
 
 from pdf2epub.conversion import convert
 from pdf2epub.issues import Issue
+from pdf2epub.passwords import Candidate, Secret
 
 # The exit status after SIGTERM, as a shell reports a process that SIGTERM ended.
 TERMINATED = 128 + signal.SIGTERM
@@ -133,7 +136,10 @@ def main() -> int:
     root.setLevel(logging.WARNING)
     logging.getLogger("pdf2epub").setLevel(request["log_level"])
 
-    result = convert(request["planned"], request["options"], _PipeReporter(channel))
+    candidates = [Candidate(Secret(value), source) for value, source in request.pop("candidates")]
+    result = convert(
+        request["planned"], request["options"], _PipeReporter(channel), None, candidates
+    )
     channel.send("result", result=result.to_dict())
     return 0
 
