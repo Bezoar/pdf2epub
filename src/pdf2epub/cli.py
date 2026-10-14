@@ -14,7 +14,7 @@ import os
 import signal
 import sys
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
@@ -25,7 +25,8 @@ from pdf2epub.cancel import CancelToken
 from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, encode_event
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
-from pdf2epub.passwords import PasswordSources, Secret, SourcePasswordProvider
+from pdf2epub.passwords import PasswordSources, Prompt, Secret, SourcePasswordProvider
+from pdf2epub.prompts import InteractivePrompt, TerminalPrompt
 from pdf2epub.version import TOOL_VERSION
 
 README = "https://github.com/Bezoar/pdf2epub#readme"
@@ -122,6 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="a TOML file mapping paths or globs to passwords",
     )
+    passwords.add_argument(
+        "--ask-password",
+        action="store_true",
+        help="in a batch, ask on the terminal for the passwords still needed, once every "
+        "other conversion has finished",
+    )
     reporting = parser.add_argument_group("reporting and machine output")
     reporting.add_argument(
         "--report",
@@ -130,6 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reporting.add_argument(
         "--json", action="store_true", help="write JSON Lines events to stdout, not the report"
+    )
+    reporting.add_argument(
+        "--interactive",
+        action="store_true",
+        help="with --json: ask for passwords with password_request events, answered on stdin",
     )
     reporting.add_argument(
         "-v",
@@ -164,6 +176,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.quiet and (args.verbose or args.debug):
         parser.error("-q/--quiet cannot be combined with -v/--verbose or --debug")  # CLI-R7
+    prompt_usage_error = _prompt_usage_error(args)
+    if prompt_usage_error is not None:
+        parser.error(prompt_usage_error)
     configure_logging(args.verbose, args.debug)
     if args.password:
         print(PASSWORD_WARNING, file=sys.stderr, flush=True)  # CLI-R10
@@ -183,50 +198,58 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.files_from is not None:
             inputs.extend(read_files_from(args.files_from))
         plan = plan_batch(inputs, DiscoveryOptions(**discovery_fields))
-        provider = password_provider(args)
     except UsageError as error:
         parser.error(str(error))  # exits 2 with the reason on stderr (BAT-R25)
     final = FinalEvent()
     cancel = CancelToken()
+    reporter: HumanReport | None = None
+    prompt: Prompt | None = None
+    if args.json:
+        writer = JsonLinesWriter(sys.stdout.buffer)
+        sink = Tee(writer, final)
+        if args.interactive:  # CLI-R6, CLI-R13
+            interactive = InteractivePrompt(sys.stdin.fileno(), sink, cancel)
+            prompt = interactive
+            sink = Tee(interactive.observe, writer, final)
+    else:
+        reporter = HumanReport(
+            sys.stderr,
+            single=plan.single,
+            verbose=args.verbose,
+            quiet=args.quiet,
+            progress=not args.quiet and sys.stderr.isatty(),
+        )
+        sink = Tee(reporter, final)
+        prompt = terminal_prompt(args, plan.single, cancel, reporter.clear_progress)
     try:
-        if args.json:
-            writer = JsonLinesWriter(sys.stdout.buffer)
-            with interrupts(cancel):
-                report = run_batch(
-                    plan,
-                    BatchOptions(**batch_fields),
-                    ConversionOptions(),
-                    Tee(writer, final),
-                    cancel=cancel,
-                    passwords=provider,
-                )
-        else:
-            reporter = HumanReport(
-                sys.stderr,
-                single=plan.single,
-                verbose=args.verbose,
-                quiet=args.quiet,
-                progress=not args.quiet and sys.stderr.isatty(),
+        provider = password_provider(args, prompt)
+    except UsageError as error:
+        parser.error(str(error))  # an unreadable password source (PWD-R14, PWD-R15)
+    # Log records clear the progress line before they are written.
+    filters = (
+        [(handler, reporter.clear_progress) for handler in logging.getLogger().handlers]
+        if reporter is not None
+        else []
+    )
+    for handler, clear in filters:
+        handler.addFilter(clear)
+    try:
+        with interrupts(cancel):
+            report = run_batch(
+                plan,
+                BatchOptions(**batch_fields),
+                ConversionOptions(),
+                sink,
+                cancel=cancel,
+                passwords=provider,
             )
-            handlers = logging.getLogger().handlers
-            for handler in handlers:
-                handler.addFilter(reporter.clear_progress)
-            try:
-                with interrupts(cancel):
-                    report = run_batch(
-                        plan,
-                        BatchOptions(**batch_fields),
-                        ConversionOptions(),
-                        Tee(reporter, final),
-                        cancel=cancel,
-                        passwords=provider,
-                    )
-            finally:
-                for handler in handlers:
-                    handler.removeFilter(reporter.clear_progress)
-            reporter.render()
     except UsageError as error:
         parser.error(str(error))  # the run's preflight refused it (API-R29)
+    finally:
+        for handler, clear in filters:
+            handler.removeFilter(clear)
+    if reporter is not None:
+        reporter.render()
     if args.report is not None and final.event is not None:
         write_report(final.event, Path(args.report))
     return report.exit_code
@@ -254,10 +277,40 @@ def interrupts(cancel: CancelToken) -> Iterator[None]:
             signal.signal(signum, handler)
 
 
-def password_provider(args: argparse.Namespace) -> SourcePasswordProvider:
-    """The core's provider, built from the raw password sources (CLI-R6). Each value
-    becomes a ``Secret`` as soon as it is read. The terminal and ``--interactive``
-    prompts are not built yet, so ``prompt`` stays unset."""
+def _prompt_usage_error(args: argparse.Namespace) -> str | None:
+    """The CLI-R7 usage error in the prompt flags, if any."""
+    if args.interactive and not args.json:
+        return "--interactive needs --json"
+    if args.interactive and args.files_from == "-":
+        return "--interactive cannot be combined with --files-from - (both read stdin)"
+    if args.ask_password and args.json:
+        return "--ask-password cannot be combined with --json; use --json --interactive"
+    if args.ask_password and not sys.stdin.isatty():
+        return "--ask-password needs stdin to be a terminal"
+    return None
+
+
+def terminal_prompt(
+    args: argparse.Namespace,
+    single: bool,
+    cancel: CancelToken,
+    before: Callable[[], object] | None = None,
+) -> Prompt | None:
+    """The no-echo terminal prompt, outside ``--json``, for a single conversion or with
+    ``--ask-password``, when stdin and stderr are both terminals; otherwise None
+    (CLI-R6)."""
+    if not (single or args.ask_password):
+        return None
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return None
+    return TerminalPrompt(sys.stdin.fileno(), sys.stderr, cancel, before)
+
+
+def password_provider(
+    args: argparse.Namespace, prompt: Prompt | None = None
+) -> SourcePasswordProvider:
+    """The core's provider, built from the raw password sources and ``prompt`` (CLI-R6).
+    Each value becomes a ``Secret`` as soon as it is read."""
     # PWD-R25: the variable leaves the environment once read, so no child process
     # inherits it.
     env_value = os.environ.pop(PASSWORD_ENV, None)
@@ -267,6 +320,7 @@ def password_provider(args: argparse.Namespace) -> SourcePasswordProvider:
             values=[Secret(value) for value in args.password],
             env_value=Secret(env_value) if env_value is not None else None,
             password_file=args.password_file,
+            prompt=prompt,
         )
     )
 

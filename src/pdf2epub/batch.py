@@ -8,16 +8,19 @@ planning time (``not_found``, ``not_a_pdf``) is reported right after ``batch_sta
 and never runs (API-R18).
 """
 
+import dataclasses
+import logging
 import os
 import re
 import sys
+import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-from pdf2epub.access import needs_password
+from pdf2epub.access import PROMPT_LABEL, AccessDenied, needs_password, unlock
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
 from pdf2epub.errors import UsageError
@@ -30,6 +33,8 @@ from pdf2epub.results import BatchReport, ConversionResult, Totals
 from pdf2epub.version import TOOL_VERSION
 
 EXIT_OK, EXIT_FAILED, EXIT_INTERRUPTED = 0, 1, 130
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -306,38 +311,77 @@ def run_batch(
             emitter.emit("issue", id=result.id, issue=issue.to_dict())
         emitter.emit("conversion_finished", **result.to_dict())
 
-    results: list[ConversionResult] = []
+    prompt = passwords.prompt if passwords is not None else None
+
+    def run(planned: PlannedConversion, found: Sequence[Candidate]) -> ConversionResult:
+        reporter = _Reporter(emitter, planned.id)
+        if batch_options.isolation == "subprocess":
+            return run_in_worker(
+                planned, conversion_options, reporter, cancel, batch_options.timeout, found
+            )
+        return convert(planned, conversion_options, reporter, cancel, found)
+
+    def finish(result: ConversionResult) -> None:
+        emitter.emit("conversion_finished", **result.to_dict())
+        results[result.id] = result
+
+    results: dict[int, ConversionResult] = dict(settled)
+    deferred: list[PlannedConversion] = []
     for planned in plan.conversions:
         if planned.id in settled:
-            results.append(settled[planned.id])
             continue
         if cancel is not None and cancel.cancelled:
-            result = _not_attempted(planned)
+            finish(_not_attempted(planned))
+            continue
+        found = candidates.get(planned.id, ())
+        denied = _denied(planned, found) if planned.id in candidates else None
+        if denied is not None and prompt is not None:
+            deferred.append(planned)  # PWD-R21: prompted once the rest have finished
+            continue
+        emitter.emit("conversion_started", id=planned.id)
+        if denied is not None:
+            # PWD-R22: no prompt is possible, so the user is told what a rerun needs.
+            emitter.emit("password_required", id=planned.id, sources_tried=denied.sources_tried)
+            finish(_refused(planned, denied))
         else:
-            emitter.emit("conversion_started", id=planned.id)
-            reporter = _Reporter(emitter, planned.id)
-            found = candidates.get(planned.id, ())
-            if batch_options.isolation == "subprocess":
-                result = run_in_worker(
-                    planned, conversion_options, reporter, cancel, batch_options.timeout, found
-                )
-            else:
-                result = convert(planned, conversion_options, reporter, cancel, found)
-        emitter.emit("conversion_finished", **result.to_dict())
-        results.append(result)
+            finish(run(planned, found))
 
+    # PWD-R21: the conversions that need a prompt, in input order.
+    for planned in deferred:
+        if cancel is not None and cancel.cancelled:
+            finish(_not_attempted(planned))
+            continue
+        emitter.emit("conversion_started", id=planned.id)
+        found = candidates[planned.id]
+        started = time.monotonic()
+        try:
+            access = unlock(Path(planned.source), found, prompt)
+        except AccessDenied as error:
+            if cancel is not None and cancel.cancelled:
+                # The prompt ended because the batch was cancelled while it waited.
+                finish(_interrupted(planned, started))
+            else:
+                finish(_refused(planned, error, started))
+            continue
+        if access.source == PROMPT_LABEL and access.password is not None:
+            # The answer travels to the conversion as one more candidate, after the
+            # supplied ones it has already beaten.
+            found = [*found, Candidate(access.password, PROMPT_LABEL)]
+        finish(run(planned, found))
+
+    results_in_order = [results[p.id] for p in plan.conversions]
     interrupted = cancel is not None and cancel.cancelled
     report = BatchReport(
         tool_version=TOOL_VERSION,
         started_at=started_at,
-        conversions=results,
+        conversions=results_in_order,
         totals=Totals(
-            converted=sum(r.outcome is Outcome.CONVERTED for r in results),
-            skipped=sum(r.outcome is Outcome.SKIPPED for r in results),
-            failed=sum(r.outcome is Outcome.FAILED for r in results),
+            converted=sum(r.outcome is Outcome.CONVERTED for r in results_in_order),
+            skipped=sum(r.outcome is Outcome.SKIPPED for r in results_in_order),
+            failed=sum(r.outcome is Outcome.FAILED for r in results_in_order),
         ),
         interrupted=interrupted,
-        exit_code=_exit_code(results, interrupted, batch_options.strict),
+        exit_code=_exit_code(results_in_order, interrupted, batch_options.strict),
     )
     emitter.emit("batch_finished", **report.to_dict())
     return report
@@ -352,16 +396,15 @@ def _preflight(
     plan: BatchPlan, batch_options: BatchOptions, passwords: PasswordProvider | None
 ) -> dict[int, list[Candidate]]:
     """The run's preflight (API-R29), before any event: the candidate passwords for each
-    conversion that will run on a password-protected PDF, by conversion id."""
+    conversion that will run on a password-protected PDF, by conversion id. Every such
+    conversion has an entry, empty when there is no provider."""
     candidates: dict[int, list[Candidate]] = {}
-    if passwords is None:
-        return candidates
     for planned in plan.conversions:
         if _planning_issues(planned, batch_options.overwrite):
             continue  # settled at planning time: never opened
         source = Path(planned.source)
         if needs_password(source):
-            found = distinct(passwords.candidates(source))
+            found = distinct(passwords.candidates(source)) if passwords is not None else []
             if len(found) > MAX_CANDIDATES:
                 raise UsageError(
                     f"{source}: {len(found)} candidate passwords apply to this file, "
@@ -369,6 +412,37 @@ def _preflight(
                 )
             candidates[planned.id] = found
     return candidates
+
+
+def _denied(planned: PlannedConversion, found: Sequence[Candidate]) -> AccessDenied | None:
+    """Why ``planned``, a password-protected PDF, can't be opened with the candidates
+    ``found`` when a password would help (PWD-R22), or None when it opens, or when a
+    password would not help and the conversion itself reports why. This runs in the
+    calling process, so that only it ever prompts (PWD-R21)."""
+    try:
+        unlock(Path(planned.source), found)
+    except AccessDenied as error:
+        return error if error.password_helps else None
+    except Exception:
+        # Anything unexpected is the conversion's to report, in its worker.
+        log.debug("could not check the passwords for %s", planned.source, exc_info=True)
+    return None
+
+
+def _refused(
+    planned: PlannedConversion, denied: AccessDenied, started: float | None = None
+) -> ConversionResult:
+    """The result of a conversion its password-protected PDF was not opened for."""
+    result = _unrun(planned, [denied.issue])
+    if started is not None:
+        result = dataclasses.replace(result, duration=round(time.monotonic() - started, 3))
+    return result
+
+
+def _interrupted(planned: PlannedConversion, started: float) -> ConversionResult:
+    issue = Issue(IssueCode.NOT_ATTEMPTED, "The batch was interrupted during this conversion.")
+    result = _unrun(planned, [issue])
+    return dataclasses.replace(result, duration=round(time.monotonic() - started, 3))
 
 
 def _not_attempted(planned: PlannedConversion) -> ConversionResult:

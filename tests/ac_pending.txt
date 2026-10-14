@@ -4,15 +4,11 @@
 # The v1 acceptance ticket requires this list to be empty.
 
 API-AC12
-API-AC13
 API-AC17
 
 CLI-AC3
 CLI-AC4
 CLI-AC6
-CLI-AC10
-CLI-AC11
-CLI-AC12
 
 EPUB-AC3
 EPUB-AC8
@@ -57,9 +53,6 @@ PWD-AC6
 PWD-AC7
 PWD-AC8
 PWD-AC9
-PWD-AC16
-PWD-AC17
-PWD-AC18
 PWD-AC21
 PWD-AC23
 
