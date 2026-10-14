@@ -22,6 +22,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -32,6 +33,10 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+
+# The worker test hooks (tests/hooks/worker_hooks.py) are imported by tests as
+# `worker_hooks`, the name a worker's sitecustomize gives them.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "hooks"))
 
 BLOCKED = "outbound network access is blocked in the test suite"
 LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "ip6-localhost", ""}
