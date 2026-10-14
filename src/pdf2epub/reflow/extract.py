@@ -34,6 +34,8 @@ LIGATURES = str.maketrans(
 # Two text lines are one row when they overlap vertically by more than this share of the
 # shorter one (pdfminer can split a line at a wide horizontal gap).
 _SAME_ROW = 0.5
+# Pieces of one row this many ems apart or closer are one line of text.
+_PIECE_GAP_EM = 3.0
 
 
 @dataclass(frozen=True)
@@ -97,14 +99,25 @@ def _line(item: LTTextLine, page_height: float) -> Line | None:
 
 
 def _rows(lines: list[Line]) -> list[Line]:
-    """Lines sorted top to bottom, with pieces of one row merged left to right."""
+    """Lines sorted top to bottom, with pieces of one line of text merged left to right.
+    Pieces on the same row but further apart than a few ems (such as two columns) stay
+    separate lines."""
     rows: list[list[Line]] = []
     for line in sorted(lines, key=lambda line: (line.top, line.x0)):
         if rows and _overlap(rows[-1][-1], line) > _SAME_ROW:
             rows[-1].append(line)
         else:
             rows.append([line])
-    return [_merge(sorted(row, key=lambda line: line.x0)) for row in rows]
+    merged: list[Line] = []
+    for row in rows:
+        pieces: list[list[Line]] = []
+        for line in sorted(row, key=lambda line: line.x0):
+            if pieces and line.x0 - pieces[-1][-1].x1 <= _PIECE_GAP_EM * line.size:
+                pieces[-1].append(line)
+            else:
+                pieces.append([line])
+        merged.extend(_merge(piece) for piece in pieces)
+    return merged
 
 
 def _overlap(a: Line, b: Line) -> float:

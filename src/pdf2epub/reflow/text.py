@@ -14,8 +14,11 @@ _HYPHEN_END = re.compile(r"(?<=\w)[-\u2010]$")
 _LAST_WORD = re.compile(r"([^\W\d_]+)[-\u2010]$")
 _FIRST_WORD = re.compile(r"^[^\W\d_]+")
 _TERMINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]\u00bb]*$")
+# CJK ideographs (including the supplementary planes' extensions and compatibility
+# ideographs), kana, and CJK and full-width punctuation.
 _CJK = re.compile(
-    "[\u2e80-\u2fdf\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]"
+    "[\u2e80-\u2fdf\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef"
+    "\U00020000-\U0003134f]"
 )
 
 
