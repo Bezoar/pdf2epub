@@ -109,6 +109,8 @@ def _continues(above: Line, below: Line, typography: Typography) -> bool:
     size = max(above.size, below.size)
     if abs(above.size - below.size) > _SIZE_TOLERANCE * size:
         return False
+    if below.top < above.bottom and (below.x0 > above.x1 or below.x1 < above.x0):
+        return False  # side by side on the same row, as in two columns
     limit = max(_GAP_FACTOR * typography.line_gap, _GAP_MIN_EM * size)
     return below.top - above.bottom <= limit
 

@@ -21,7 +21,8 @@ from pdf2epub.reflow.layout import TextBlock, Typography
 _BAND = 0.15
 # At most this many candidates per edge of a page (e.g. a header and a page number).
 _PER_EDGE = 2
-# A cluster must appear on at least this many pages, and this share of the pages.
+# A cluster must appear on at least this many pages (fewer in a book that short, but never
+# one), and on this share of the pages.
 _MIN_PAGES, _MIN_SHARE = 3, 0.25
 # Candidates within this distance (points) of each other's edge distance cluster together.
 _CLUSTER_GAP = 3.0
@@ -29,9 +30,7 @@ _CLUSTER_GAP = 3.0
 _REPEATS = 2
 
 _DIGITS = re.compile(r"\d+")
-_PAGE_NUMBER = re.compile(
-    r"^(?:page\s+|p\.\s*)?[\W_]*(\d{1,4}|[ivxlcdm]{1,8})[\W_]*$", re.IGNORECASE
-)
+_PAGE_NUMBER = re.compile(r"^(?:page\s+|p\.\s*)?[\W_]*(\d+|[ivxlcdm]+)[\W_]*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -67,7 +66,7 @@ def page_number(text: str) -> str | None:
 def find_furniture(pages: list[PageBlocks], typography: Typography) -> Furniture:
     furniture = Furniture()
     candidates = [c for page in pages for c in _candidates(page, typography)]
-    needed = max(_MIN_PAGES, math.ceil(_MIN_SHARE * len(pages)))
+    needed = max(2, min(_MIN_PAGES, len(pages)), math.ceil(_MIN_SHARE * len(pages)))
     for cluster in _clusters(candidates):
         if len({c.page for c in cluster}) < needed or not _is_furniture(cluster):
             continue

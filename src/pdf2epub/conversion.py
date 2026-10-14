@@ -19,7 +19,9 @@ from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.build import build_document
 from pdf2epub.reflow.extract import PageText, read_pages
-from pdf2epub.reflow.source import open_source
+from pdf2epub.reflow.limits import ResourceLimitExceeded
+from pdf2epub.reflow.parse import ParsedPdf
+from pdf2epub.reflow.source import CorruptPdf, open_source
 from pdf2epub.results import ConversionResult
 
 log = logging.getLogger(__name__)
@@ -56,6 +58,16 @@ class _WriteFailed(Exception):
     pass
 
 
+class _Empty(Exception):
+    """The PDF has no pages, or none yields any content (RFL-R4, RFL-R35)."""
+
+
+_REPAIRED = (
+    "The PDF is damaged: its cross-reference table was rebuilt by scanning the file, "
+    "so the book may be incomplete."
+)
+
+
 def convert(
     planned: PlannedConversion, options: ConversionOptions, reporter: Reporter
 ) -> ConversionResult:
@@ -76,12 +88,24 @@ def convert(
         source = open_source(source_path)
         page_count = source.page_count
         log.debug("conversion %d: %d pages", planned.id, page_count)
-        reporter.progress("open", 1, 1)
+        with ParsedPdf(source_path) as pdf:
+            repaired = pdf.repaired
+            reporter.progress("open", 1, 1)
+            if page_count == 0:
+                raise _Empty("The PDF has no pages.")
 
-        pages: list[PageText] = []
-        for page in read_pages(source_path):
-            pages.append(page)
-            reporter.progress("analyse", len(pages), page_count, page=page.page)
+            pages: list[PageText] = []
+            for page in read_pages(pdf):
+                pages.append(page)
+                reporter.progress("analyse", len(pages), page_count, page=page.page)
+
+        # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
+        # so empty_document is the only one. Until book images join the model, a page's
+        # content is its text.
+        if not any(page.lines for page in pages):
+            raise _Empty("No page of the PDF has any text or image.")
+        if repaired:
+            add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
         document, found = build_document(source, pages, options)
         for issue in found:
@@ -92,6 +116,13 @@ def convert(
         output = str(destination)
         reporter.progress("write", 1, 1)
         log.info("converted %s to %s", source_path, destination)
+    except CorruptPdf as error:
+        add(Issue(IssueCode.CORRUPT_PDF, str(error)))
+    except _Empty as error:
+        add(Issue(IssueCode.EMPTY_DOCUMENT, str(error)))
+    except ResourceLimitExceeded as error:
+        pages_hit = [error.page] if error.page is not None else []
+        add(Issue(IssueCode.RESOURCE_LIMIT, str(error), pages=pages_hit))
     except _WriteFailed as error:
         add(Issue(IssueCode.WRITE_FAILED, str(error)))
     except Exception as error:

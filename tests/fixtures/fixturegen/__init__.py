@@ -3,7 +3,8 @@
 Each generator writes its files under an output folder, at the same relative paths the
 committed copies have under ``tests/fixtures/``. Running every generator twice with the
 same tool versions gives byte-identical files: seeds, timestamps and document IDs are
-fixed, and PDFs are written uncompressed so the bytes don't depend on the zlib build.
+fixed, and PDFs are written uncompressed so the bytes don't depend on the zlib build
+(the decompression bombs use ``rawpdf``'s own deflate encoder instead).
 
 Every fixture generated from text also writes that text as its ground truth, beside it.
 
@@ -30,10 +31,19 @@ class Fixture:
 
 def registry() -> list[Fixture]:
     """Every fixture generator, in a fixed order."""
-    from fixturegen import not_a_pdf, novel, typography
+    from fixturegen import blank, damaged, hostile, not_a_pdf, novel, typography
 
+    # The novel comes first: the cross-reference fixture is cut from it.
     return [
         Fixture(novel.PATH, novel.GROUND_TRUTH, novel.build),
+        Fixture(damaged.TRUNCATED, None, damaged.build_truncated),
+        Fixture(damaged.NO_XREF, None, damaged.build_no_xref),
+        Fixture(damaged.ZERO_PAGES, None, damaged.build_zero_pages),
+        Fixture(damaged.IMAGE_BOMB, None, damaged.build_image_bomb),
+        Fixture(damaged.STREAM_BOMB, None, damaged.build_stream_bomb),
+        Fixture(hostile.PATH, hostile.GROUND_TRUTH, hostile.build),
+        Fixture(blank.BLANK, None, blank.build_blank),
+        Fixture(blank.PLUS_TEXT, blank.PLUS_TEXT_TRUTH, blank.build_plus_text),
         Fixture(not_a_pdf.PATH, None, not_a_pdf.build),
         Fixture(typography.PATH, typography.GROUND_TRUTH, typography.build),
     ]
