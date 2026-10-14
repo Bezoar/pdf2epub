@@ -1,0 +1,245 @@
+"""Opening password-protected PDFs with a supplied password (PWD §1, §2, §5, §7; API §4),
+through ``plan_batch`` / ``run_batch`` in-process, with a scripted ``PasswordProvider``
+or the core's ``SourcePasswordProvider``."""
+
+import json
+import logging
+import shutil
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+from conftest import FIXTURES, RecordingSink
+
+from pdf2epub import (
+    BatchOptions,
+    BatchReport,
+    Candidate,
+    ConversionOptions,
+    DiscoveryOptions,
+    InputSpec,
+    Outcome,
+    PasswordProvider,
+    PasswordSources,
+    Secret,
+    SourcePasswordProvider,
+    UsageError,
+    plan_batch,
+    run_batch,
+)
+from pdf2epub.events import encode_event
+
+ENCRYPTED = FIXTURES / "encrypted"
+AES256 = ENCRYPTED / "aes256-user.pdf"
+AES128 = ENCRYPTED / "aes128-user.pdf"
+RC4_128 = ENCRYPTED / "rc4-128-user.pdf"
+
+# The fixtures' user passwords, as published in tests/fixtures/fixturegen/encrypted.py.
+USER_PASSWORD = {AES256: "hunter2", AES128: "aes128-user", RC4_128: "rc4-user"}
+
+
+class ScriptedProvider:
+    """A provider that hands out fixed candidates and records each call (the
+    ``PasswordProvider`` seam)."""
+
+    prompt: Callable[[Path, int], Secret | None] | None = None
+
+    def __init__(self, *candidates: tuple[str, str]) -> None:
+        self._candidates = [Candidate(Secret(value), label) for value, label in candidates]
+        self.calls: list[Path] = []
+
+    def candidates(self, path: Path) -> list[Candidate]:
+        self.calls.append(path)
+        return list(self._candidates)
+
+
+def run(
+    sources: list[Path], passwords: PasswordProvider | None = None
+) -> tuple[BatchReport, RecordingSink]:
+    sink = RecordingSink()
+    plan = plan_batch([InputSpec(source) for source in sources], DiscoveryOptions())
+    report = run_batch(
+        plan, BatchOptions(isolation="inprocess"), ConversionOptions(), sink, passwords=passwords
+    )
+    return report, sink
+
+
+def copy(fixture: Path, folder: Path, name: str | None = None) -> Path:
+    target = folder / (name or fixture.name)
+    shutil.copyfile(fixture, target)
+    return target
+
+
+@pytest.mark.ac("PWD-AC1")
+@pytest.mark.parametrize("fixture", [AES256, RC4_128, AES128], ids=lambda p: p.stem)
+def test_the_right_password_from_the_environment_opens_the_file(
+    tmp_path: Path, fixture: Path
+) -> None:
+    pdf = copy(fixture, tmp_path)
+
+    report, sink = run([pdf], ScriptedProvider((USER_PASSWORD[fixture], "env")))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert result.password_source == "env"
+    assert (tmp_path / f"{fixture.stem}.epub").is_file()
+    [finished] = sink.of_type("conversion_finished")
+    assert finished["password_source"] == "env"
+
+
+@pytest.mark.ac("PWD-AC2")
+@pytest.mark.parametrize("provider", [None, ScriptedProvider()], ids=["no-provider", "empty"])
+def test_no_password_sources_fail_missing_password(
+    tmp_path: Path, provider: PasswordProvider | None
+) -> None:
+    pdf = copy(AES256, tmp_path)
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.severity) for i in result.issues] == [("missing_password", "error")]
+    assert result.issues[0].hint == "supply the password for this file"
+    assert result.password_source is None
+    assert not (tmp_path / "aes256-user.epub").exists()
+
+
+def password_file(folder: Path, *lines: str) -> Path:
+    path = folder / "passwords.txt"
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    return path
+
+
+@pytest.mark.ac("PWD-AC3")
+def test_wrong_passwords_fail_naming_the_sources_tried_in_order(tmp_path: Path) -> None:
+    pdf = copy(AES256, tmp_path)
+    provider = SourcePasswordProvider(
+        PasswordSources(values=[Secret("nope")], password_file=password_file(tmp_path, "alsonope"))
+    )
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    [issue] = result.issues
+    assert issue.code == "wrong_password"
+    assert "cli #1" in issue.message
+    assert issue.message.index("cli #1") < issue.message.index("file:line 1")
+    assert "nope" not in issue.message.replace("cli #1", "")
+    assert not (tmp_path / "aes256-user.epub").exists()
+
+
+@pytest.mark.ac("PWD-AC11")
+def test_a_repeated_password_is_tried_once_under_its_first_label(tmp_path: Path) -> None:
+    provider = SourcePasswordProvider(
+        PasswordSources(values=[Secret("same")], env_value=Secret("same"))
+    )
+
+    candidates = provider.candidates(tmp_path / "a.pdf")
+
+    assert [(c.secret, c.source) for c in candidates] == [(Secret("same"), "cli #1")]
+
+
+@pytest.mark.ac("PWD-AC15")
+def test_source_provider_applies_trial_order_and_labels_in_the_core(tmp_path: Path) -> None:
+    pdf = copy(AES256, tmp_path, "book.pdf")
+    password_map = tmp_path / "passwords.toml"
+    password_map.write_text('"book.pdf" = "m"\n', encoding="utf-8")
+    provider = SourcePasswordProvider(
+        PasswordSources(
+            map_file=password_map,
+            values=[Secret("v")],
+            env_value=Secret("e"),
+            password_file=password_file(tmp_path, "f"),
+        )
+    )
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    [issue] = result.issues
+    assert issue.code == "wrong_password"
+    assert (
+        issue.hint == 'check the password; sources tried: map:"book.pdf", cli #1, env, file:line 1'
+    )
+    assert provider.prompt is None
+
+    # The right password, last in the order, opens the file under its own label.
+    provider = SourcePasswordProvider(
+        PasswordSources(
+            map_file=password_map,
+            values=[Secret("v")],
+            env_value=Secret("e"),
+            password_file=password_file(tmp_path, "f", "", "hunter2"),
+        )
+    )
+    report, _ = run([pdf], provider)
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert result.password_source == "file:line 3"
+
+
+@pytest.mark.ac("PWD-AC15")
+def test_source_provider_cap_is_checked_in_the_preflight(tmp_path: Path) -> None:
+    pdfs = [copy(AES256, tmp_path, "a.pdf"), copy(AES256, tmp_path, "b.pdf")]
+    lines = [f"pw{n}" for n in range(26)]
+    provider = SourcePasswordProvider(
+        PasswordSources(password_file=password_file(tmp_path, *lines))
+    )
+    sink = RecordingSink()
+    plan = plan_batch([InputSpec(pdf) for pdf in pdfs], DiscoveryOptions())
+
+    with pytest.raises(UsageError, match="25") as raised:
+        run_batch(
+            plan, BatchOptions(isolation="inprocess"), ConversionOptions(), sink, passwords=provider
+        )
+
+    assert str(pdfs[0]) in str(raised.value)
+    assert sink.events == []
+    assert not list(tmp_path.glob("*.epub"))
+
+    # 25 distinct candidates, plus repeats, are within the cap.
+    provider = SourcePasswordProvider(
+        PasswordSources(password_file=password_file(tmp_path, *lines[:25], *lines[:25]))
+    )
+    report, _ = run(pdfs, provider)
+    assert [r.issues[0].code for r in report.conversions] == ["wrong_password"] * 2
+
+
+@pytest.mark.ac("API-AC5")
+def test_secret_prints_as_stars_and_refuses_json() -> None:
+    secret = Secret("hunter2")
+
+    assert str(secret) == "***"
+    assert repr(secret) == "***"
+    assert f"{secret}" == "***"
+    assert repr([secret]) == "[***]"
+    with pytest.raises(TypeError):
+        json.dumps(secret)
+    with pytest.raises(TypeError):
+        encode_event({"type": "issue", "password": secret})
+    assert secret.reveal() == "hunter2"
+
+
+@pytest.mark.ac("API-AC5")
+def test_the_password_appears_in_no_event_report_or_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # hunter2 opens the AES-256 fixture and is wrong for the RC4 one.
+    pdfs = [copy(AES256, tmp_path), copy(RC4_128, tmp_path)]
+    caplog.set_level(logging.DEBUG)
+
+    report, sink = run(pdfs, ScriptedProvider(("hunter2", "cli #1")))
+
+    finished = sink.of_type("conversion_finished")
+    assert [e["password_source"] for e in finished] == ["cli #1", None]
+    assert [r.outcome for r in report.conversions] == [Outcome.CONVERTED, Outcome.FAILED]
+    assert report.conversions[1].issues[0].code == "wrong_password"
+    wire = "".join(encode_event(event) for event in sink.events)
+    assert "cli #1" in wire
+    assert "hunter2" not in wire
+    assert "hunter2" not in json.dumps(report.to_dict())
+    assert caplog.records, "nothing was logged at DEBUG"
+    for record in caplog.records:
+        assert "hunter2" not in record.getMessage()
+        assert "hunter2" not in caplog.text

@@ -28,8 +28,6 @@ from pdf2epub import (
 )
 from pdf2epub.issues import derive_outcome
 
-TRUNCATED = FIXTURES / "damaged" / "truncated.pdf"
-
 # The registry table of API §6.1, copied by hand: code -> severity.
 REGISTRY = {
     "missing_password": "error",
@@ -123,9 +121,8 @@ def run(sources: list[Path], **batch: Any) -> tuple[BatchReport, RecordingSink]:
     return report, sink
 
 
-# Until page fallback (#38) and passwords (#30) land, a warning stands in for
-# page_fallback and a corrupt file for missing_password: BAT-R24 depends only on the
-# severity and the outcome.
+# Until page fallback (#38) lands, a warning stands in for page_fallback: BAT-R24 depends
+# only on the severity and the outcome.
 
 
 @pytest.mark.ac("BAT-AC17")
@@ -144,15 +141,16 @@ def test_converted_with_a_warning_exits_0_or_1_under_strict(tmp_path: Path, stri
 
 
 @pytest.mark.ac("BAT-AC17")
-def test_one_failure_among_conversions_exits_1(tmp_path: Path) -> None:
+def test_one_missing_password_failure_among_conversions_exits_1(tmp_path: Path) -> None:
     shutil.copyfile(NOVEL, tmp_path / "a.pdf")
-    shutil.copyfile(TRUNCATED, tmp_path / "b.pdf")
+    shutil.copyfile(FIXTURES / "encrypted" / "aes256-user.pdf", tmp_path / "b.pdf")
     shutil.copyfile(NOVEL, tmp_path / "c.pdf")
 
     report, _ = run([tmp_path / name for name in ("a.pdf", "b.pdf", "c.pdf")])
 
     outcomes = [r.outcome for r in report.conversions]
     assert outcomes == [Outcome.CONVERTED, Outcome.FAILED, Outcome.CONVERTED]
+    assert [i.code for i in report.conversions[1].issues] == [IssueCode.MISSING_PASSWORD]
     assert report.exit_code == 1
 
 
