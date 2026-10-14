@@ -81,7 +81,7 @@ class PasswordProvider(Protocol):
 | `BatchOptions` | `timeout`, `overwrite`, `isolation`, `strict` | [batch §6](batch.md#6-options) |
 | `ConversionOptions` | `mode`, `language`, `title`, `authors`, `cover`, `ocr: OcrOptions` | [reflow](reflow.md) (all but `ocr`) |
 | `OcrOptions` | `mode`, `languages`, `quality`, `page_timeout`, `min_confidence`, `engine_options`, `tesseract_path`, `tessdata_dir` | [ocr](ocr.md) |
-| `PasswordSources` | `map_file`, `values`, `env_value`, `password_file`, `ask` | [passwords](passwords.md) |
+| `PasswordSources` | `map_file`, `values`, `env_value`, `password_file`, `prompt` | [passwords](passwords.md) |
 
 v1 has no general configuration file; the password map is the only file of settings ([roadmap](../worksheets/roadmap.md)).
 

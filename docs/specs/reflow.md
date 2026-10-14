@@ -68,7 +68,7 @@ In `mode = "auto"`, a page whose score is above an internal threshold shall beco
 
 <a id="rfl-r15"></a>**RFL-R15**: A page-image fallback page shall be carried in the document model as a **page image**:
 - a render of the whole page (the un-cleaned render for scanned pages), downscaled to the image size limit ([RFL-R27](#rfl-r27));
-- its searchable text: the page's own text for `complex` and `multi_column` pages, in the extracted line order without column interleaving guarantees; for OCR-driven fallbacks, the text chosen by [ocr](ocr.md).
+- its searchable text: the page's own text for `complex` and `multi_column` pages, in column order: every line of one column, top to bottom, before any line of the next column, columns left to right. Lines from different columns shall never be interleaved, in the hidden text any more than in visible text. For OCR-driven fallbacks, the text chosen by [ocr](ocr.md).
 
 The page image sits in reading order where the page was. [epub](epub.md#epub-r9) defines its markup.
 
@@ -182,8 +182,12 @@ It fires only on a clear break.
   - `Paragraph{inlines}`;
   - `Image{asset, caption}`;
   - `PageImage{asset, text, page}`;
-  - `PageBreak{label}`.
-- `Inline`: `Text{str, bold, italic}`.
+  - `PageBreak{label, page}`, when a page boundary falls between blocks.
+- `Inline`: one of
+  - `Text{str, bold, italic}`;
+  - `PageBreak{label, page}`, when a page boundary falls inside a paragraph joined across pages.
+
+`label` is the printed page label for display; `page` is the 1-based PDF page index and is unique within the book.
 
 The EPUB writer ([epub](epub.md)) renders only from this model.
 
@@ -217,7 +221,8 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 
 <a id="rfl-ac8"></a>**RFL-AC8** (covers [RFL-R11](#rfl-r11)): **Given** the synthetic two-column fixture, **when** it is converted in `mode = "auto"` and again in `mode = "reflow"`, **then** in both runs:
 - every two-column page is a `PageImage` with a [`page_fallback`](api.md#code-page_fallback) issue, reason `multi_column`, listing those pages;
-- no `Paragraph` contains text from both columns.
+- no `Paragraph` contains text from both columns;
+- each of those pages' searchable text holds the whole left column's text before any of the right column's.
 
 <a id="rfl-ac9"></a>**RFL-AC9** (covers [RFL-R13](#rfl-r13), [RFL-R14](#rfl-r14), [RFL-R15](#rfl-r15)): **Given** a fixture with one page holding a ruled table and an equation, and other pages of plain prose, **when** it is converted in `mode = "auto"`, **then**:
 - that page is a `PageImage` whose `text` contains the table's cell text;
@@ -234,7 +239,7 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 
 <a id="rfl-ac12"></a>**RFL-AC12** (covers [RFL-R18](#rfl-r18), [RFL-R19](#rfl-r19)): **Given** the novel fixture, in which a sentence runs across a page break and the next page starts in lowercase, **when** it is converted, **then**:
 - that sentence is in a single `Paragraph`;
-- a `PageBreak` marker sits inside the paragraph's position in the stream;
+- a `PageBreak` **inline** sits inside that `Paragraph`'s inlines, at the join point;
 - a paragraph that ends with a full stop at a page end is not joined to the next page's indented paragraph.
 
 <a id="rfl-ac13"></a>**RFL-AC13** (covers [RFL-R20](#rfl-r20), [RFL-R22](#rfl-r22)): **Given** a typeset fixture with 24 pt chapter titles, 14 pt bold section titles, 11 pt body text and italic and bold words in the body, **when** it is converted, **then**:

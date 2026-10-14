@@ -127,7 +127,7 @@ How tests are written (red-green, coverage, what a tautological test is) is proc
 
 <a id="main-r12"></a>**MAIN-R12**: pdf2epub shall be MIT-licensed (`LICENSE` at the repo root; SPDX `license = "MIT"` with `license-files` in the package metadata).
 
-<a id="main-r13"></a>**MAIN-R13**: Every runtime dependency shall be MIT-compatible (MIT, BSD, Apache-2.0, ISC, PSF, or MPL-2.0 used unmodified). The v1 runtime dependencies are pypdfium2, pdfminer.six, pypdf, Pillow, NumPy and opencv-python-headless. Tesseract is an external program, not a Python dependency. AGPL libraries (PyMuPDF, ebooklib) and LGPL libraries (fpdf2) shall not be used. GPL tools (unpaper, ScanTailor) shall not be used in v1.
+<a id="main-r13"></a>**MAIN-R13**: Every runtime dependency shall be MIT-compatible (MIT, BSD, Apache-2.0, ISC, PSF, or MPL-2.0 used unmodified). The v1 runtime dependencies are pypdfium2, pdfminer.six, pypdf, Pillow, NumPy and opencv-python-headless, plus lxml (BSD-3) and Jinja2 (BSD-3, with its MarkupSafe dependency) for the EPUB writer ([epub](epub.md)). Tesseract is an external program, not a Python dependency. AGPL libraries (PyMuPDF, ebooklib) and LGPL libraries (fpdf2) shall not be used. GPL tools (unpaper, ScanTailor) shall not be used in v1.
 
 <a id="main-r14"></a>**MAIN-R14**: Any distribution that bundles PDFium binaries (wheels pulled in via pypdfium2, and future frozen GUI helpers) shall ship PDFium's bundled third-party notices (FreeType, libjpeg/IJG, ICU and the rest). This is attribution, not copyleft.
 
@@ -145,29 +145,29 @@ How tests are written (red-green, coverage, what a tautological test is) is proc
 
 <a id="main-r19"></a>**MAIN-R19**: No single input, however malformed, shall stop a batch. The worst outcome for one file is `failed` with an issue, and the batch continues ([batch](batch.md)).
 
-### 6.5 Performance
+### 6.5 Performance (informative)
 
-<a id="main-r20"></a>**MAIN-R20**: Performance targets are informative in v1, not gated. Born-digital text pages should convert at ≥ 20 pages/s on a current laptop, and OCR'd pages are bounded by Tesseract (about 1–3 s per page per attempt). Peak memory should stay under 500 MB for a 1,000-page born-digital book. Parallel conversion is a roadmap item, but the v1 design must not foreclose it ([api](api.md)).
+Performance targets are informative in v1: they are not requirements and are not tested. Born-digital text pages should convert at ≥ 20 pages/s on a current laptop, and OCR'd pages are bounded by Tesseract (about 1–3 s per page per attempt). Peak memory should stay under 500 MB for a 1,000-page born-digital book. Parallel conversion is a roadmap item, but the v1 design must not foreclose it ([api](api.md)).
 
 ## 7. v1 acceptance criteria
 
 The top-level criteria are met through the satellite ACs each one links to. The measurement criteria (e)–(g) are confirmed in a final **v1 acceptance** ticket, where the owner signs off the smoke-set results.
 
-<a id="main-ac-a"></a>**MAIN-AC(a)** — Novel: **Given** the single-column novel fixture, **when** it is converted with default options, **then** the EPUB has zero epubcheck errors, a chapter TOC that matches the fixture's chapters, no running headers or page numbers in the text, and no paragraph broken at a page boundary. Elaborated in [reflow](reflow.md) and [epub](epub.md).
+<a id="main-ac-a"></a>**MAIN-AC-A** (a) — Novel: **Given** the single-column novel fixture, **when** it is converted with default options, **then** the EPUB has zero epubcheck errors, a chapter TOC that matches the fixture's chapters, no running headers or page numbers in the text, and no paragraph broken at a page boundary. Elaborated in [reflow](reflow.md) and [epub](epub.md).
 
-<a id="main-ac-b"></a>**MAIN-AC(b)** — Two columns: **Given** the two-column fixture, **when** it is converted, **then** no page yields interleaved column text: each page either reflows in the right reading order or becomes a page image with a [`page_fallback`](api.md#code-page_fallback) issue, reason `multi_column`. Elaborated in [reflow](reflow.md).
+<a id="main-ac-b"></a>**MAIN-AC-B** (b) — Two columns: **Given** the two-column fixture, **when** it is converted, **then** no page yields interleaved column text: each page either reflows in the right reading order or becomes a page image with a [`page_fallback`](api.md#code-page_fallback) issue, reason `multi_column`. Elaborated in [reflow](reflow.md).
 
-<a id="main-ac-c"></a>**MAIN-AC(c)** — Password: **Given** an encrypted fixture and its correct user password, **when** the password comes from `PDF2EPUB_PASSWORD` or from `--password`, **then** the conversion's outcome is `converted` and the password never appears in any output. Elaborated in [passwords](passwords.md).
+<a id="main-ac-c"></a>**MAIN-AC-C** (c) — Password: **Given** an encrypted fixture and its correct user password, **when** the password comes from `PDF2EPUB_PASSWORD` or from `--password`, **then** the conversion's outcome is `converted` and the password never appears in any output. Elaborated in [passwords](passwords.md).
 
-<a id="main-ac-d"></a>**MAIN-AC(d)** — Mixed batch: **Given** a batch containing a corrupt PDF, an encrypted PDF with no password supplied, a DRM-protected file, a permission-restricted file and a good PDF, **when** the batch runs, **then** it finishes, converts the good file, writes no EPUB for the other four, and reports them as `corrupt_pdf`, `missing_password`, `drm_protected` and `restricted` respectively, with exit code 1. Elaborated in [batch](batch.md) and [passwords](passwords.md).
+<a id="main-ac-d"></a>**MAIN-AC-D** (d) — Mixed batch: **Given** a batch containing a corrupt PDF, an encrypted PDF with no password supplied, a DRM-protected file, a permission-restricted file and a good PDF, **when** the batch runs, **then** it finishes, converts the good file, writes no EPUB for the other four, and reports them as `corrupt_pdf`, `missing_password`, `drm_protected` and `restricted` respectively, with exit code 1. Elaborated in [batch](batch.md) and [passwords](passwords.md).
 
-<a id="main-ac-e"></a>**MAIN-AC(e)** — Real readers (manual): **Given** EPUBs produced from the real-world smoke set, **when** the owner opens them, **then** they open and read correctly in Apple Books and in Calibre's viewer. Elaborated in [testing](testing.md).
+<a id="main-ac-e"></a>**MAIN-AC-E** (e) — Real readers (manual): **Given** EPUBs produced from the real-world smoke set, **when** the owner opens them, **then** they open and read correctly in Apple Books and in Calibre's viewer. This AC is **manual**: it is exempt from the marker gate and confirmed in the v1 acceptance ticket. Elaborated in [testing](testing.md).
 
-<a id="main-ac-f"></a>**MAIN-AC(f)** — Test suite: **Given** the v1 code base, **when** CI runs, **then** every AC in `docs/specs/` has at least one marked test, branch coverage of `src/pdf2epub` is ≥ 75%, and no test is tautological under the definition in [`coding.md`](../instructions/coding.md). Elaborated in [testing](testing.md).
+<a id="main-ac-f"></a>**MAIN-AC-F** (f) — Test suite: **Given** the v1 code base, **when** CI runs, **then** every AC in `docs/specs/` has at least one marked test, branch coverage of `src/pdf2epub` is ≥ 75%, and no test is tautological under the definition in [`coding.md`](../instructions/coding.md). Elaborated in [testing](testing.md).
 
-<a id="main-ac-g"></a>**MAIN-AC(g)** — OCR accuracy: **Given** the synthetic scanned fixtures (text rendered at 300 DPI, plus noise, 2° skew, 90° rotation and 150 DPI variants), **when** they are converted with Tesseract available, **then** character accuracy is ≥ 98% on clean variants and ≥ 95% on degraded ones (thresholds may be retuned once the fixtures exist), and pages below threshold become page images instead of emitting garbage. **Given** the same fixtures with Tesseract missing, **then** every conversion finishes with `ocr_unavailable`. Elaborated in [ocr](ocr.md) and [testing](testing.md).
+<a id="main-ac-g"></a>**MAIN-AC-G** (g) — OCR accuracy: **Given** the synthetic scanned fixtures (text rendered at 300 DPI, plus noise, 2° skew, 90° rotation and 150 DPI variants), **when** they are converted with Tesseract available, **then** character accuracy is ≥ 98% on clean variants and ≥ 95% on degraded ones (thresholds may be retuned once the fixtures exist), and pages below threshold become page images instead of emitting garbage. **Given** the same fixtures with Tesseract missing, **then** every conversion finishes with `ocr_unavailable`. Elaborated in [ocr](ocr.md) and [testing](testing.md).
 
-Requirements MAIN-R1 to MAIN-R20 are covered by these ACs or by the satellite ACs they link to, as follows:
+Requirements MAIN-R1 to MAIN-R19 are covered by these ACs or by the satellite ACs they link to, as follows:
 
 | Requirement | Covered by |
 |---|---|
@@ -176,14 +176,13 @@ Requirements MAIN-R1 to MAIN-R20 are covered by these ACs or by the satellite AC
 | MAIN-R3–R7 | (c), (d), [passwords](passwords.md) ACs |
 | MAIN-R8 | <a id="main-ac2"></a>**MAIN-AC2**: **Given** the repository, **when** CI greps the source tree, help output and README (excluding `docs/` history and this sentence's own spec), **then** the phrase "DRM removal" does not occur, and `pdf2epub --help` contains the three-sentence legal statement verbatim. |
 | MAIN-R9 | MAIN-AC2 extended to the README's Legal scope section (checked in the v1 acceptance ticket) |
-| MAIN-R10, R11 | CI matrix (ticket 0) |
+| MAIN-R10, R11 | <a id="main-ac4"></a>**MAIN-AC4**: **Given** the PR workflow definition, **when** it is inspected, **then** its test matrix includes Python 3.12, 3.13 and 3.14 on macOS (Apple Silicon) and on Linux x86-64 and arm64, it runs on every pull request, and the package metadata declares `requires-python = ">=3.12"`. |
 | MAIN-R12–R14 | <a id="main-ac3"></a>**MAIN-AC3**: **Given** the built wheel and sdist, **when** their metadata is inspected, **then** the licence is `MIT`, `LICENSE` is included, and no runtime dependency has a licence outside MAIN-R13's list. |
-| MAIN-R15, R17 | v1 acceptance ticket (install from git on macOS and Linux; README install steps present) |
+| MAIN-R15, R17 | <a id="main-ac5"></a>**MAIN-AC5**: **Given** a clean macOS and a clean Linux CI runner, **when** `uv tool install git+https://github.com/Bezoar/pdf2epub` runs, **then** `pdf2epub --version` exits 0; **and given** the README, **then** it has Tesseract install steps for Homebrew, apt and language packs. |
 | MAIN-R16 | (g), [ocr](ocr.md) ACs |
 | MAIN-R18, R19 | (d), [reflow](reflow.md) and [batch](batch.md) ACs |
-| MAIN-R20 | informative; not tested |
 
 ## Open points
 
 - MAIN-AC2's grep excludes this spec and other `docs/` files, which must mention the phrase to forbid it. The exact exclusion list is fixed in ticket 0.
-- The pages-per-second and memory targets in MAIN-R20 come from the archived spec. They stay informative until a metrics corpus exists (roadmap).
+- The pages-per-second and memory targets in §6.5 come from the archived spec. They stay informative until a metrics corpus exists (roadmap).

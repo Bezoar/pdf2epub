@@ -75,7 +75,7 @@ S10–S12 run in the batch with their passwords supplied through a password map.
 
 ## 5. CI checks that tie tests to specs
 
-<a id="tst-r17"></a>**TST-R17**: Every test that verifies an acceptance criterion shall carry `@pytest.mark.ac("<ID>")` (one or more IDs; many-to-many). A CI check shall collect every AC ID defined in `docs/specs/` (by its `<a id="…-acN">` anchor) and fail, naming the missing IDs, if any has no marked test. It shall also fail if a marker names an ID that does not exist.
+<a id="tst-r17"></a>**TST-R17**: Every test that verifies an acceptance criterion shall carry `@pytest.mark.ac("<ID>")` (one or more IDs; many-to-many). A CI check shall collect every AC ID defined in `docs/specs/` (every anchor of the form `<a id="<prefix>-ac<N>">` or `<a id="<prefix>-ac-<letter>">`, such as `main-ac-a`) and fail, naming the missing IDs, if any has no marked test. An AC whose text marks it **manual** is exempt and is confirmed in the v1 acceptance ticket instead. It shall also fail if a marker names an ID that does not exist.
 
 <a id="tst-r18"></a>**TST-R18**: Tests shall validate every event emitted in their runs against the JSON Schema shipped in the package ([api](api.md)). Any invalid event fails the test.
 
@@ -103,7 +103,7 @@ S10–S12 run in the batch with their passwords supplied through a password map.
 
 <a id="tst-ac10"></a>**TST-AC10** (covers [TST-R15](#tst-r15), [TST-R16](#tst-r16)): **Given** real Tesseract and the synthetic scanned fixtures, **when** the accuracy test runs, **then** the clean set scores ≥ 0.98, the degraded set ≥ 0.95, each fixture's score is printed, and fallback pages are counted in a separate figure.
 
-<a id="tst-ac11"></a>**TST-AC11** (covers [TST-R17](#tst-r17)): **Given** a spec containing an anchor `<a id="xyz-ac1"></a>` that no test marks, **when** the marker gate runs, **then** it fails and names `XYZ-AC1`; **given** a test marked `ac("XYZ-AC99")` with no such anchor, **then** it fails and names that ID; **given** every AC marked, **then** it passes.
+<a id="tst-ac11"></a>**TST-AC11** (covers [TST-R17](#tst-r17)): **Given** a spec containing an anchor `<a id="xyz-ac1"></a>` that no test marks, **when** the marker gate runs, **then** it fails and names `XYZ-AC1`; **given** a test marked `ac("XYZ-AC99")` with no such anchor, **then** it fails and names that ID; **given** an anchor `<a id="xyz-ac-b"></a>` that no test marks, **then** it fails and names `XYZ-AC-B`; **given** an unmarked AC whose text says it is **manual**, **then** it is not reported; **given** every other AC marked, **then** it passes.
 
 <a id="tst-ac12"></a>**TST-AC12** (covers [TST-R18](#tst-r18)): **Given** a test run in which a sink receives an event missing its `v` field, **when** schema validation runs, **then** the test fails and reports the event type and the missing field.
 

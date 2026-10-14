@@ -67,7 +67,7 @@ It does **not** define what an option means or its default. The owning spec does
 | — | — | — | `PDF2EPUB_PASSWORD` | `PasswordSources.env_value` ([passwords](passwords.md#pwd-r18)) |
 | `--password-file` | `FILE` | no | — | `PasswordSources.password_file` ([passwords](passwords.md#pwd-r15)) |
 | `--password-map` | `FILE` (TOML) | no | — | `PasswordSources.map_file` ([passwords](passwords.md#pwd-r14)) |
-| `--ask-password` | switch | — | — | `PasswordSources.ask` set for a batch ([passwords](passwords.md#pwd-r19)) |
+| `--ask-password` | switch | — | — | `PasswordSources.prompt` set for a batch ([passwords](passwords.md#pwd-r19)) |
 
 ### 2.5 OCR
 
@@ -93,7 +93,7 @@ It does **not** define what an option means or its default. The owning spec does
 
 <a id="cli-r5"></a>**CLI-R5**: When both `--tesseract` and `PDF2EPUB_TESSERACT` are given, the flag wins. When neither is given, `OcrOptions.tesseract_path` is left unset, and the core searches `PATH` ([ocr](ocr.md)).
 
-<a id="cli-r6"></a>**CLI-R6**: The CLI shall build the password provider as a `SourcePasswordProvider` ([passwords](passwords.md#pwd-r18)) from the raw sources. It never orders, filters or counts candidates itself. It shall set `PasswordSources.ask` as follows:
+<a id="cli-r6"></a>**CLI-R6**: The CLI shall build the password provider as a `SourcePasswordProvider` ([passwords](passwords.md#pwd-r18)) from the raw sources. It never orders, filters or counts candidates itself. It shall set `PasswordSources.prompt` as follows:
 
 - to a no-echo terminal prompt, when the run is a single conversion ([batch](batch.md)), stdin and stderr are terminals, and `--json` isn't given;
 - to a no-echo terminal prompt, when `--ask-password` is given, stdin and stderr are terminals, and `--json` isn't given;
@@ -201,7 +201,7 @@ With `-r -o out --overwrite --timeout 60 --strict --mode reflow --title T --auth
 - **when** the CLI builds the provider;
 - **then** it is a `SourcePasswordProvider` whose `PasswordSources` hold `values == [a, b]`, `env_value == e`, `password_file == f` and `map_file == m`, all as `Secret`s or paths.
 
-`ask` is set only in the cases listed in [CLI-R6](#cli-r6), checked with stdin/stderr terminal states simulated.
+`prompt` is set only in the cases listed in [CLI-R6](#cli-r6), checked with stdin/stderr terminal states simulated.
 
 <a id="cli-ac6"></a>**CLI-AC6** (covers [CLI-R3](#cli-r3), [CLI-R7](#cli-r7)):
 

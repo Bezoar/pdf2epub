@@ -33,7 +33,7 @@ Fixed-layout output and an accessibility audit are [roadmap](../worksheets/roadm
 
 <a id="epub-r5"></a>**EPUB-R5**: The navigation document `nav.xhtml` shall contain:
 - a `toc` nav mirroring the document model's TOC tree, with each entry linking to its chapter file and anchor;
-- a `page-list` nav with one entry per `PageBreak` marker, labelled with its page label;
+- a `page-list` nav with one entry per `PageBreak` marker, linking to its ID ([EPUB-R19](#epub-r19)) and labelled with its page label;
 - a `landmarks` nav with `cover` (if any), `toc` and `bodymatter` (the first chapter after front matter).
 
 <a id="epub-r6"></a>**EPUB-R6**: The EPUB shall also contain an EPUB 2 `toc.ncx` with the same TOC tree and page list, referenced from the spine's `toc` attribute, for older readers.
@@ -48,7 +48,7 @@ Fixed-layout output and an accessibility audit are [roadmap](../worksheets/roadm
 | `Paragraph` | `<p>` |
 | Bold and italic inlines | `<b>` and `<i>` |
 | `Image` | `<figure>` with `<img>`, plus a `<figcaption>` when there is a caption |
-| `PageBreak` | `<span epub:type="pagebreak" role="doc-pagebreak" id="page_<label>" aria-label="<label>"/>` |
+| `PageBreak` | `<span epub:type="pagebreak" role="doc-pagebreak" id="page-<page>" aria-label="<label>"/>`, inside the `<p>` when the marker is an inline, otherwise between blocks |
 
 The `<html>` element carries `lang` and `xml:lang` set to the book language.
 
@@ -164,6 +164,14 @@ A failed check is a bug: the conversion fails with [`internal_error`](api.md#cod
 <a id="epub-ac12"></a>**EPUB-AC12** (covers [EPUB-R18](#epub-r18)): **Given** an output folder without write permission, **when** the novel fixture is converted into it, **then**:
 - the conversion is `failed` with [`write_failed`](api.md#code-write_failed) (error), whose message names the destination path;
 - the exit code is 1.
+
+<a id="epub-r19"></a>**EPUB-R19**: Page-break IDs shall be built from the PDF page index only (`page-<page>`), never from the page label, so every ID is a valid, unique XML ID whatever the labels are. Labels may repeat or contain any characters. They appear only as escaped text and attribute values (`aria-label`, page-list and `toc.ncx` entries).
+
+<a id="epub-ac13"></a>**EPUB-AC13** (covers [EPUB-R19](#epub-r19), [EPUB-R5](#epub-r5)): **Given** a fixture whose pages 1–4 have the labels `i`, `i`, `A&B 1` and `<2>`, **when** it is converted, **then**:
+- the page-break spans have the IDs `page-1` … `page-4`, all distinct;
+- their `aria-label`s read `i`, `i`, `A&B 1` and `<2>` once unescaped;
+- the `page-list` has 4 entries with those labels, linking to `#page-1` … `#page-4`;
+- epubcheck reports zero errors.
 
 ## Open points
 

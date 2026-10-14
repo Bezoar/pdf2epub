@@ -106,7 +106,7 @@ _Avoid_: owner restrictions, soft DRM
 
 **DRM-protected**:
 A PDF or wrapper whose access is controlled by vendor rights-management software rather than a user password. pdf2epub refuses it.
-_Avoid_: DRM removal, unlocking, cracking
+_Avoid_: unlocking, cracking, and any wording that suggests pdf2epub takes DRM off a file
 
 **User password**:
 The password that opens a password-protected PDF for reading, subject to its permission restrictions.

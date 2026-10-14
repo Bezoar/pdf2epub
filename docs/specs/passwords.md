@@ -114,19 +114,19 @@ A map that can't be read, isn't valid TOML, or holds a value that isn't a string
 
 <a id="pwd-r17"></a>**PWD-R17**: When the password map or password file can be read by group or others, pdf2epub shall log a warning to stderr, ssh-style, naming the file and suggesting `chmod 600`. It then continues normally.
 
-<a id="pwd-r18"></a>**PWD-R18**: The core shall provide a `SourcePasswordProvider` built from `PasswordSources(map_file, values, env_value, password_file, ask)`, so that the trial order, labels, de-duplication and cap all live in the core:
+<a id="pwd-r18"></a>**PWD-R18**: The core shall provide a `SourcePasswordProvider` built from `PasswordSources(map_file, values, env_value, password_file, prompt)`, so that the trial order, labels, de-duplication and cap all live in the core:
 
 - `map_file`: path or none.
 - `values`: command-line secrets, in order.
 - `env_value`: one secret or none.
 - `password_file`: path or none.
-- `ask`: an optional prompt function `(path, attempt) -> Secret | None`.
+- `prompt`: an optional prompt function `(path, attempt) -> Secret | None`.
 
-It implements the [`PasswordProvider`](api.md) protocol. A front end only gathers the raw sources; it never orders or filters them.
+It implements the [`PasswordProvider`](api.md) protocol: its `prompt` method exists only when `PasswordSources.prompt` is set, and simply calls it. A front end only gathers the raw sources; it never orders or filters them.
 
 ## 6. Prompting
 
-<a id="pwd-r19"></a>**PWD-R19**: A prompt is available for a conversion only when the provider has an `ask` function. A front end supplies one in these cases (presentation in [cli](cli.md)):
+<a id="pwd-r19"></a>**PWD-R19**: A prompt is available for a conversion only when the provider has a `prompt` function. A front end supplies one in these cases (presentation in [cli](cli.md)):
 
 - a **single conversion** run in a terminal, not in `--json` mode;
 - a batch run with `ask_password` (`--ask-password`);
@@ -243,7 +243,7 @@ With `values = ["u", "o"]`, it is `converted` with `owner_password_used` naming 
 
 <a id="pwd-ac10"></a>**PWD-AC10** (covers [PWD-R12](#pwd-r12), [PWD-R14](#pwd-r14)):
 
-- **Given** a provider whose `ask` records calls, with these sources:
+- **Given** a provider whose `prompt` records calls, with these sources:
   - a password map with the glob `"*.pdf" = "g"` before the exact key `"a.pdf" = "x"`;
   - `values = ["v"]`;
   - `env_value = "e"`;
@@ -285,21 +285,21 @@ With mode `0600`, no such warning appears.
 
 <a id="pwd-ac16"></a>**PWD-AC16** (covers [PWD-R19](#pwd-r19), [PWD-R20](#pwd-r20)):
 
-- **Given** the AES-256 user-password fixture and an `ask` that returns a wrong secret three times;
+- **Given** the AES-256 user-password fixture and a `prompt` that returns a wrong secret three times;
 - **when** the batch runs;
-- **then** `ask` is called with attempts 1, 2 and 3, and the outcome is `failed` with `wrong_password` whose sources tried include `prompt`.
+- **then** `prompt` is called with attempts 1, 2 and 3, and the outcome is `failed` with `wrong_password` whose sources tried include `prompt`.
 
-If `ask` returns `None` on attempt 1 instead, `ask` is called once and the outcome is `failed` with `missing_password`.
+If `prompt` returns `None` on attempt 1 instead, `prompt` is called once and the outcome is `failed` with `missing_password`.
 
 <a id="pwd-ac17"></a>**PWD-AC17** (covers [PWD-R21](#pwd-r21)):
 
-- **Given** a batch `[enc.pdf, plain1.pdf, plain2.pdf]`, where only `enc.pdf` needs a password, and an `ask` that records the order of events when it is called;
+- **Given** a batch `[enc.pdf, plain1.pdf, plain2.pdf]`, where only `enc.pdf` needs a password, and a `prompt` that records the order of events when it is called;
 - **when** the batch runs;
-- **then** `ask` is first called after `conversion_finished` for both `plain1` and `plain2`, and `batch_finished.conversions` lists `enc, plain1, plain2` in that order.
+- **then** `prompt` is first called after `conversion_finished` for both `plain1` and `plain2`, and `batch_finished.conversions` lists `enc, plain1, plain2` in that order.
 
 <a id="pwd-ac18"></a>**PWD-AC18** (covers [PWD-R22](#pwd-r22)):
 
-- **Given** the AES-256 user-password fixture, `values = ["nope"]` and no `ask`;
+- **Given** the AES-256 user-password fixture, `values = ["nope"]` and no `prompt`;
 - **when** the batch runs;
 - **then** a `password_required` event with `sources_tried == ["cli #1"]` is emitted before that conversion's `conversion_finished`, the outcome is `failed` with `wrong_password`, and the next conversion still runs.
 

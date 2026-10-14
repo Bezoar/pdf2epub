@@ -7,7 +7,7 @@ Read these, in this order:
 
 1. [GLOSSARY.md](GLOSSARY.md): the domain vocabulary. Use its terms; avoid the ones it lists under _Avoid_.
 2. [docs/specs/main.md](docs/specs/main.md): the specification entry point. It indexes the satellite specs.
-3. [docs/plans/v1.md](docs/plans/v1.md): the v1 implementation plan (phases, slices, seam catalogue, fixture table).
+3. [docs/plans/v1.md](docs/plans/v1.md): the v1 implementation plan (phases, slices, seam catalogue, fixture table). It is written by `/to-tickets` right after the specs merge, before any build ticket starts.
 4. [docs/instructions/coding.md](docs/instructions/coding.md): how to write code and tests here, including all commands.
 5. [docs/instructions/github.md](docs/instructions/github.md): branches, commits, PRs, the Copilot review loop, merging, escalation and releases.
 6. [docs/adr/](docs/adr/): architecture decisions.
