@@ -108,6 +108,17 @@ def registry() -> list[Fixture]:
         Fixture(encrypted.AES256, encrypted.AES256_TRUTH, encrypted.build_aes256),
         Fixture(encrypted.AES128, encrypted.AES128_TRUTH, encrypted.build_aes128),
         Fixture(encrypted.RC4_128, encrypted.RC4_128_TRUTH, encrypted.build_rc4_128),
+        Fixture(
+            encrypted.OWNER_RESTRICTED,
+            encrypted.OWNER_RESTRICTED_TRUTH,
+            encrypted.build_owner_restricted,
+        ),
+        Fixture(encrypted.OWNER_ALL, encrypted.OWNER_ALL_TRUTH, encrypted.build_owner_all),
+        Fixture(
+            encrypted.USER_OWNER_RESTRICTED,
+            encrypted.USER_OWNER_RESTRICTED_TRUTH,
+            encrypted.build_user_owner_restricted,
+        ),
         Fixture(drm.EBX_HANDLER, None, drm.build_ebx_handler),
         Fixture(drm.ADOBE_PUBSEC, None, drm.build_adobe_pubsec),
         Fixture(drm.FOPN_FOWEB, None, drm.build_fopn_foweb),

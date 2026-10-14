@@ -5,8 +5,12 @@ lines of words, each word with its box and confidence. Boxes and line heights ar
 pixels of the request's image, origin top-left; the pipeline maps them onto the page.
 The pipeline, not the engine, computes coverage (OCR-R16) and records the attempts.
 
-v1 has one adapter, for Tesseract (a later ticket). ``load_engine`` is the one place the
-core gets its engine from; there is no registry and no engine-selection option.
+v1 has one adapter, for Tesseract (``ocr.tesseract``). ``load_engine`` is the one place
+the core gets its engine from; there is no registry and no engine-selection option.
+
+An attempt that runs past its deadline raises ``EngineTimeout``; one where the engine
+crashes or reports an error raises ``EngineFailed`` (OCR-R22, OCR-R23). Either costs the
+page, never the conversion.
 """
 
 from collections.abc import Mapping
@@ -116,6 +120,14 @@ class OcrPageResult:
         return sum(word.confidence * len(word.text) for word in words) / total
 
 
+class EngineTimeout(Exception):
+    """The attempt was stopped at its deadline (OCR-R22)."""
+
+
+class EngineFailed(Exception):
+    """The engine crashed or exited with an error on the attempt (OCR-R23)."""
+
+
 class OcrEngine(Protocol):
     """An OCR engine (OCR-R11)."""
 
@@ -127,8 +139,9 @@ class OcrEngine(Protocol):
 
 
 def load_engine(options: OcrOptions) -> OcrEngine | None:
-    """The OCR engine to use under ``options``, or None when there is none.
+    """The OCR engine to use under ``options``: Tesseract, from ``options.tesseract_path``
+    or else ``PATH``. None when that program isn't there; pages that would be OCR'd then
+    keep what they have."""
+    from pdf2epub.ocr.tesseract import find_tesseract
 
-    The Tesseract adapter comes with a later ticket; until then there is none, and pages
-    that would be OCR'd keep what they have."""
-    return None
+    return find_tesseract(options)

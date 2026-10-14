@@ -9,7 +9,7 @@ from typing import Literal
 
 import pytest
 from conftest import FIXTURES, PUBLIC_DOMAIN_SAMPLE, RecordingSink
-from test_passwords import restricted_copy
+from test_passwords import OWNER, OWNER_RESTRICTED, USER, USER_OWNER_RESTRICTED
 
 from pdf2epub import (
     BatchOptions,
@@ -113,7 +113,7 @@ def test_skipping_the_first_prompt_with_nothing_tried_fails_missing_password(
 
 @pytest.mark.ac("PWD-AC16")
 def test_skipping_the_owner_password_prompt_fails_restricted(tmp_path: Path) -> None:
-    pdf = restricted_copy(tmp_path / "locked.pdf", "", "o")
+    pdf = copy(OWNER_RESTRICTED, tmp_path / "locked.pdf")
     provider = PromptingProvider([None])
 
     report, _ = run([pdf], provider)
@@ -179,8 +179,8 @@ def test_a_right_answer_on_the_second_attempt_converts_from_the_prompt(
 
 
 def test_the_owner_password_from_the_prompt_lifts_the_restriction(tmp_path: Path) -> None:
-    pdf = restricted_copy(tmp_path / "locked.pdf", "u", "o")
-    provider = PromptingProvider(["u", "o"])
+    pdf = copy(USER_OWNER_RESTRICTED, tmp_path / "locked.pdf")
+    provider = PromptingProvider([USER, OWNER])
 
     report, _ = run([pdf], provider)
 
@@ -244,7 +244,7 @@ def test_without_a_prompt_password_required_names_the_sources_tried(tmp_path: Pa
     ("make", "provider", "code"),
     [
         (lambda p: copy(AES256, p), None, "missing_password"),
-        (lambda p: restricted_copy(p, "", "o"), PromptingProvider(None), "restricted"),
+        (lambda p: copy(OWNER_RESTRICTED, p), PromptingProvider(None), "restricted"),
     ],
     ids=["no-provider", "owner-only"],
 )

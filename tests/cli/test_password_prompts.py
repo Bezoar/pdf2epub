@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 import termios
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -44,11 +45,18 @@ def enc(tmp_path: Path) -> Path:
 
 
 class Terminal:
-    """The CLI running with stdin and stderr on one pseudo-terminal and stdout a pipe."""
+    """The CLI running with stdin and stderr on one pseudo-terminal and stdout a pipe.
+
+    A reader thread drains the terminal all the time: the CLI's progress redraws must
+    never fill its buffer and block the CLI."""
 
     def __init__(self, args: list[str], cwd: Path) -> None:
         self.controller, self.terminal = pty.openpty()
-        self.output = b""
+        self._output = b""
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._reader = threading.Thread(target=self._read, daemon=True)
+        self._reader.start()
         self.proc = subprocess.Popen(
             [str(PDF2EPUB), *args],
             cwd=cwd,
@@ -58,18 +66,31 @@ class Terminal:
             stderr=self.terminal,
         )
 
+    def _read(self) -> None:
+        while not self._stop.is_set():
+            if not select.select([self.controller], [], [], 0.05)[0]:
+                continue
+            try:
+                data = os.read(self.controller, 4096)
+            except OSError:  # the terminal closed (Linux raises EIO)
+                return
+            if not data:
+                return
+            with self._lock:
+                self._output += data
+
+    @property
+    def output(self) -> str:
+        with self._lock:
+            return self._output.decode("utf-8", errors="replace")
+
     def read_until(self, text: str, timeout: float = WAIT) -> str:
         """Everything written to the terminal so far, once it contains ``text``."""
         deadline = time.monotonic() + timeout
-        while text.encode() not in self.output:
-            remaining = deadline - time.monotonic()
-            assert remaining > 0, f"{text!r} never appeared in {self.output!r}"
-            if select.select([self.controller], [], [], remaining)[0]:
-                try:
-                    self.output += os.read(self.controller, 4096)
-                except OSError:  # the terminal closed (Linux raises EIO)
-                    break
-        return self.output.decode("utf-8", errors="replace")
+        while text not in self.output:
+            assert time.monotonic() < deadline, f"{text!r} never appeared in {self.output!r}"
+            time.sleep(0.05)
+        return self.output
 
     def type(self, text: str) -> None:
         os.write(self.controller, text.encode())
@@ -82,24 +103,18 @@ class Terminal:
     def finish(self) -> tuple[int, str, str]:
         """Wait for the CLI; its exit code, stdout, and everything on the terminal."""
         stdout, _ = self.proc.communicate(timeout=WAIT)
-        while select.select([self.controller], [], [], 0.2)[0]:
-            try:
-                data = os.read(self.controller, 4096)
-            except OSError:
-                break
-            if not data:
-                break
-            self.output += data
-        return (
-            self.proc.returncode,
-            stdout.decode("utf-8"),
-            self.output.decode("utf-8", errors="replace"),
-        )
+        # Let the reader take what the CLI wrote last: wait until the output settles.
+        settled = ""
+        while settled != (settled := self.output):
+            time.sleep(0.2)
+        return self.proc.returncode, stdout.decode("utf-8"), self.output
 
     def close(self) -> None:
         if self.proc.poll() is None:
             self.proc.kill()
             self.proc.wait()
+        self._stop.set()
+        self._reader.join(timeout=10)
         os.close(self.terminal)
         os.close(self.controller)
 
