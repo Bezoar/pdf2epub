@@ -2,7 +2,10 @@
 
 - ``blank-pages.pdf``: three pages with no text and no image (empty content streams);
 - ``blank-pages-plus-text.pdf``: the same three pages, then a fourth page holding one
-  line of text; its ground truth, ``blank-pages-plus-text.txt``, is that line.
+  line of text; its ground truth, ``blank-pages-plus-text.txt``, is that line;
+- ``blank-page.pdf``: one blank page inside a document with content (OCR-AC2): a line of
+  text on page 1, a blank page 2, a line of text on page 3; its ground truth,
+  ``blank-page.txt``, is the two lines, separated by a blank line.
 """
 
 from pathlib import Path
@@ -12,7 +15,10 @@ from fixturegen import rawpdf
 BLANK = "born-digital/blank-pages.pdf"
 PLUS_TEXT = "born-digital/blank-pages-plus-text.pdf"
 PLUS_TEXT_TRUTH = "born-digital/blank-pages-plus-text.txt"
+BLANK_INSIDE = "born-digital/blank-page.pdf"
+BLANK_INSIDE_TRUTH = "born-digital/blank-page.txt"
 TEXT = "Only the fourth page has anything on it."
+BEFORE, AFTER = "The page after this one is blank.", "The page before this one is blank."
 
 _FONT = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
 
@@ -47,3 +53,14 @@ def build_plus_text(out_dir: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(_pages([b"", b"", b"", line]))
     (out_dir / PLUS_TEXT_TRUTH).write_text(TEXT + "\n", encoding="utf-8")
+
+
+def _line(text: str) -> bytes:
+    return b"BT /F1 12 Tf 54 600 Td (%s) Tj ET" % text.encode("ascii")
+
+
+def build_blank_inside(out_dir: Path) -> None:
+    target = out_dir / BLANK_INSIDE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(_pages([_line(BEFORE), b"", _line(AFTER)]))
+    (out_dir / BLANK_INSIDE_TRUTH).write_text(f"{BEFORE}\n\n{AFTER}\n", encoding="utf-8")

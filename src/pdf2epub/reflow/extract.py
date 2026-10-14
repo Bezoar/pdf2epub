@@ -160,6 +160,8 @@ class PageText:
     columns: int = 1
     """How many text columns the page is set in (RFL-R11)."""
     graphics: Graphics = field(default_factory=Graphics)
+    ocr: bool = False
+    """The lines were recognised by OCR, not read from the text layer."""
 
 
 def normalise(text: str) -> str:

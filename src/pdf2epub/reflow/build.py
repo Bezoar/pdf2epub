@@ -69,7 +69,7 @@ def build_document(
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
     metadata, issues = book_metadata(source, options)
-    reasons = {page.page: reason for page in pages if (reason := _fallback(page, options))}
+    reasons = {page.page: reason for page in pages if (reason := fallback_reason(page, options))}
     page_images = _page_images(source, pages, reasons, password)
     blocks, positions, furniture = _body(
         source, pages, images, page_images, wordlist(metadata.language)
@@ -97,7 +97,7 @@ _FALLBACK_MESSAGES = {
 }
 
 
-def _fallback(page: PageText, options: ConversionOptions) -> str | None:
+def fallback_reason(page: PageText, options: ConversionOptions) -> str | None:
     """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
     interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
     (RFL-R14)."""
@@ -173,7 +173,8 @@ def _body(
     typography = measure(p for p in pages if p.page not in page_images)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
-    levels = heading_levels(laid_out, furniture.removed, typography)
+    ocr_widths = {p.page: p.width for p in pages if p.ocr}
+    levels = heading_levels(laid_out, furniture.removed, typography, ocr_widths)
     stream: list[tuple[_Item, Position]] = []
     open_paragraph: _Open | None = None
     for page in laid_out:

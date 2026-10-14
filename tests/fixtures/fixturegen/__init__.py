@@ -46,6 +46,7 @@ def registry() -> list[Fixture]:
         novel,
         oversized,
         pagenumbers,
+        scans,
         structure,
         twopage,
         typography,
@@ -63,6 +64,7 @@ def registry() -> list[Fixture]:
         Fixture(hostile.PATH, hostile.GROUND_TRUTH, hostile.build),
         Fixture(blank.BLANK, None, blank.build_blank),
         Fixture(blank.PLUS_TEXT, blank.PLUS_TEXT_TRUTH, blank.build_plus_text),
+        Fixture(blank.BLANK_INSIDE, blank.BLANK_INSIDE_TRUTH, blank.build_blank_inside),
         Fixture(not_a_pdf.PATH, None, not_a_pdf.build),
         Fixture(typography.PATH, typography.GROUND_TRUTH, typography.build),
         Fixture(novel.NO_OUTLINE, novel.NO_OUTLINE_TRUTH, novel.build_no_outline),
@@ -117,6 +119,12 @@ def registry() -> list[Fixture]:
         Fixture(metadata.SCAN, None, metadata.build_scan),
         Fixture(metadata.LANG_FR, None, metadata.build_lang_fr),
         Fixture(metadata.XMP, None, metadata.build_xmp),
+        # The scans are renders of the born-digital fixtures above.
+        Fixture(scans.NOVEL_CLEAN, scans.NOVEL_CLEAN_TRUTH, scans.build_novel_clean),
+        Fixture(scans.TWO_PAGES, scans.TWO_PAGES_TRUTH, scans.build_two_pages),
+        Fixture(scans.TWO_COLUMN, scans.TWO_COLUMN_TRUTH, scans.build_two_column),
+        Fixture(scans.IMAGE_ONLY, scans.IMAGE_ONLY_TRUTH, scans.build_image_only),
+        Fixture(scans.BLANK_PAGE, scans.BLANK_PAGE_TRUTH, scans.build_blank_page),
     ]
 
 

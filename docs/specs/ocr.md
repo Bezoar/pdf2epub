@@ -44,6 +44,8 @@ Font names, Producer/Creator strings and guesses about which OCR engine made a l
 
 v1 has exactly one adapter, for Tesseract. There is no engine registry and no engine-selection option (roadmap: a second engine, likely Apple Vision).
 
+<a id="ocr-r32"></a>**OCR-R32**: `Capabilities` shall also give the engine's `name` and `version`. A conversion's `ocr` summary ([OCR-R30](#ocr-r30)) reports them as `engine` and `engine_version`.
+
 <a id="ocr-r12"></a>**OCR-R12**: `OcrRequest` shall carry `image` (the cleaned page image), `dpi`, `languages` (Tesseract language codes, e.g. `eng+deu`), `layout_hint` (one of `PAGE`, `BLOCK`, `LINE`, `SPARSE`, which the adapter maps to a Tesseract page segmentation mode), `deadline` (an absolute time by which the attempt must finish) and `engine_options` (a string-to-string map passed through to the engine).
 
 <a id="ocr-r13"></a>**OCR-R13**: `OcrPageResult` shall contain:
@@ -179,7 +181,7 @@ All page images below are synthetic fixtures from [testing](testing.md) unless n
 
 The owner accepted points OP35–OP40 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
 
-- **OP35** The exact fraction for "almost no text" and "an image covering a large share of the page" in [OCR-R1](#ocr-r1) is left as an internal constant, set while building the routing slice.
+- **OP35** The exact fraction for "almost no text" and "an image covering a large share of the page" in [OCR-R1](#ocr-r1) is left as an internal constant, set while building the routing slice: a text layer whose lines' boxes cover at most 1% of the page is almost none, an image covering at least 50% of the page is large, and an image covering under 1% is not significant (values set by [#40](https://github.com/Bezoar/pdf2epub/issues/40)).
 - **OP36** [OCR-R9](#ocr-r9): when several signals fail on one page, the reason reported is the first in the order garbled → implausible_words → low_coverage (assumed; one reason per page keeps grouping simple).
 - **OP37** [OCR-R20](#ocr-r20): the ladder's step 3 runs whenever confidence is below `p_min` after step 2 (or after step 1 if step 2 was skipped). The decision text listed "Sauvola, then denoise"; read here as Sauvola alone, then Sauvola plus denoise.
 - **OP38** [OCR-R22](#ocr-r22)/[OCR-R23](#ocr-r23): a timed-out or failed page is listed both in `page_fallback` (reason `ocr_timeout`/`ocr_failed`) and in the `ocr_timeout`/`ocr_failed` diagnostic issue, per the shared grouping rule in [api](api.md).
