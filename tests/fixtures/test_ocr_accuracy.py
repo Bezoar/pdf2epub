@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import OCR_ACCURACY
+from conftest import OCR_ACCURACY, RecordingSink
 from fixturegen import novel
 from lxml import etree
 from pypdf import PdfWriter
@@ -161,7 +161,7 @@ class Page:
 
     text: str = ""
     image: bool = False
-    """The page is a page image (it fell back)."""
+    """The page is a page image, `<figure class="page-image">` (it fell back)."""
 
 
 def epub_pages(epub: Path) -> dict[int, Page]:
@@ -181,7 +181,8 @@ def epub_pages(epub: Path) -> dict[int, Page]:
         name = etree.QName(element).localname
         if element.get(EPUB_TYPE) == "pagebreak":
             current[0] = pages.setdefault(int(str(element.get("id")).removeprefix("page-")), Page())
-        elif name == "img" and current[0] is not None:
+        elif name == "figure" and "page-image" in str(element.get("class", "")).split():
+            assert current[0] is not None
             current[0].image = True
         if name in BLOCKS:
             add(" ")
@@ -234,7 +235,7 @@ def convert(source: Path, folder: Path, ocr: OcrOptions) -> ConversionResult:
     shutil.copyfile(source, copy)
     plan = plan_batch([InputSpec(copy)], DiscoveryOptions())
     report = run_batch(
-        plan, BatchOptions(isolation="inprocess"), ConversionOptions(ocr=ocr), lambda e: None
+        plan, BatchOptions(isolation="inprocess"), ConversionOptions(ocr=ocr), RecordingSink()
     )
     [result] = report.conversions
     return result
@@ -324,7 +325,7 @@ def test_without_tesseract_every_scan_finishes_with_ocr_unavailable(tmp_path: Pa
     plan = plan_batch(inputs, DiscoveryOptions(output=tmp_path / "out"))
     ocr = OcrOptions(tesseract_path=tmp_path / "no-tesseract")
     report = run_batch(
-        plan, BatchOptions(isolation="inprocess"), ConversionOptions(ocr=ocr), lambda e: None
+        plan, BatchOptions(isolation="inprocess"), ConversionOptions(ocr=ocr), RecordingSink()
     )
 
     assert len(report.conversions) == len(SCANS)
