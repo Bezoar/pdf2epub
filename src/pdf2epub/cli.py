@@ -10,6 +10,7 @@ object per line; the human report, warnings and logging go to stderr (CLI-R2).
 
 import argparse
 import logging
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -20,6 +21,7 @@ from pdf2epub.batch import InputSpec, plan_batch, read_files_from, run_batch
 from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, encode_event
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
+from pdf2epub.passwords import PasswordSources, Secret, SourcePasswordProvider
 from pdf2epub.version import TOOL_VERSION
 
 README = "https://github.com/Bezoar/pdf2epub#readme"
@@ -36,6 +38,11 @@ Each EPUB is written next to its PDF, with the same name and the extension .epub
 EPILOG = """\
 Legal scope: https://github.com/Bezoar/pdf2epub#legal-scope
 Installing Tesseract (for scanned PDFs): https://github.com/Bezoar/pdf2epub#installing-tesseract"""
+PASSWORD_ENV = "PDF2EPUB_PASSWORD"
+PASSWORD_WARNING = (
+    "warning: --password values are visible to other processes on this machine; "
+    "prefer --password-map, --password-file or PDF2EPUB_PASSWORD."
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,6 +87,30 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="exit with code 1 when any conversion has a warning (EPUBs are still written)",
     )
+    passwords = parser.add_argument_group(
+        "passwords",
+        f"Candidate passwords for password-protected PDFs. {PASSWORD_ENV} supplies one more.",
+    )
+    passwords.add_argument(
+        "--password",
+        metavar="VALUE",
+        action="append",
+        default=[],
+        help="a password to try (repeatable); other processes can see it, so prefer the "
+        "options below",
+    )
+    passwords.add_argument(
+        "--password-file",
+        metavar="FILE",
+        type=Path,
+        help="a UTF-8 file with one password per line, tried against every encrypted input",
+    )
+    passwords.add_argument(
+        "--password-map",
+        metavar="FILE",
+        type=Path,
+        help="a TOML file mapping paths or globs to passwords",
+    )
     reporting = parser.add_argument_group("reporting and machine output")
     reporting.add_argument(
         "--report",
@@ -112,6 +143,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.quiet and (args.verbose or args.debug):
         parser.error("-q/--quiet cannot be combined with -v/--verbose or --debug")  # CLI-R7
     configure_logging(args.verbose, args.debug)
+    if args.password:
+        print(PASSWORD_WARNING, file=sys.stderr, flush=True)  # CLI-R10
 
     batch_fields: dict[str, Any] = {
         name: getattr(args, name) for name in ("overwrite", "strict") if name in args
@@ -128,36 +161,65 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.files_from is not None:
             inputs.extend(read_files_from(args.files_from))
         plan = plan_batch(inputs, DiscoveryOptions(**discovery_fields))
+        provider = password_provider(args)
     except UsageError as error:
         parser.error(str(error))  # exits 2 with the reason on stderr (BAT-R25)
     final = FinalEvent()
-    if args.json:
-        writer = JsonLinesWriter(sys.stdout.buffer)
-        report = run_batch(
-            plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(writer, final)
-        )
-    else:
-        reporter = HumanReport(
-            sys.stderr,
-            single=plan.single,
-            verbose=args.verbose,
-            quiet=args.quiet,
-            progress=not args.quiet and sys.stderr.isatty(),
-        )
-        handlers = logging.getLogger().handlers
-        for handler in handlers:
-            handler.addFilter(reporter.clear_progress)
-        try:
+    try:
+        if args.json:
+            writer = JsonLinesWriter(sys.stdout.buffer)
             report = run_batch(
-                plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
+                plan,
+                BatchOptions(**batch_fields),
+                ConversionOptions(),
+                Tee(writer, final),
+                passwords=provider,
             )
-        finally:
+        else:
+            reporter = HumanReport(
+                sys.stderr,
+                single=plan.single,
+                verbose=args.verbose,
+                quiet=args.quiet,
+                progress=not args.quiet and sys.stderr.isatty(),
+            )
+            handlers = logging.getLogger().handlers
             for handler in handlers:
-                handler.removeFilter(reporter.clear_progress)
-        reporter.render()
+                handler.addFilter(reporter.clear_progress)
+            try:
+                report = run_batch(
+                    plan,
+                    BatchOptions(**batch_fields),
+                    ConversionOptions(),
+                    Tee(reporter, final),
+                    passwords=provider,
+                )
+            finally:
+                for handler in handlers:
+                    handler.removeFilter(reporter.clear_progress)
+            reporter.render()
+    except UsageError as error:
+        parser.error(str(error))  # the run's preflight refused it (API-R29)
     if args.report is not None and final.event is not None:
         write_report(final.event, Path(args.report))
     return report.exit_code
+
+
+def password_provider(args: argparse.Namespace) -> SourcePasswordProvider:
+    """The core's provider, built from the raw password sources (CLI-R6). Each value
+    becomes a ``Secret`` as soon as it is read. The terminal and ``--interactive``
+    prompts are not built yet, so ``prompt`` stays unset."""
+    # PWD-R25: the variable leaves the environment once read, so no child process
+    # inherits it.
+    env_value = os.environ.pop(PASSWORD_ENV, None)
+    return SourcePasswordProvider(
+        PasswordSources(
+            map_file=args.password_map,
+            values=[Secret(value) for value in args.password],
+            env_value=Secret(env_value) if env_value is not None else None,
+            password_file=args.password_file,
+        )
+    )
 
 
 def configure_logging(verbose: bool, debug: bool) -> None:

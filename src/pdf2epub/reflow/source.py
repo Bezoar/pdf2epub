@@ -14,6 +14,8 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from pdfminer.psexceptions import PSException
 
+from pdf2epub.passwords import Secret
+
 
 class CorruptPdf(Exception):
     """The PDF can't be parsed at all, even with repair (RFL-R2)."""
@@ -52,12 +54,15 @@ class SourcePdf:
         return len(self.page_labels)
 
 
-def open_source(path: Path) -> SourcePdf:
-    """Open ``path`` with pdfium, which repairs what it can. Raises ``CorruptPdf`` when
-    even that fails. A PDF with no pages comes back with ``page_count`` 0."""
+def open_source(path: Path, password: Secret | None = None) -> SourcePdf:
+    """Open ``path`` with pdfium, which repairs what it can, with ``password`` if it
+    needs one. Raises ``CorruptPdf`` when even that fails. A PDF with no pages comes back
+    with ``page_count`` 0."""
     data = path.read_bytes()
     try:
-        document = pdfium.PdfDocument(data)
+        document = pdfium.PdfDocument(
+            data, password=password.reveal() if password is not None else None
+        )
     except pdfium.PdfiumError as error:
         if _has_no_pages(data):
             # pdfium declines a document whose page tree is empty without setting an

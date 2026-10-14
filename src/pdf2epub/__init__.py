@@ -12,7 +12,13 @@ from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, EventSink
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions, OcrOptions
-from pdf2epub.passwords import Candidate, PasswordProvider, Secret
+from pdf2epub.passwords import (
+    Candidate,
+    PasswordProvider,
+    PasswordSources,
+    Secret,
+    SourcePasswordProvider,
+)
 from pdf2epub.results import BatchReport, ConversionResult, OcrSummary, Totals
 from pdf2epub.version import TOOL_VERSION
 
@@ -36,9 +42,11 @@ __all__ = [
     "OcrSummary",
     "Outcome",
     "PasswordProvider",
+    "PasswordSources",
     "PlannedConversion",
     "Secret",
     "Severity",
+    "SourcePasswordProvider",
     "Totals",
     "UsageError",
     "__version__",
