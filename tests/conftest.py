@@ -300,7 +300,8 @@ def _epubcheck_every_written_epub(request: pytest.FixtureRequest) -> Iterator[No
     if _epubcheck_command() is None:
         return
     for epub in sorted(tmp_path.rglob("*.epub")):
-        run_epubcheck(epub)
+        if epub.is_file():  # a folder named *.epub is not an EPUB
+            run_epubcheck(epub)
 
 
 def convert_copy(source: Path, target_dir: Path) -> Path:
