@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fulfillmentToken fulfillmentType="loan" auth="user" xmlns="http://ns.adobe.com/adept">
+  <distributor>urn:uuid:00000000-0000-0000-0000-000000000000</distributor>
+  <operatorURL>https://example.invalid/fulfillment</operatorURL>
+  <transaction>synthetic-pdf2epub-test-fixture</transaction>
+  <resourceItemInfo>
+    <resource>urn:uuid:00000000-0000-0000-0000-000000000000</resource>
+    <metadata>
+      <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Synthetic fixture</dc:title>
+      <dc:format xmlns:dc="http://purl.org/dc/elements/1.1/">application/pdf</dc:format>
+    </metadata>
+  </resourceItemInfo>
+</fulfillmentToken>

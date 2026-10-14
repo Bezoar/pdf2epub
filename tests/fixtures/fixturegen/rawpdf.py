@@ -20,11 +20,15 @@ def stream(entries: bytes, data: bytes) -> bytes:
 
 
 def document(
-    objects: Sequence[bytes], root: int = 1, header: bytes = b"%PDF-1.7", info: int | None = None
+    objects: Sequence[bytes],
+    root: int = 1,
+    header: bytes = b"%PDF-1.7",
+    info: int | None = None,
+    trailer: bytes = b"",
 ) -> bytes:
     """A complete PDF whose object ``n`` (1-based) is ``objects[n - 1]``, with a classic
     cross-reference table and trailer (naming object ``info`` as the Info dictionary, if
-    given)."""
+    given, and ending with the extra ``trailer`` entries, e.g. ``/Encrypt`` and ``/ID``)."""
     out = bytearray(header + b"\n%\xe2\xe3\xcf\xd3\n")
     offsets: list[int] = []
     for number, body in enumerate(objects, start=1):
@@ -34,7 +38,13 @@ def document(
     out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
     out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
     info_entry = b" /Info %d 0 R" % info if info is not None else b""
-    out += b"trailer\n<< /Size %d /Root %d 0 R%s >>\n" % (len(objects) + 1, root, info_entry)
+    extra = b" " + trailer if trailer else b""
+    out += b"trailer\n<< /Size %d /Root %d 0 R%s%s >>\n" % (
+        len(objects) + 1,
+        root,
+        info_entry,
+        extra,
+    )
     out += b"startxref\n%d\n%%%%EOF\n" % xref
     return bytes(out)
 
