@@ -264,7 +264,7 @@ def _stop(worker: subprocess.Popen[bytes]) -> None:
 
 
 def _ending(returncode: int | None) -> str:
-    """How a worker ended, in words: "was killed by SIGABRT", "exited with status 3"."""
+    """How a worker ended, in words: "was killed by SIGKILL", "exited with status 3"."""
     if returncode is not None and returncode < 0:
         try:
             name = signal.Signals(-returncode).name

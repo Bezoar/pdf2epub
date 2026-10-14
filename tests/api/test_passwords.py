@@ -698,7 +698,7 @@ def test_the_password_reaches_the_worker_over_its_pipe_only(
 
 
 @pytest.mark.ac("PWD-AC20")
-@pytest.mark.parametrize("action", ["abort", "raise"])
+@pytest.mark.parametrize("action", ["kill", "raise"])
 def test_a_worker_crash_holding_the_password_leaks_it_nowhere(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
