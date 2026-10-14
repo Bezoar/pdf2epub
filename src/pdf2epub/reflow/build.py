@@ -82,7 +82,7 @@ def build_document(
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
     metadata, issues = _metadata(source, options)
-    reasons = {page.page: reason for page in pages if (reason := _fallback(page, options))}
+    reasons = {page.page: reason for page in pages if (reason := fallback_reason(page, options))}
     page_images = _page_images(source, pages, reasons, password)
     blocks, positions, furniture = _body(
         source, pages, images, page_images, wordlist(metadata.language)
@@ -110,7 +110,7 @@ _FALLBACK_MESSAGES = {
 }
 
 
-def _fallback(page: PageText, options: ConversionOptions) -> str | None:
+def fallback_reason(page: PageText, options: ConversionOptions) -> str | None:
     """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
     interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
     (RFL-R14)."""

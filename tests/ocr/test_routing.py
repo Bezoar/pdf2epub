@@ -355,3 +355,23 @@ def test_a_scanned_two_column_page_falls_back_with_column_ordered_text(
         assert sides["left"] in text
         assert sides["right"] in text
         assert text.index(sides["left"]) + len(sides["left"]) <= text.index(sides["right"])
+
+
+@pytest.mark.ac("OCR-AC24")
+def test_fell_back_is_true_for_an_ocred_page_that_becomes_a_page_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Page 2 of the complex-page fixture holds a table (fixturegen/layouts.py): in auto
+    # mode it becomes a page image, whatever text OCR gave it.
+    install(monkeypatch, FakeEngine(no_words))
+
+    report, sink = convert([(BORN_DIGITAL / "complex-page.pdf", "book.pdf")], tmp_path, "always")
+
+    [result] = report.conversions
+    fallbacks = {i.reason: i.pages for i in result.issues if str(i.code) == "page_fallback"}
+    assert fallbacks == {"complex": [2]}
+    assert [(e["page"], e["fell_back"]) for e in ocr_events(sink)] == [
+        (1, False),
+        (2, True),
+        (3, False),
+    ]

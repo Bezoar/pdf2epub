@@ -29,8 +29,9 @@ from PIL import Image
 
 from pdf2epub.ocr import engine as ocr_engine
 from pdf2epub.ocr.engine import Attempt, OcrEngine, OcrLine, OcrPageResult, OcrRequest
-from pdf2epub.options import OcrOptions
+from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Secret
+from pdf2epub.reflow.build import fallback_reason
 from pdf2epub.reflow.columns import Gutter, Piece, column_of, find_gutters, split
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.images import PlacedImage
@@ -47,6 +48,8 @@ ALMOST_NO_TEXT = 0.01
 """A text layer whose lines cover at most this share of the page is almost none (OCR-R1)."""
 LARGE_IMAGE = 0.5
 """An image covering at least this share of the page is a large one: a scan (OCR-R1)."""
+FULL_PAGE = 0.9
+"""An image covering at least this share of the page is a full-page scan."""
 SIGNIFICANT_IMAGE = 0.01
 """An image covering less than this share of the page is insignificant (OCR-R1)."""
 DEFAULT_LANGUAGES = "eng"
@@ -98,10 +101,12 @@ def ocr_pages(
     password: Secret | None,
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
-    options: OcrOptions,
+    conversion: ConversionOptions,
     progress: Progress,
 ) -> OcrOutcome:
-    """OCR the pages that need it, reporting each as it finishes (OCR-R29)."""
+    """OCR the pages that need it, reporting each as it finishes (OCR-R29). A page's
+    ``fell_back`` is the reflow's own decision on the page as OCR left it."""
+    options = conversion.ocr
     routed = [
         (page, trigger)
         for page in pages
@@ -132,10 +137,11 @@ def ocr_pages(
             text = page_text(page, result, OCR_DPI)
             if text is not None:
                 replaced[page.page] = text
+                # Only the scan the text was read from stops being a book image: the
+                # large image that routed the page, or one covering the whole page.
+                scan = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
                 kept_images[page.page] = [
-                    placed
-                    for placed in images.get(page.page, [])
-                    if _share(placed, page) < LARGE_IMAGE
+                    placed for placed in images.get(page.page, []) if _share(placed, page) < scan
                 ]
             progress(
                 "ocr",
@@ -146,7 +152,7 @@ def ocr_pages(
                 confidence=round(result.page_confidence, 4),
                 coverage=round(result.coverage, 4),
                 attempts=len(result.attempts),
-                fell_back=text is not None and text.columns > 1,
+                fell_back=fallback_reason(text or page, conversion) is not None,
             )
     finally:
         document.close()

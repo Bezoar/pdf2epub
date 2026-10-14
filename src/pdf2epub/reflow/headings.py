@@ -20,6 +20,9 @@ _SIZE_STEP = 0.5
 _MAX_LEVEL = 6
 # An OCR'd block is centred when its middle is within this many body sizes of the page's.
 _CENTRED_EM = 1.5
+# An OCR'd block is at the top of its page when it is the first block (furniture aside)
+# and starts within this share of the page's height from its top edge.
+_TOP_SHARE = 0.25
 
 Key = tuple[int, int]
 """(page, index of the block on that page)."""
@@ -42,7 +45,8 @@ def heading_levels(
             above = kept[n - 1][1] if n > 0 else None
             below = kept[n + 1][1] if n + 1 < len(kept) else None
             width = ocr_widths.get(page.page)
-            if width is not None and not (n == 0 or _centred(block, width, typography)):
+            at_top = n == 0 and block.top <= _TOP_SHARE * page.height
+            if width is not None and not (at_top or _centred(block, width, typography)):
                 continue
             if _is_heading(block, above, below, typography):
                 styles[(page.page, index)] = _style(block)
