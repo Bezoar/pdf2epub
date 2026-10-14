@@ -5,6 +5,7 @@ or the core's ``SourcePasswordProvider``."""
 import json
 import logging
 import shutil
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -328,6 +329,220 @@ def test_owner_password_lifts_the_restriction(
     assert result.issues[0].message == f"converted using owner password from {label}"
     assert result.password_source == label
     assert (tmp_path / "locked.epub").is_file()
+
+
+# --- Refused before any password is tried (PWD-R2 to PWD-R4) -----------------------------
+
+DRM_HINT = "open it in the vendor's reader; pdf2epub will not bypass DRM"
+UNSUPPORTED_HINT = "this PDF's encryption is not supported"
+VENDOR_HANDLERS = [
+    ENCRYPTED / f"{name}.pdf" for name in ("ebx-handler", "adobe-pubsec", "fopn-foweb")
+]
+UNKNOWN_CRYPT_FILTER = ENCRYPTED / "unknown-crypt-filter.pdf"
+LCP = FIXTURES / "drm-wrappers" / "sample.lcpdf"
+ACSM = FIXTURES / "drm-wrappers" / "sample.acsm"
+
+
+@pytest.mark.ac("PWD-AC4")
+@pytest.mark.parametrize("fixture", VENDOR_HANDLERS, ids=lambda p: p.stem)
+def test_a_vendor_security_handler_is_refused_before_any_password(
+    tmp_path: Path, fixture: Path
+) -> None:
+    pdf = copy(fixture, tmp_path)
+    provider = ScriptedProvider(("hunter2", "env"))
+
+    report, sink = run([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.severity, i.hint) for i in result.issues] == [
+        ("drm_protected", "error", DRM_HINT)
+    ]
+    assert provider.calls == []
+    assert result.password_source is None
+    assert not (tmp_path / f"{fixture.stem}.epub").exists()
+    assert [e["issue"]["code"] for e in sink.of_type("issue")] == ["drm_protected"]
+
+
+@pytest.mark.ac("PWD-AC5")
+@pytest.mark.parametrize("fixture", [LCP, ACSM], ids=["lcp", "acsm"])
+@pytest.mark.parametrize("from_list", [False, True], ids=["named", "listed"])
+def test_an_explicitly_named_drm_wrapper_is_refused_drm_protected(
+    tmp_path: Path, fixture: Path, from_list: bool
+) -> None:
+    wrapper = copy(fixture, tmp_path)
+    provider = ScriptedProvider(("hunter2", "env"))
+
+    plan = plan_batch([InputSpec(wrapper, from_list=from_list)], DiscoveryOptions())
+    report = run_batch(
+        plan,
+        BatchOptions(isolation="inprocess"),
+        ConversionOptions(),
+        RecordingSink(),
+        passwords=provider,
+    )
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.hint) for i in result.issues] == [("drm_protected", DRM_HINT)]
+    assert provider.calls == []
+    assert not (tmp_path / f"{fixture.stem}.epub").exists()
+
+
+def test_a_wrapper_found_by_a_folder_scan_is_still_not_a_pdf(tmp_path: Path) -> None:
+    # BAT-R4: only an explicitly named wrapper is passed on to be refused drm_protected.
+    copy(LCP, tmp_path, "renamed.pdf")
+
+    report, _ = run([tmp_path])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
+def test_a_scanned_wrapper_holding_pdf_magic_is_still_not_a_pdf(tmp_path: Path) -> None:
+    # A wrapper is never a PDF, even with %PDF- in its first 1024 bytes (BAT-R4).
+    with zipfile.ZipFile(tmp_path / "book.pdf", "w") as archive:
+        archive.writestr("a.pdf", b"%PDF-1.7\n")
+        archive.writestr("META-INF/license.lcpl", b"{}")
+
+    report, _ = run([tmp_path])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
+@pytest.mark.parametrize(
+    "xml",
+    [
+        b'<?xml version="1.0"?><other xmlns:a="http://ns.adobe.com/adept">'
+        b"<a:fulfillmentToken/></other>",
+        b'<fulfillmentToken xmlns="http://example.invalid/not-adept"/>',
+        b'<?xml version="1.0"?><!DOCTYPE fulfillmentToken [<!ENTITY e "x">]>'
+        b'<fulfillmentToken xmlns="http://ns.adobe.com/adept" a="&e;"/>',
+    ],
+    ids=["nested-token", "other-namespace", "with-dtd"],
+)
+def test_xml_that_is_not_an_adept_token_is_not_a_pdf(tmp_path: Path, xml: bytes) -> None:
+    named = tmp_path / "token.acsm"
+    named.write_bytes(xml)
+
+    report, _ = run([named])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
+TOKEN = (FIXTURES / "drm-wrappers" / "sample.acsm").read_bytes()
+XML_DECLARATION = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+
+
+@pytest.mark.ac("PWD-AC5")
+@pytest.mark.parametrize(
+    "prolog",
+    [b"<!-- not a <!DOCTYPE here, nor an <!ENTITY -->\n", b"<!--" + b" " * 8192 + b"-->\n"],
+    ids=["dtd-words-in-a-comment", "long-prolog"],
+)
+def test_an_adept_token_after_any_prolog_is_refused_drm_protected(
+    tmp_path: Path, prolog: bytes
+) -> None:
+    token = tmp_path / "token.acsm"
+    token.write_bytes(TOKEN.replace(XML_DECLARATION, XML_DECLARATION + prolog, 1))
+
+    report, _ = run([token])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["drm_protected"]
+
+
+@pytest.mark.ac("PWD-AC5")
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_a_utf16_adept_token_is_refused_drm_protected(tmp_path: Path, encoding: str) -> None:
+    token = tmp_path / "token.acsm"
+    text = TOKEN.decode("utf-8").replace('encoding="UTF-8"', 'encoding="UTF-16"')
+    token.write_bytes("﻿".encode(encoding) + text.encode(encoding))
+
+    report, _ = run([token])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["drm_protected"]
+
+
+def test_a_zip_without_an_lcp_licence_is_not_a_pdf(tmp_path: Path) -> None:
+    archive = tmp_path / "book.lcpdf"
+    with zipfile.ZipFile(archive, "w") as zip_file:
+        zip_file.writestr("META-INF/container.xml", "<container/>")
+
+    report, _ = run([archive])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
+@pytest.mark.ac("PWD-AC6")
+def test_an_unknown_crypt_filter_fails_unsupported_encryption_untried(tmp_path: Path) -> None:
+    pdf = copy(UNKNOWN_CRYPT_FILTER, tmp_path)
+    provider = ScriptedProvider(("hunter2", "env"))
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.severity, i.hint) for i in result.issues] == [
+        ("unsupported_encryption", "error", UNSUPPORTED_HINT)
+    ]
+    assert provider.calls == []
+    assert not (tmp_path / "unknown-crypt-filter.epub").exists()
+
+
+@pytest.mark.ac("PWD-AC6")
+def test_a_crypt_filter_name_missing_from_cf_fails_unsupported_untried(tmp_path: Path) -> None:
+    # The fixture with /StmF and /StrF naming a filter /CF doesn't hold (same length, so
+    # the cross-reference offsets still hold).
+    data = UNKNOWN_CRYPT_FILTER.read_bytes()
+    assert data.count(b"/StmF /StdCF /StrF /StdCF") == 1
+    pdf = tmp_path / "missing-crypt-filter.pdf"
+    pdf.write_bytes(data.replace(b"/StmF /StdCF /StrF /StdCF", b"/StmF /NoXCF /StrF /NoXCF"))
+    provider = ScriptedProvider(("hunter2", "env"))
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert [(i.code, i.hint) for i in result.issues] == [
+        ("unsupported_encryption", UNSUPPORTED_HINT)
+    ]
+    assert provider.calls == []
+
+
+@pytest.mark.ac("PWD-AC23")
+def test_each_access_issue_carries_its_hint(tmp_path: Path) -> None:
+    # One batch, one file per access issue. The restricted file gets its user password,
+    # the others two wrong ones, so no file gets past its access check.
+    missing = copy(AES128, tmp_path)
+    wrong = copy(AES256, tmp_path)
+    restricted = restricted_copy(tmp_path / "locked.pdf", "u", "o")
+    drm = copy(VENDOR_HANDLERS[0], tmp_path)
+    unsupported = copy(UNKNOWN_CRYPT_FILTER, tmp_path)
+
+    class PerFile:
+        prompt: Callable[[Path, int], Secret | None] | None = None
+
+        def candidates(self, path: Path) -> list[Candidate]:
+            if path == missing:
+                return []
+            if path == restricted:
+                return [Candidate(Secret("u"), "cli #1")]
+            return [Candidate(Secret("nope"), "cli #1"), Candidate(Secret("nah"), "env")]
+
+    report, _ = run([missing, wrong, restricted, drm, unsupported], PerFile())
+
+    hints = {Path(r.source).name: [(i.code, i.hint) for i in r.issues] for r in report.conversions}
+    assert hints == {
+        "aes128-user.pdf": [("missing_password", "supply the password for this file")],
+        "aes256-user.pdf": [("wrong_password", "check the password; sources tried: cli #1, env")],
+        "locked.pdf": [("restricted", "supply the owner password")],
+        "ebx-handler.pdf": [("drm_protected", DRM_HINT)],
+        "unknown-crypt-filter.pdf": [("unsupported_encryption", UNSUPPORTED_HINT)],
+    }
 
 
 @pytest.mark.ac("PWD-AC10")

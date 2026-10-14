@@ -1,6 +1,6 @@
 # Test assets and measurement
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md), [epub](epub.md) · **Decisions:** [Implementation language and packaging](https://github.com/Bezoar/pdf2epub/issues/7), [Free real-world PDF corpora for evaluation](https://github.com/Bezoar/pdf2epub/issues/11), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [Plan and build-ticket format](https://github.com/Bezoar/pdf2epub/issues/16)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md), [epub](epub.md) · **Decisions:** [Implementation language and packaging](https://github.com/Bezoar/pdf2epub/issues/7), [Free real-world PDF corpora for evaluation](https://github.com/Bezoar/pdf2epub/issues/11), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [Plan and build-ticket format](https://github.com/Bezoar/pdf2epub/issues/16)
 
 This spec covers the product's test **assets** and **measurements**: synthetic fixtures, the committed public-domain sample, the real-world smoke set, how OCR accuracy is measured, and the CI checks that tie tests to specs (the acceptance-criterion marker gate, event-schema validation, epubcheck). How to write tests (red-green, what counts as a tautological test, coverage rules, test layout) is process, and lives in [coding instructions](../instructions/coding.md). Which fixture each build ticket creates is recorded in the plan's fixture table ([plan](../plans/v1.md)).
 
@@ -120,7 +120,9 @@ S10–S12 run in the batch with their passwords (`view`, `master`, `openpassword
 
 ## Open points
 
-- Manifest path `tests/corpus/smoke.toml` and cache default `~/.cache/pdf2epub-corpus/` follow the corpora research; any other location works if the plan's fixture table says so.
-- S15 may be repairable or not depending on the parser; its `expect` accepts either `corrupt_pdf` failure or `repaired_pdf` conversion until the build pins it.
-- The non-Standard-handler fixture in [TST-R3](#tst-r3) is a synthetic PDF whose Encrypt dictionary names a vendor filter; it contains no vendor DRM code and needs none.
-- [TST-R15](#tst-r15)'s per-page text comparison assumes the EPUB keeps page-break markers so text can be split back into pages ([epub](epub.md)).
+The owner accepted points OP54–OP57 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP54** Manifest path `tests/corpus/smoke.toml` and cache default `~/.cache/pdf2epub-corpus/` follow the corpora research; any other location works if the plan's fixture table says so.
+- **OP55** S15 may be repairable or not depending on the parser; its `expect` accepts either `corrupt_pdf` failure or `repaired_pdf` conversion until the build pins it.
+- **OP56** The non-Standard-handler fixture in [TST-R3](#tst-r3) is a synthetic PDF whose Encrypt dictionary names a vendor filter; it contains no vendor DRM code and needs none.
+- **OP57** [TST-R15](#tst-r15)'s per-page text comparison assumes the EPUB keeps page-break markers so text can be split back into pages ([epub](epub.md)).

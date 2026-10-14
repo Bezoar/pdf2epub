@@ -1,6 +1,6 @@
 # Batches
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [passwords](passwords.md) · **Decisions:** [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [passwords](passwords.md) · **Decisions:** [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4)
 
 This spec owns the rules of a batch: how inputs become planned conversions, where each EPUB goes, when a conversion is skipped, how a batch is resumed and interrupted, how conversions are isolated and timed out, and the exit code. Every run, even of one file, uses this machinery. The contract types it fires (issue codes, events, the batch report) are owned by [api](api.md); flag names and the human report are owned by [cli](cli.md); password rules by [passwords](passwords.md).
 
@@ -133,13 +133,15 @@ Fixture names refer to the fixtures in [testing](testing.md). Unless stated, run
 
 ## Open points
 
-- Positional inputs come before files-from entries when both are given; the decision said only "as given".
-- The PDF content check looks for `%PDF-` within the first 1024 bytes (the tolerance common PDF readers use).
-- Folder inputs mirror their relative tree under `output` even without `--recursive` (one level: no subfolders exist to mirror).
-- The conversion running when the batch is cancelled is reported `not_attempted` (outcome `skipped`), like the unstarted ones; a rerun converts it.
-- Grace period between SIGTERM and SIGKILL is 5 seconds.
-- `timeout` is not enforced in `inprocess` isolation (there is no worker to kill).
-- A second SIGINT may leave a hidden temporary file in a destination folder; it is never at a destination path.
-- A usage error emits no events at all, so `exit_code` 2 never appears in a `batch_finished` event.
+The owner accepted points OP10–OP17 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review). The two points after OP17 were added during the build by [#25](https://github.com/Bezoar/pdf2epub/issues/25); the owner accepted them in the same review session.
+
+- **OP10** Positional inputs come before files-from entries when both are given; the decision said only "as given".
+- **OP11** The PDF content check looks for `%PDF-` within the first 1024 bytes (the tolerance common PDF readers use).
+- **OP12** Folder inputs mirror their relative tree under `output` even without `--recursive` (one level: no subfolders exist to mirror).
+- **OP13** The conversion running when the batch is cancelled is reported `not_attempted` (outcome `skipped`), like the unstarted ones; a rerun converts it.
+- **OP14** Grace period between SIGTERM and SIGKILL is 5 seconds.
+- **OP15** `timeout` is not enforced in `inprocess` isolation (there is no worker to kill).
+- **OP16** A second SIGINT may leave a hidden temporary file in a destination folder; it is never at a destination path.
+- **OP17** A usage error emits no events at all, so `exit_code` 2 never appears in a `batch_finished` event.
 - `plan_batch` records `output_exists` (planning needs only `DiscoveryOptions`, [API-R29](api.md#api-r29)); `run_batch` drops it when `BatchOptions.overwrite` is set, so that conversion runs.
 - Only a conversion that would run claims its destination for [BAT-R11](#bat-r11): a `not_a_pdf` file never makes a later PDF an `output_collision`.

@@ -1,6 +1,6 @@
 # EPUB
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [reflow](reflow.md), [batch](batch.md) · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [reflow](reflow.md), [batch](batch.md) · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [ADR 0001](../adr/0001-python-core.md)
 
 This spec owns pdf2epub's own EPUB 3 writer: the container layout, package document, navigation, chapter XHTML and stylesheet, page-image fallback markup, image and cover handling, metadata, deterministic output, and validation. It renders only from the document model defined in [reflow](reflow.md#rfl-r34).
 
@@ -192,9 +192,11 @@ A failed check is a bug: the conversion fails with [`internal_error`](api.md#cod
 
 ## Open points
 
-- `dcterms:modified` is derived from the PDF's dates so output is deterministic, rather than using the conversion time.
-- The UUIDv5 namespace UUID for `dc:identifier` is to be generated once and fixed in the code; it is not chosen here.
-- The ~300 KB split threshold is carried over from the archived spec.
-- How visually hidden searchable text is styled (for example off-screen clipping) is left to the build. Reader support varies, so the PR should check Apple Books and Calibre.
-- JPEG quality 85 and the 1600 px long edge are owned by [reflow](reflow.md#rfl-r27). The writer embeds images exactly as given.
-- A failed built-in check is treated as `internal_error`, not a new issue code.
+The owner accepted points OP41–OP46 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP41** `dcterms:modified` is derived from the PDF's dates so output is deterministic, rather than using the conversion time.
+- **OP42** The UUIDv5 namespace UUID for `dc:identifier` is to be generated once and fixed in the code; it is not chosen here.
+- **OP43** The ~300 KB split threshold is carried over from the archived spec.
+- **OP44** How visually hidden searchable text is styled (for example off-screen clipping) is left to the build. Reader support varies, so the PR should check Apple Books and Calibre.
+- **OP45** JPEG quality 85 and the 1600 px long edge are owned by [reflow](reflow.md#rfl-r27). The writer embeds images exactly as given.
+- **OP46** A failed built-in check is treated as `internal_error`, not a new issue code.

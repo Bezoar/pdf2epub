@@ -290,6 +290,8 @@ def test_interactive_ignores_bad_lines_and_takes_the_matching_answer(
     cli.send("not json")
     cli.send(json.dumps({"type": "password", "request_id": "other", "password": "x"}))
     cli.send(json.dumps({"type": "unknown"}))
+    # No "password" field: malformed, not a skip.
+    cli.send(json.dumps({"type": "password", "request_id": request["request_id"]}))
     cli.send(
         json.dumps({"type": "password", "request_id": request["request_id"], "password": PASSWORD})
     )

@@ -186,7 +186,12 @@ class InteractivePrompt:
             return
         if kind == "password":
             request_id, value = message.get("request_id"), message.get("password")
-            if isinstance(request_id, str) and (value is None or isinstance(value, str)):
+            # Only an explicit null skips: a message without "password" is malformed.
+            if (
+                isinstance(request_id, str)
+                and "password" in message
+                and (value is None or isinstance(value, str))
+            ):
                 self._answers.put((request_id, None if value is None else Secret(value)))
                 return
             log.debug("ignored a malformed password message on stdin")

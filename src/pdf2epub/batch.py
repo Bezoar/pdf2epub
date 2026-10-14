@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-from pdf2epub.access import PROMPT_LABEL, AccessDenied, needs_password, unlock
+from pdf2epub.access import PROMPT_LABEL, AccessDenied, is_drm_wrapper, needs_password, unlock
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
 from pdf2epub.errors import UsageError
@@ -112,7 +112,7 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
         if key in seen:
             continue  # BAT-R5: planned once, at its first occurrence
         seen.add(key)
-        issues = _content_issues(source)
+        issues = _content_issues(source, explicit=folder is None)
         destination: Path | None = None
         if not any(issue.code is IssueCode.NOT_FOUND for issue in issues):
             destination = _destination(source, folder, options, single)
@@ -222,9 +222,12 @@ def _natural_key(path: Path, folder: Path) -> list[tuple[int, int | str]]:
     ]
 
 
-def _content_issues(source: Path) -> list[Issue]:
+def _content_issues(source: Path, explicit: bool) -> list[Issue]:
     """The planning-time issues of one file: ``not_found`` when it can't be read,
-    ``not_a_pdf`` when it fails the content check (BAT-R4)."""
+    ``not_a_pdf`` when it fails the content check (BAT-R4). A DRM wrapper (PWD-R3) is
+    never a PDF, whatever bytes it holds: an ``explicit`` one (named, or listed in a
+    files-from list) passes, so that its conversion refuses it as ``drm_protected``; one
+    found by a folder scan is ``not_a_pdf``."""
     try:
         with source.open("rb") as file:
             head = file.read(MAGIC_WINDOW)
@@ -233,6 +236,8 @@ def _content_issues(source: Path) -> list[Issue]:
     except OSError as error:
         reason = error.strerror or str(error)
         return [Issue(IssueCode.NOT_FOUND, f"Cannot read {source}: {reason}.")]
+    if is_drm_wrapper(source):
+        return [] if explicit else [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
     if PDF_MAGIC not in head:
         return [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
     return []
@@ -328,7 +333,12 @@ def run_batch(
             )
         return convert(planned, conversion_options, reporter, cancel, found)
 
-    def finish(result: ConversionResult) -> None:
+    def finish(result: ConversionResult, unrun: bool = False) -> None:
+        """Report ``result``. An ``unrun`` result was made here, without a conversion
+        reporting its issues as they happened, so they are emitted now (API-R17)."""
+        if unrun:
+            for issue in result.issues:
+                emitter.emit("issue", id=result.id, issue=issue.to_dict())
         emitter.emit("conversion_finished", **result.to_dict())
         results[result.id] = result
 
@@ -338,7 +348,7 @@ def run_batch(
         if planned.id in settled:
             continue
         if cancel is not None and cancel.cancelled:
-            finish(_not_attempted(planned))
+            finish(_not_attempted(planned), unrun=True)
             continue
         found = candidates.get(planned.id, ())
         denied = _denied(planned, found) if planned.id in candidates else None
@@ -349,14 +359,14 @@ def run_batch(
         if denied is not None:
             # PWD-R22: no prompt is possible, so the user is told what a rerun needs.
             emitter.emit("password_required", id=planned.id, sources_tried=denied.sources_tried)
-            finish(_refused(planned, denied))
+            finish(_refused(planned, denied), unrun=True)
         else:
             finish(run(planned, found))
 
     # PWD-R21: the conversions that need a prompt, in input order.
     for planned in deferred:
         if cancel is not None and cancel.cancelled:
-            finish(_not_attempted(planned))
+            finish(_not_attempted(planned), unrun=True)
             continue
         emitter.emit("conversion_started", id=planned.id)
         found = candidates[planned.id]
@@ -366,9 +376,9 @@ def run_batch(
         except AccessDenied as error:
             if cancel is not None and cancel.cancelled:
                 # The prompt ended because the batch was cancelled while it waited.
-                finish(_interrupted(planned, started))
+                finish(_interrupted(planned, started), unrun=True)
             else:
-                finish(_refused(planned, error, started))
+                finish(_refused(planned, error, started), unrun=True)
             continue
         if access.source == PROMPT_LABEL and access.password is not None:
             # The answer travels to the conversion as one more candidate, after the

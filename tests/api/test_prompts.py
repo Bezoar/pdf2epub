@@ -142,6 +142,25 @@ def test_skipping_the_prompt_after_supplied_candidates_failed_fails_wrong_passwo
     assert issue.hint == "check the password; sources tried: cli #1"
 
 
+def test_an_answer_repeating_a_tried_value_uses_an_attempt_but_is_not_tried_again(
+    tmp_path: Path,
+) -> None:
+    """PWD-R12: a repeated value is tried once, under its first label."""
+    pdf = copy(AES256, tmp_path / "enc.pdf")
+    provider = PromptingProvider(["nope", "again", "again"], ("nope", "cli #1"))
+
+    report, _ = run([pdf], provider)
+
+    assert provider.calls == [("enc.pdf", 1), ("enc.pdf", 2), ("enc.pdf", 3)]
+    [issue] = report.conversions[0].issues
+    assert issue.hint == "check the password; sources tried: cli #1, prompt"
+
+    provider = PromptingProvider(["nope", None], ("nope", "cli #1"))
+    report, _ = run([pdf], provider)
+    [issue] = report.conversions[0].issues
+    assert issue.hint == "check the password; sources tried: cli #1"
+
+
 @pytest.mark.parametrize("isolation", ["inprocess", "subprocess"])
 def test_a_right_answer_on_the_second_attempt_converts_from_the_prompt(
     tmp_path: Path, isolation: Literal["subprocess", "inprocess"]
@@ -213,6 +232,8 @@ def test_without_a_prompt_password_required_names_the_sources_tried(tmp_path: Pa
     assert required < types.index(("conversion_finished", 0))
     [event] = sink.of_type("password_required")
     assert event["sources_tried"] == ["cli #1"]
+    # The refusal is streamed as an issue event too, before conversion_finished.
+    assert types.index(("issue", 0)) < types.index(("conversion_finished", 0))
     [enc_result, plain_result] = report.conversions
     assert enc_result.outcome is Outcome.FAILED
     assert [i.code for i in enc_result.issues] == ["wrong_password"]
