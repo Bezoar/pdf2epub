@@ -48,8 +48,10 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
       - name: uv tool install
         env:
+          # A pull request's commit lives in its head repository, which may be a fork.
+          REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: uv tool install "git+https://github.com/${{ github.repository }}@${COMMIT}"
+        run: uv tool install "git+https://github.com/${REPOSITORY}@${COMMIT}"
       - name: Run the installed command
         run: |
           export PATH="$(uv tool dir --bin):$PATH"

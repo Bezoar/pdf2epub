@@ -33,8 +33,11 @@ _TESSERACT = {
     "ti": "tir", "to": "ton", "tr": "tur", "tt": "tat", "ug": "uig", "uk": "ukr",
     "ur": "urd", "uz": "uzb", "vi": "vie", "yi": "yid", "yo": "yor", "zh": "chi_sim",
 }  # fmt: skip
-# Languages with no ISO 639-1 code, whose BCP 47 tag is already Tesseract's name.
-_THREE_LETTER = frozenset({"ceb", "chr", "fil", "grc", "kmr", "syr"})
+# Three-letter (ISO 639-2/3) primary subtags that are already Tesseract's name: those of
+# languages with no ISO 639-1 code, and the three-letter codes of those that have one.
+_THREE_LETTER = frozenset({"ceb", "chr", "fil", "grc", "kmr", "syr"}) | {
+    code for code in _TESSERACT.values() if len(code) == 3
+}
 # Tesseract's separate data for a script or region of a language, by (language, subtag).
 _VARIANTS = {
     ("zh", "hant"): "chi_tra", ("zh", "tw"): "chi_tra", ("zh", "hk"): "chi_tra",

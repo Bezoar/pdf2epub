@@ -88,7 +88,9 @@ class Tesseract:
         """The names of Tesseract's parameters, from ``--print-parameters``; None if it
         lists none."""
         lines = self._probe(["--print-parameters"]).splitlines()
-        names = {line.split()[0] for line in lines if "\t" in line and line.split()}
+        # A heading line (``Tesseract parameters:``), then one ``name value description``
+        # line per parameter.
+        names = {line.split()[0] for line in lines if line.split() and not line.endswith(":")}
         return frozenset(names) or None
 
     def recognise(self, request: OcrRequest) -> OcrPageResult:

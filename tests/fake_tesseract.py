@@ -46,9 +46,12 @@ def started(path: Path, body: str) -> str:
     )
 
 
-def fake_tesseract(folder: Path, body: str, log: Path | None = None) -> Path:
+def fake_tesseract(
+    folder: Path, body: str, log: Path | None = None, parameters: tuple[str, ...] = PARAMETERS
+) -> Path:
     """Write a fake ``tesseract`` into ``folder`` and return its path. With ``log``, every
-    call appends its arguments (without the program) to ``log`` as a JSON line."""
+    call appends its arguments (without the program) to ``log`` as a JSON line.
+    ``--print-parameters`` lists ``parameters``."""
     folder.mkdir(parents=True, exist_ok=True)
     program = folder / "tesseract"
     logging = (
@@ -57,14 +60,14 @@ def fake_tesseract(folder: Path, body: str, log: Path | None = None) -> Path:
         if log is not None
         else ""
     )
-    parameters = "".join(f"{name}\\t0\\tA parameter\\n" for name in PARAMETERS)
+    listing = "".join(f"{name}\\t0\\tA parameter\\n" for name in parameters)
     program.write_text(
         f"#!{sys.executable} -I\n"
         "import json, os, sys, time\n"
         "argv = sys.argv\n"
         f"{logging}"
         "if '--print-parameters' in argv:\n"
-        f"    print('Tesseract parameters:\\n{parameters}', end='')\n"
+        f"    print('Tesseract parameters:\\n{listing}', end='')\n"
         "    sys.exit(0)\n"
         "if '--version' in argv:\n"
         "    print('tesseract 5.3.4')\n"

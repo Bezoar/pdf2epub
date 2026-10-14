@@ -438,10 +438,16 @@ def _preflight(
 
 def check_engine_options(options: OcrOptions, engine: EngineProbe) -> None:
     """Raise ``UsageError`` for an engine option the probed engine doesn't take
-    (OCR-R25). Keys may carry the ``tesseract.`` namespace. With no engine, or one that
-    couldn't list its options, nothing can be checked: the options are ignored."""
-    if engine.engine is None or engine.parameters is None:
+    (OCR-R25). Keys may carry the ``tesseract.`` namespace. With no engine, the options
+    can't be checked and are ignored; an engine that can't list its options can't take
+    any."""
+    if engine.engine is None or not options.engine_options:
         return
+    if engine.parameters is None:
+        raise UsageError(
+            "OCR engine options were given, but Tesseract did not list the parameters it "
+            "takes (`tesseract --print-parameters`), so they can't be checked"
+        )
     unknown = [
         key
         for key in options.engine_options

@@ -39,8 +39,13 @@ def test_ci_installs_from_git_on_clean_macos_and_linux_runners() -> None:
     runs = [str(step.get("run", "")) for step in steps]
     assert not [r for r in runs if "uv sync" in r or "pip install" in r]
     install = next(i for i, run in enumerate(runs) if INSTALL.search(run))
-    # The commit under test, from the repository itself.
-    assert "${{ github.repository }}@" in runs[install]
+    # The commit under test, from the repository it lives in (a fork's, for its PRs).
+    assert "${REPOSITORY}@${COMMIT}" in runs[install]
+    env = steps[install]["env"]
+    assert env["REPOSITORY"].replace(" ", "") == (
+        "${{github.event.pull_request.head.repo.full_name||github.repository}}"
+    )
+    assert env["COMMIT"].replace(" ", "") == "${{github.event.pull_request.head.sha||github.sha}}"
     assert any(re.search(r"^pdf2epub --version$", run, re.M) for run in runs[install:])
 
 

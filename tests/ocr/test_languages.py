@@ -78,7 +78,14 @@ def test_the_ocr_language_follows_its_precedence(
 
 @pytest.mark.parametrize(
     ("tag", "expected"),
-    [("de-DE", "deu"), ("zh-Hant", "chi_tra"), ("zh-CN", "chi_sim"), ("sr-Latn", "srp_latn")],
+    [
+        ("de-DE", "deu"),
+        ("deu", "deu"),
+        ("fil", "fil"),
+        ("zh-Hant", "chi_tra"),
+        ("zh-CN", "chi_sim"),
+        ("sr-Latn", "srp_latn"),
+    ],
 )
 def test_book_language_tags_map_to_tesseract_codes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tag: str, expected: str

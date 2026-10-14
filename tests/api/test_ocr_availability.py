@@ -134,6 +134,21 @@ def test_an_unknown_engine_option_is_a_usage_error_before_any_event(tmp_path: Pa
     assert not list(tmp_path.glob("*.epub"))
 
 
+def test_engine_options_are_refused_when_tesseract_lists_no_parameters(tmp_path: Path) -> None:
+    program = fake_tesseract(tmp_path / "bin", NO_WORDS, parameters=())
+    sink = RecordingSink()
+    shutil.copyfile(SCANNED / "image-only.pdf", tmp_path / "a.pdf")
+    plan = plan_batch([InputSpec(tmp_path / "a.pdf")], DiscoveryOptions())
+    options = OcrOptions(
+        tesseract_path=program, engine_options={"tesseract.preserve_interword_spaces": "1"}
+    )
+
+    with pytest.raises(UsageError, match="print-parameters"):
+        run_batch(plan, BatchOptions(isolation="inprocess"), ConversionOptions(ocr=options), sink)
+
+    assert sink.events == []
+
+
 def test_a_known_engine_option_reaches_tesseract_without_its_namespace(tmp_path: Path) -> None:
     log = tmp_path / "calls.jsonl"
     program = fake_tesseract(tmp_path / "bin", NO_WORDS, log=log)
