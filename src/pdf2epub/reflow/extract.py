@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 
 import numpy as np
+from numpy.typing import NDArray
 from pdfminer.layout import (
     LAParams,
     LTAnno,
@@ -371,7 +372,7 @@ def _graphics(layout: LTPage, lines: list[Line]) -> Graphics:
     return Graphics(rules, covered, glyphs, maths)
 
 
-def _cover(mask: np.ndarray, bbox: tuple[float, float, float, float], step: float) -> None:
+def _cover(mask: NDArray[np.bool_], bbox: tuple[float, float, float, float], step: float) -> None:
     x0, y0, x1, y1 = (max(0.0, value) / step for value in bbox)
     mask[int(y0) : math.ceil(y1), int(x0) : math.ceil(x1)] = True
 

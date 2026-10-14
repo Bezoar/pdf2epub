@@ -16,6 +16,7 @@ from itertools import pairwise
 from statistics import median
 
 import numpy as np
+from numpy.typing import NDArray
 
 # The projection's resolution, in points, made coarser when the text spans so wide
 # a stretch (a hostile page can be enormous) that it would need more bins than this.
@@ -98,7 +99,7 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
     return []
 
 
-def _gaps(empty: np.ndarray, left: float, step: float, min_width: float) -> list[Gutter]:
+def _gaps(empty: NDArray[np.bool_], left: float, step: float, min_width: float) -> list[Gutter]:
     """Runs of nearly empty bins at least ``min_width`` wide, not touching either edge."""
     gaps: list[Gutter] = []
     start: int | None = None
