@@ -48,3 +48,13 @@ def test_usage_error_exits_2_with_a_reason_and_converts_nothing(
     assert proc.stdout == ""
     assert sorted(p.name for p in tmp_path.iterdir()) == ["a.pdf", "b.pdf", "existing.txt"]
     assert (tmp_path / "existing.txt").read_bytes() == b"not touched"
+
+
+def test_an_empty_files_from_list_is_an_empty_batch_not_a_usage_error(tmp_path: Path) -> None:
+    # CLI-R7: only "no INPUT and no --files-from" is a usage error.
+    (tmp_path / "list.txt").write_text("# nothing to convert yet\n", encoding="utf-8")
+
+    proc = run(["--files-from", "list.txt"], tmp_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr.splitlines()[0] == "Converted: 0  Skipped: 0  Failed: 0"

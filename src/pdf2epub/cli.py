@@ -92,11 +92,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
 
     try:
+        if not args.inputs and args.files_from is None:
+            raise UsageError("no inputs: name a PDF file or folder, or use --files-from")
         inputs = [InputSpec(path) for path in args.inputs]
         if args.files_from is not None:
             inputs.extend(read_files_from(args.files_from))
-        if not inputs:
-            raise UsageError("no inputs: name a PDF file or folder, or use --files-from")
         plan = plan_batch(inputs, DiscoveryOptions(**discovery_fields))
     except UsageError as error:
         parser.error(str(error))  # exits 2 with the reason on stderr (BAT-R25)
