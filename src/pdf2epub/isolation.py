@@ -104,6 +104,9 @@ def run_in_worker(
         worker.wait()
     except _Stopped as stop:
         _stop(worker)
+        # Messages the worker wrote before it ended may still sit unread in the pipe: one
+        # may name the temporary file that SIGKILL left behind.
+        session.find_temporary(worker.stdout.read())
         stopped = True
         session.issues.append(stop.issue)
         reporter.issue(stop.issue)
@@ -166,6 +169,17 @@ class _Session:
         for line in lines:
             if line.strip():
                 self._handle(json.loads(line))
+
+    def find_temporary(self, data: bytes) -> None:
+        """Note the temporary file named in messages that will not be handled (the worker
+        was stopped), passing nothing on and ignoring anything malformed."""
+        for line in (self._pending + data).split(b"\n"):
+            try:
+                message = json.loads(line)
+                if message["type"] == "temporary":
+                    self.temporary = Path(message["path"])
+            except (ValueError, KeyError, TypeError):
+                continue
 
     def _handle(self, message: dict[str, Any]) -> None:
         type_ = message.pop("type")

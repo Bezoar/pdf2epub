@@ -310,3 +310,32 @@ def test_a_rename_asked_for_after_the_time_limit_is_a_timeout(tmp_path: Path) ->
     assert report.exit_code == 1
     assert not pdf.with_suffix(".epub").exists()
     assert leftovers(tmp_path) == []
+
+
+@pytest.mark.ac("BAT-AC11")
+def test_a_killed_worker_leaves_no_temporary_file_even_if_its_message_was_unread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker ignores SIGTERM, so it is killed after the grace. The sink holds the
+    parent from the last ``reflow`` event until the worker's temporary file exists, so the
+    message naming that file is still unread in the pipe when the parent stops it."""
+    [pdf] = copies(NOVEL, tmp_path, "a.pdf")
+    term = tmp_path.parent / f"{tmp_path.name}-term"
+    use_hooks(monkeypatch, {"a.pdf": {"action": "sleep", "seconds": 0, "on_term": str(term)}})
+    cancel = CancelToken()
+
+    def sink(event: dict[str, Any]) -> None:
+        if event["type"] == "progress" and event["stage"] == "reflow":
+            cancel.cancel()
+            deadline = time.monotonic() + 30
+            while not leftovers(tmp_path) and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert leftovers(tmp_path), "the worker never wrote its temporary file"
+
+    report = run([pdf], "subprocess", sink, cancel=cancel)
+
+    assert term.exists(), "the worker got SIGTERM and ignored it"
+    [result] = report.conversions
+    assert [issue.code for issue in result.issues] == [IssueCode.NOT_ATTEMPTED]
+    assert leftovers(tmp_path) == []
+    assert not pdf.with_suffix(".epub").exists()
