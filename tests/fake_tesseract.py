@@ -37,11 +37,12 @@ def record(path: Path) -> str:
 
 
 def started(path: Path, body: str) -> str:
-    """``body``, run after writing the fake's process ID and start time (``time.time()``)
-    to ``path`` as a JSON line."""
+    """``body``, run after writing the fake's process ID, start time (``time.time()``) and
+    arguments (``argv``, without the program) to ``path`` as a JSON line."""
     return (
         f"with open({str(path)!r}, 'a', encoding='utf-8') as out:\n"
-        "    out.write(json.dumps({'pid': os.getpid(), 'time': time.time()}) + '\\n')\n"
+        "    run = {'pid': os.getpid(), 'time': time.time(), 'argv': argv[1:]}\n"
+        "    out.write(json.dumps(run) + '\\n')\n"
         f"{body}"
     )
 
