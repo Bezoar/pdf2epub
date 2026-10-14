@@ -11,6 +11,7 @@ decoded here).
 
 import io
 import logging
+import zlib
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -88,7 +89,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
                 _check_images(layout)
             except ResourceLimitExceeded as error:
                 raise error.on_page(number) from None
-            except PSException as error:
+            except (PSException, zlib.error) as error:  # pdfminer catches zlib.error today
                 raise CorruptPdf(f"Page {number} can't be parsed: {error}") from error
             yield layout
 
