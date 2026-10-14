@@ -92,11 +92,11 @@ def collect_spec_acs(specs: Path) -> dict[str, SpecAc]:
 class _TestModule:
     """Finds the AC IDs that mark collected tests in one test module, without importing it.
 
-    A marker counts only when its receiver is pytest's: ``pytest.mark.ac`` (or an
-    ``import pytest as ...`` alias) or ``mark.ac`` after ``from pytest import mark``
-    (or an alias). It must decorate a ``test*`` function, or decorate or sit in the
-    ``pytestmark`` of a module or ``Test*`` class (without ``__init__``) that contains
-    at least one test.
+    A marker counts only when its receiver is pytest's, imported at module level:
+    ``pytest.mark.ac`` (or an ``import pytest as ...`` alias) or ``mark.ac`` after
+    ``from pytest import mark`` (or an alias). It must decorate a ``test*`` function, or
+    decorate or sit in the ``pytestmark`` of a module or ``Test*`` class (without
+    ``__init__``) that contains at least one test.
     """
 
     def __init__(self, path: Path) -> None:
@@ -104,7 +104,9 @@ class _TestModule:
         self.tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         self.pytest_names: set[str] = set()
         self.mark_names: set[str] = set()
-        for node in ast.walk(self.tree):
+        # Only module-level imports bind the names that decorators of module-level tests
+        # and classes see; an import inside a function does not.
+        for node in self.tree.body:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name == "pytest":

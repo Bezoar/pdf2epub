@@ -230,7 +230,7 @@ class TestHelperOnly:
 
 @pytest.mark.ac("TST-AC11")
 def test_only_pytest_mark_receivers_count(tmp_path: Path) -> None:
-    spec = "".join(ac(f"xyz-ac{n}", f"XYZ-AC{n}") for n in range(1, 6))
+    spec = "".join(ac(f"xyz-ac{n}", f"XYZ-AC{n}") for n in range(1, 7))
     specs, tests, pending = make_repo(tmp_path, spec, marked=[], pending=[])
     (tests / "test_aliases.py").write_text(
         """
@@ -267,11 +267,28 @@ def test_e() -> None:
 """,
         encoding="utf-8",
     )
+    (tests / "test_shadowed.py").write_text(
+        """
+import other as p
+
+
+def helper() -> None:
+    import pytest as p  # local to helper: the decorator below still sees `other`
+
+    p.skip()
+
+
+@p.mark.ac("XYZ-AC6")
+def test_f() -> None:
+    pass
+""",
+        encoding="utf-8",
+    )
     result = run_gate(specs, tests, pending)
     assert result.returncode == 1
     for counted in ["XYZ-AC1", "XYZ-AC2", "XYZ-AC3"]:
         assert counted not in result.output
-    for ignored in ["XYZ-AC4", "XYZ-AC5"]:
+    for ignored in ["XYZ-AC4", "XYZ-AC5", "XYZ-AC6"]:
         assert f"unmarked and not pending: {ignored}" in result.output
 
 

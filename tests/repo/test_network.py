@@ -63,3 +63,20 @@ def test_loopback_stays_available_for_test_servers() -> None:
         rx.bind(("127.0.0.1", 0))
         tx.sendto(b"pong", rx.getsockname())
         assert rx.recv(4) == b"pong"
+
+
+@pytest.mark.ac("MAIN-AC1")
+@pytest.mark.skipif(not socket.has_dualstack_ipv6(), reason="no dual-stack IPv6 sockets")
+def test_ipv4_mapped_loopback_stays_available() -> None:
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        port = server.getsockname()[1]
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as client:
+            client.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            client.settimeout(2)
+            client.connect(("::ffff:127.0.0.1", port))
+            conn, _ = server.accept()
+            conn.close()
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as client:
+        client.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        with pytest.raises(RuntimeError, match=BLOCKED):
+            client.connect(("::ffff:192.0.2.1", 80))

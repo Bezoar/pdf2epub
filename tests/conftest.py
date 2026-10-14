@@ -33,9 +33,12 @@ def _is_loopback(host: object) -> bool:
     if name in LOOPBACK_NAMES:
         return True
     try:
-        return ipaddress.ip_address(name).is_loopback
+        address = ipaddress.ip_address(name)
     except ValueError:
         return False
+    # An IPv4-mapped IPv6 address (::ffff:127.0.0.1) reaches the IPv4 loopback.
+    mapped = getattr(address, "ipv4_mapped", None)
+    return address.is_loopback or (mapped is not None and mapped.is_loopback)
 
 
 def _check_address(sock: socket.socket, address: Any) -> None:
