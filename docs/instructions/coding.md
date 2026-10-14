@@ -62,8 +62,8 @@ Expected values come from the spec (exact issue codes, exit codes, event fields)
 ## 5. Coverage
 
 - Branch coverage is measured over **all** of `src/pdf2epub`, with nothing listed under `omit`.
-- The measured CI job runs on Linux with Python 3.12 and has Tesseract installed, so the OCR paths count.
-- Coverage follows subprocesses: the xdist workers, the CLI and pdf2epub's own workers. Under Python 3.12 each measured process spends about 10 s importing pypdf's glyph table, so the CI job imports it before coverage starts (see `.github/workflows/pr.yml`); a local coverage run on 3.12 is slower for the same reason.
+- The measured CI job runs on Linux x86-64 with Python 3.13 and has Tesseract installed, so the OCR paths count.
+- Coverage follows subprocesses: the xdist workers, the CLI and pdf2epub's own workers. The job moved from Python 3.12 to 3.13 by owner decision in [#73](https://github.com/Bezoar/pdf2epub/issues/73): under 3.12's `sys.settrace`, every measured process spent about 10 s importing pypdf's glyph table (0.7 s on 3.13), which made the job take over 45 minutes. For the same reason, prefer Python 3.13 for a local coverage run.
 - The bar is a floor: `fail_under = 75`, with no ratchet. A PR may lower coverage as long as it stays at or above 75%.
 - `# pragma: no cover` is allowed **only** on:
   - `if TYPE_CHECKING:` blocks;
