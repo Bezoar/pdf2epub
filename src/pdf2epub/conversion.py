@@ -151,7 +151,7 @@ def convert(
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
-        document, found = build_document(source, pages, images, options)
+        document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
             add(issue)
         progress("reflow", 1, 1)

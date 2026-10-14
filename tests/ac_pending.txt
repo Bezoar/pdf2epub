@@ -3,7 +3,6 @@
 # Each build ticket removes the IDs it implements, in the same PR as their marked tests.
 # The v1 acceptance ticket requires this list to be empty.
 
-API-AC8
 API-AC12
 API-AC13
 API-AC17
@@ -18,14 +17,12 @@ CLI-AC11
 CLI-AC12
 
 EPUB-AC3
-EPUB-AC7
 EPUB-AC8
 EPUB-AC9
 EPUB-AC10
 EPUB-AC11
 
 MAIN-AC5
-MAIN-AC-B
 MAIN-AC-D
 MAIN-AC-F
 MAIN-AC-G
@@ -75,8 +72,6 @@ PWD-AC21
 PWD-AC22
 PWD-AC23
 
-RFL-AC8
-RFL-AC9
 RFL-AC14
 RFL-AC18
 RFL-AC19

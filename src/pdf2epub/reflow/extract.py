@@ -6,17 +6,42 @@ geometry and font size: layout analysis (``reflow.layout``) groups them into blo
 paragraphs. A line's text is normalised; a soft hyphen at its end is removed from the
 text but kept as a flag, so de-hyphenation still sees the word break (RFL-R17). A line
 also keeps its runs of bold and italic text (RFL-R22).
+
+A page set in more than one column (``reflow.columns``, RFL-R11) comes out in column
+order instead: every line of one column, top to bottom, before any line of the next,
+with lines across the columns (a heading, a page number) between the parts they divide
+(RFL-R15). Lines are split at a gutter even where pdfminer ran them together. Each page
+also carries what its complexity is measured from (``reflow.complexity``, RFL-R13).
 """
 
+import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass, field
 from itertools import pairwise
 
-from pdfminer.layout import LAParams, LTChar, LTTextContainer, LTTextLine
+import numpy as np
+from numpy.typing import NDArray
+from pdfminer.layout import (
+    LAParams,
+    LTAnno,
+    LTChar,
+    LTComponent,
+    LTContainer,
+    LTCurve,
+    LTFigure,
+    LTImage,
+    LTItem,
+    LTLine,
+    LTPage,
+    LTRect,
+    LTTextContainer,
+    LTTextLine,
+)
 
+from pdf2epub.reflow.columns import Gutter, Piece, column_of, find_gutters, split
 from pdf2epub.reflow.model import Text
 from pdf2epub.reflow.parse import STYLE, ParsedPdf
 
@@ -43,6 +68,16 @@ _PIECE_GAP_EM = 3.0
 _MONO_NAME = re.compile(r"courier|mono|consol|menlo|typewriter|fixed", re.IGNORECASE)
 # Glyph advances within this share of each other are the same advance.
 MONO_SPREAD = 0.01
+# Fonts that set mathematics (TeX's math fonts, Symbol, STIX, Cambria Math and the like).
+_MATH_FONT = re.compile(r"cmmi|cmsy|cmex|msam|msbm|symbol|math|stix|euler", re.IGNORECASE)
+# A drawn line or a rectangle this thin, in points, is a rule.
+_RULE_THICKNESS = 2.0
+# An image covering this share of the page is a scan, not an illustration on the page.
+_SCAN_SHARE = 0.9
+# The resolution, in points, of the mask that measures the area under shapes, made
+# coarser for a page so large (a hostile one can be) that the mask would pass this
+# many cells along an edge.
+_MASK_STEP, _MAX_MASK_EDGE = 2.0, 2_000
 
 
 @dataclass(frozen=True)
@@ -82,14 +117,49 @@ class Line:
 
 
 @dataclass(frozen=True)
+class Rule:
+    """A ruled line: a drawn line or a thin rectangle, in page coordinates measured from
+    the top-left."""
+
+    x0: float
+    x1: float
+    top: float
+    bottom: float
+
+    @property
+    def horizontal(self) -> bool:
+        return self.x1 - self.x0 >= self.bottom - self.top
+
+
+@dataclass(frozen=True)
+class Graphics:
+    """What a page's complexity is measured from (RFL-R13), besides its lines."""
+
+    rules: list[Rule] = field(default_factory=list)
+    """Ruled lines at least an em long."""
+    covered: float = 0.0
+    """The share of the page area under images and filled vector shapes (rules and
+    full-page scans aside)."""
+    glyphs: int = 0
+    """Glyphs other than spaces, outside monospace lines (code)."""
+    math: int = 0
+    """Of those, the mathematical ones: math symbols, mathematical letters, or any glyph
+    set in a math font."""
+
+
+@dataclass(frozen=True)
 class PageText:
-    """The text lines of one page, top to bottom."""
+    """The text lines of one page, in reading order."""
 
     page: int
     """1-based PDF page index."""
     width: float
     height: float
     lines: list[Line]
+    """Top to bottom; in column order when ``columns`` is more than 1."""
+    columns: int = 1
+    """How many text columns the page is set in (RFL-R11)."""
+    graphics: Graphics = field(default_factory=Graphics)
 
 
 def normalise(text: str) -> str:
@@ -102,38 +172,111 @@ def normalise(text: str) -> str:
 def read_pages(pdf: ParsedPdf) -> Iterator[PageText]:
     """Yield each page's text lines, one page at a time."""
     for number, layout in enumerate(pdf.layouts(LAParams()), start=1):
-        lines: list[Line] = []
-        for element in layout:
-            if isinstance(element, LTTextContainer):
-                for item in element:
-                    if isinstance(item, LTTextLine):
-                        line = _line(item, layout.height)
-                        if line is not None:
-                            lines.append(line)
-        yield PageText(number, layout.width, layout.height, _rows(lines))
+        items = [
+            item
+            for element in layout
+            if isinstance(element, LTTextContainer)
+            for item in element
+            if isinstance(item, LTTextLine)
+        ]
+        pieces = [_piece(list(item), layout.height) for item in items]
+        gutters = find_gutters(pieces)
+        if gutters:
+            lines = _in_columns(items, pieces, gutters, layout.height)
+        else:
+            lines = _rows([line for item in items if (line := _line(list(item), layout.height))])
+        yield PageText(
+            number,
+            layout.width,
+            layout.height,
+            lines,
+            columns=len(gutters) + 1,
+            graphics=_graphics(layout, lines),
+        )
 
 
-def _line(item: LTTextLine, page_height: float) -> Line | None:
-    raw = " ".join(item.get_text().split())
-    soft = raw.endswith(SOFT_HYPHEN)
+def _piece(children: Sequence[LTItem], page_height: float) -> Piece:
+    chars = [c for c in children if isinstance(c, LTChar)]
+    if not chars:
+        return Piece([], 0.0, 0.0, 0.0)
+    return Piece(
+        [(c.x0, c.x1) for c in chars],
+        page_height - max(c.y1 for c in chars),
+        page_height - min(c.y0 for c in chars),
+        Counter(round(c.size, 1) for c in chars).most_common(1)[0][0],
+    )
+
+
+def _in_columns(
+    items: list[LTTextLine], pieces: list[Piece], gutters: list[Gutter], page_height: float
+) -> list[Line]:
+    """The page's lines in column order (RFL-R15): each part of the page between lines
+    that cross the columns is read column by column, left to right."""
+    placed: list[tuple[Line, int | None]] = []
+    for item, piece in zip(items, pieces, strict=True):
+        children = list(item)
+        groups = split(piece, gutters) if piece.glyphs else []
+        if len(groups) <= 1:
+            line = _line(children, page_height)
+            if line is not None:
+                placed.append((line, column_of(piece, gutters)))
+            continue
+        # Glyphs on both sides of a gutter and none inside it: one line per column. A
+        # space or other non-glyph goes with the glyph before it.
+        group_of = {glyph: number for number, group in enumerate(groups) for glyph in group}
+        parts: list[list[LTItem]] = [[] for _ in groups]
+        glyph = current = 0
+        for child in children:
+            if isinstance(child, LTChar):
+                current = group_of[glyph]
+                glyph += 1
+            parts[current].append(child)
+        for part in parts:
+            line = _line(part, page_height)
+            if line is not None:
+                placed.append((line, column_of(_piece(part, page_height), gutters)))
+    across = sorted((line for line, column in placed if column is None), key=lambda li: li.top)
+    ordered: list[Line] = []
+    for section in range(len(across) + 1):
+        for column in range(len(gutters) + 1):
+            ordered.extend(
+                _rows(
+                    [
+                        line
+                        for line, index in placed
+                        if index == column and sum(a.top < line.top for a in across) == section
+                    ]
+                )
+            )
+        if section < len(across):
+            ordered.append(across[section])
+    return ordered
+
+
+def _line(children: Sequence[LTItem], page_height: float) -> Line | None:
+    """The line of text made of ``children``: a text line's glyphs, and the spaces
+    pdfminer adds between words. None if it holds no text."""
+    whole = "".join(c.get_text() for c in children if isinstance(c, LTChar | LTAnno))
+    soft = " ".join(whole.split()).endswith(SOFT_HYPHEN)
     pieces: list[Text] = []
     style = (False, False)
-    for obj in item:
-        if isinstance(obj, LTChar):
-            style = getattr(obj, STYLE, (False, False))
-        pieces.append(Text(obj.get_text(), *style))
+    for child in children:
+        if isinstance(child, LTChar):
+            style = getattr(child, STYLE, (False, False))
+        if isinstance(child, LTChar | LTAnno):  # glyphs, and the spaces between words
+            pieces.append(Text(child.get_text(), *style))
     runs = styled_runs(pieces)
     text = "".join(run.text for run in runs)
-    if not text:
+    chars = [c for c in children if isinstance(c, LTChar)]
+    if not text or not chars:
         return None
-    chars = [c for c in item if isinstance(c, LTChar)]
-    sizes = Counter(round(c.size, 1) for c in chars)
-    size = sizes.most_common(1)[0][0] if sizes else item.height
-    x0, y0, x1, y1 = item.bbox
     plain = all(not run.bold and not run.italic for run in runs)
-    named = bool(chars) and all(_MONO_NAME.search(c.fontname) for c in chars)
+    size = Counter(round(c.size, 1) for c in chars).most_common(1)[0][0]
+    x0, x1 = min(c.x0 for c in chars), max(c.x1 for c in chars)
+    y0, y1 = min(c.y0 for c in chars), max(c.y1 for c in chars)
+    named = all(_MONO_NAME.search(c.fontname) for c in chars)
     advance = _advance(chars)
-    verbatim = normalise(item.get_text()).rstrip() if advance > 0 else ""
+    verbatim = normalise(whole).rstrip() if advance > 0 else ""
     return Line(
         text,
         x0,
@@ -147,14 +290,6 @@ def _line(item: LTTextLine, page_height: float) -> Line | None:
         verbatim=verbatim,
         runs=() if plain else runs,
     )
-
-
-def _advance(chars: list[LTChar]) -> float:
-    """The glyphs' common advance, or 0 if they don't share one."""
-    advances = [c.adv for c in chars]
-    if not advances or max(advances) <= 0:
-        return 0.0
-    return advances[0] if max(advances) - min(advances) <= MONO_SPREAD * max(advances) else 0.0
 
 
 _SPACE = re.compile(r"(\s+)")
@@ -193,6 +328,80 @@ def styled_runs(pieces: Iterable[Text]) -> tuple[Text, ...]:
         else:
             runs.append(token)
     return tuple(runs)
+
+
+def _advance(chars: list[LTChar]) -> float:
+    """The glyphs' common advance, or 0 if they don't share one."""
+    advances = [c.adv for c in chars]
+    if not advances or max(advances) <= 0:
+        return 0.0
+    return advances[0] if max(advances) - min(advances) <= MONO_SPREAD * max(advances) else 0.0
+
+
+def _graphics(layout: LTPage, lines: list[Line]) -> Graphics:
+    page_area = max(layout.width * layout.height, 1.0)
+    sizes = Counter(line.size for line in lines)
+    em = sizes.most_common(1)[0][0] if sizes else 10.0
+    rules: list[Rule] = []
+    # The area under shapes, as a coarse mask, so overlapping shapes count once.
+    step = max(_MASK_STEP, max(layout.width, layout.height) / _MAX_MASK_EDGE)
+    mask = np.zeros(
+        (math.ceil(layout.height / step) + 1, math.ceil(layout.width / step) + 1), dtype=bool
+    )
+    for shape in _shapes(layout):
+        x0, y0, x1, y1 = shape.bbox
+        width, height = x1 - x0, y1 - y0
+        if isinstance(shape, LTLine | LTRect) and min(width, height) <= _RULE_THICKNESS:
+            if max(width, height) >= em:  # shorter ones are marks, not rules
+                rules.append(Rule(x0, x1, layout.height - y1, layout.height - y0))
+        elif isinstance(shape, LTImage):
+            if width * height < _SCAN_SHARE * page_area:
+                _cover(mask, shape.bbox, step)
+        elif (
+            isinstance(shape, LTCurve) and shape.fill
+        ):  # an outline alone (a frame round a box) covers nothing
+            _cover(mask, shape.bbox, step)
+    covered = float(mask.mean())
+    glyphs = maths = 0
+    for item in _text_lines(layout):
+        chars = [c for c in item if isinstance(c, LTChar) and not c.get_text().isspace()]
+        if chars and (_advance(chars) > 0 or all(_MONO_NAME.search(c.fontname) for c in chars)):
+            continue  # code: its symbols are not mathematics
+        glyphs += len(chars)
+        maths += sum(_is_math(c) for c in chars)
+    return Graphics(rules, covered, glyphs, maths)
+
+
+def _cover(mask: NDArray[np.bool_], bbox: tuple[float, float, float, float], step: float) -> None:
+    x0, y0, x1, y1 = (max(0.0, value) / step for value in bbox)
+    mask[int(y0) : math.ceil(y1), int(x0) : math.ceil(x1)] = True
+
+
+def _shapes(item: LTItem) -> Iterator[LTComponent]:
+    """Every image and vector shape on the page, inside figures too."""
+    if isinstance(item, LTImage | LTCurve):  # LTLine and LTRect are LTCurves
+        yield item
+    elif isinstance(item, LTContainer) and not isinstance(item, LTTextContainer):
+        for child in item:
+            yield from _shapes(child)
+
+
+def _text_lines(container: Iterable[LTItem]) -> Iterator[LTTextLine]:
+    """Every text line on the page, inside figures too."""
+    for element in container:
+        if isinstance(element, LTTextLine):
+            yield element
+        elif isinstance(element, LTTextContainer | LTFigure):
+            yield from _text_lines(element)
+
+
+def _is_math(char: LTChar) -> bool:
+    if _MATH_FONT.search(char.fontname):
+        return True
+    text = char.get_text()
+    return len(text) == 1 and (
+        unicodedata.category(text) == "Sm" or 0x1D400 <= ord(text) <= 0x1D7FF
+    )
 
 
 def _rows(lines: list[Line]) -> list[Line]:
