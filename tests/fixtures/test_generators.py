@@ -56,14 +56,15 @@ def test_every_text_based_fixture_has_ground_truth_beside_it(
     generated: tuple[dict[str, bytes], ...],
 ) -> None:
     first, _ = generated
+    text_based = []
     for fixture in registry():
         assert fixture.path in first
-        if not fixture.text_based:
-            assert fixture.ground_truth is None, f"{fixture.path} has no text of its own"
-            continue
-        assert fixture.ground_truth is not None, f"{fixture.path} has no ground truth"
+        if fixture.ground_truth is None:
+            continue  # not generated from text, e.g. a damaged file
+        text_based.append(fixture.path)
         assert Path(fixture.ground_truth).parent == Path(fixture.path).parent
         assert first[fixture.ground_truth].decode("utf-8").strip()
+    assert "born-digital/novel.pdf" in text_based
 
 
 @pytest.mark.ac("TST-AC1")

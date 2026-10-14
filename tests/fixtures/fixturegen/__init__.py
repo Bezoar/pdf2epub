@@ -27,26 +27,24 @@ class Fixture:
     """Path of its ground-truth text, relative to the output folder; None if not text-based."""
     build: Callable[[Path], None]
     """Writes the fixture (and its ground truth) under the given output folder."""
-    text_based: bool = True
-    """False for a fixture with no text of its own (blank, unreadable or derived from
-    another fixture), which has no ground truth."""
 
 
 def registry() -> list[Fixture]:
     """Every fixture generator, in a fixed order."""
-    from fixturegen import blank, damaged, hostile, novel
+    from fixturegen import blank, damaged, hostile, not_a_pdf, novel
 
     # The novel comes first: the cross-reference fixture is cut from it.
     return [
         Fixture(novel.PATH, novel.GROUND_TRUTH, novel.build),
-        Fixture(damaged.TRUNCATED, None, damaged.build_truncated, text_based=False),
-        Fixture(damaged.NO_XREF, None, damaged.build_no_xref, text_based=False),
-        Fixture(damaged.ZERO_PAGES, None, damaged.build_zero_pages, text_based=False),
-        Fixture(damaged.IMAGE_BOMB, None, damaged.build_image_bomb, text_based=False),
-        Fixture(damaged.STREAM_BOMB, None, damaged.build_stream_bomb, text_based=False),
+        Fixture(damaged.TRUNCATED, None, damaged.build_truncated),
+        Fixture(damaged.NO_XREF, None, damaged.build_no_xref),
+        Fixture(damaged.ZERO_PAGES, None, damaged.build_zero_pages),
+        Fixture(damaged.IMAGE_BOMB, None, damaged.build_image_bomb),
+        Fixture(damaged.STREAM_BOMB, None, damaged.build_stream_bomb),
         Fixture(hostile.PATH, hostile.GROUND_TRUTH, hostile.build),
-        Fixture(blank.BLANK, None, blank.build_blank, text_based=False),
+        Fixture(blank.BLANK, None, blank.build_blank),
         Fixture(blank.PLUS_TEXT, blank.PLUS_TEXT_TRUTH, blank.build_plus_text),
+        Fixture(not_a_pdf.PATH, None, not_a_pdf.build),
     ]
 
 
