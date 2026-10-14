@@ -6,7 +6,9 @@ Password values are only ever held as ``Secret`` (API-R8).
 """
 
 import fnmatch
+import logging
 import os
+import stat
 import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -14,6 +16,8 @@ from pathlib import Path
 from typing import NamedTuple, Protocol
 
 from pdf2epub.errors import UsageError
+
+logger = logging.getLogger(__name__)
 
 SourceLabel = str
 
@@ -139,7 +143,25 @@ def distinct(candidates: Sequence[Candidate]) -> list[Candidate]:
     return kept
 
 
+def _warn_if_others_can_read(path: Path, kind: str) -> None:
+    """Log an ssh-style warning when group or others may read ``path`` (PWD-R17). The
+    run goes on either way."""
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return  # reading it reports the problem
+    if os.name == "posix" and mode & (stat.S_IRGRP | stat.S_IROTH):
+        logger.warning(
+            "the %s %s can be read by other users (permissions %04o); run chmod 600 %s",
+            kind,
+            path,
+            stat.S_IMODE(mode),
+            path,
+        )
+
+
 def _read_map(path: Path) -> list[tuple[str, list[Secret]]]:
+    _warn_if_others_can_read(path, "password map")
     try:
         with path.open("rb") as file:
             table = tomllib.load(file)
@@ -164,6 +186,7 @@ def _read_map(path: Path) -> list[tuple[str, list[Secret]]]:
 
 def _read_password_file(path: Path) -> list[tuple[int, Secret]]:
     """The file's non-empty lines with their 1-based line numbers (PWD-R15)."""
+    _warn_if_others_can_read(path, "password file")
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:

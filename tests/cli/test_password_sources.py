@@ -3,6 +3,7 @@
 MAIN-AC-C)."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from pathlib import Path
 
 import pytest
 from conftest import FIXTURES
+from pypdf import PdfReader
+from pypdf.generic import DictionaryObject
 from test_json_output import events_of
 
 PDF2EPUB = Path(sys.executable).with_name("pdf2epub")
@@ -23,11 +26,15 @@ WARNING = (
 
 
 def run(
-    args: list[str], cwd: Path, env_password: str | None = None
+    args: list[str],
+    cwd: Path,
+    env_password: str | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if k != "PDF2EPUB_PASSWORD"}
     if env_password is not None:
         env["PDF2EPUB_PASSWORD"] = env_password
+    env.update(extra_env or {})
     return subprocess.run(
         [str(PDF2EPUB), *args],
         cwd=cwd,
@@ -128,3 +135,153 @@ def test_password_flag_prints_the_visibility_warning_once(tmp_path: Path, book: 
 
     assert proc.returncode == 0, proc.stderr
     assert "--password values are visible" not in proc.stderr
+
+
+def encrypted_copies(folder: Path, *names: str) -> None:
+    for name in names:
+        shutil.copyfile(AES256, folder / name)
+
+
+def assert_nothing_ran(proc: subprocess.CompletedProcess[str], folder: Path) -> None:
+    """A usage error: exit 2, a reason on stderr, no event and no EPUB."""
+    assert proc.returncode == 2, proc.stderr
+    assert "error:" in proc.stderr
+    assert proc.stdout == ""
+    assert not list(folder.rglob("*.epub"))
+
+
+@pytest.mark.ac("PWD-AC12")
+def test_more_than_25_candidates_for_a_file_is_a_usage_error(tmp_path: Path) -> None:
+    encrypted_copies(tmp_path, "a.pdf", "b.pdf")
+    lines = "".join(f"guess{n}\n" for n in range(26))
+    (tmp_path / "pw.txt").write_text(lines, encoding="utf-8")
+    (tmp_path / "pw.txt").chmod(0o600)
+
+    proc = run(["--json", "--password-file", "pw.txt", "a.pdf", "b.pdf"], tmp_path)
+
+    assert_nothing_ran(proc, tmp_path)
+    assert "cap of 25" in proc.stderr
+    assert "guess" not in proc.stderr
+
+
+@pytest.mark.ac("PWD-AC13")
+@pytest.mark.parametrize(
+    ("flag", "name", "content"),
+    [
+        ("--password-map", "map.toml", '"book.pdf" = "unterminated\n'),
+        ("--password-map", "map.toml", '"book.pdf" = 42\n'),
+        ("--password-file", "missing.txt", None),
+    ],
+    ids=["map-not-toml", "map-value-42", "file-missing"],
+)
+def test_an_invalid_password_source_is_a_usage_error(
+    tmp_path: Path, book: Path, flag: str, name: str, content: str | None
+) -> None:
+    if content is not None:
+        (tmp_path / name).write_text(content, encoding="utf-8")
+
+    proc = run(["--json", flag, name, "book.pdf"], tmp_path)
+
+    assert_nothing_ran(proc, tmp_path)
+    assert name in proc.stderr
+
+
+@pytest.mark.ac("PWD-AC14")
+@pytest.mark.parametrize(
+    ("flag", "name", "content"),
+    [
+        ("--password-file", "pw.txt", f"{PASSWORD}\n"),
+        ("--password-map", "map.toml", f'"book.pdf" = "{PASSWORD}"\n'),
+    ],
+    ids=["file", "map"],
+)
+def test_a_password_source_others_can_read_triggers_a_chmod_warning(
+    tmp_path: Path, book: Path, flag: str, name: str, content: str
+) -> None:
+    source = tmp_path / name
+    source.write_text(content, encoding="utf-8")
+    source.chmod(0o644)
+
+    proc = run(["--json", flag, name, "book.pdf"], tmp_path)
+
+    assert proc.returncode == 0, proc.stderr
+    [finished] = [e for e in events_of(proc.stdout) if e["type"] == "conversion_finished"]
+    assert finished["outcome"] == "converted"
+    [warning] = [line for line in proc.stderr.splitlines() if "chmod 600" in line]
+    assert name in warning
+    assert warning.startswith("WARNING:")
+
+    source.chmod(0o600)
+    proc = run(["--json", "--overwrite", flag, name, "book.pdf"], tmp_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "chmod" not in proc.stderr
+
+
+@pytest.mark.ac("PWD-AC19")
+def test_the_canary_password_appears_in_no_output_while_its_label_does(tmp_path: Path) -> None:
+    # The map's glob gives the canary to both files: it opens the AES-256 fixture and is
+    # wrong for the RC4 one.
+    shutil.copyfile(AES256, tmp_path / "a.pdf")
+    shutil.copyfile(FIXTURES / "encrypted" / "rc4-128-user.pdf", tmp_path / "b.pdf")
+    password_map = tmp_path / "map.toml"
+    password_map.write_text(f'"*.pdf" = "{PASSWORD}"\n', encoding="utf-8")
+    password_map.chmod(0o600)
+
+    proc = run(
+        ["--debug", "--json", "--report", "r.json", "--password-map", "map.toml", "a.pdf", "b.pdf"],
+        tmp_path,
+    )
+
+    assert proc.returncode == 1, proc.stderr
+    finished = [e for e in events_of(proc.stdout) if e["type"] == "conversion_finished"]
+    assert [(e["outcome"], e["password_source"]) for e in finished] == [
+        ("converted", 'map:"*.pdf"'),
+        ("failed", None),
+    ]
+    assert "DEBUG: " in proc.stderr
+    report = (tmp_path / "r.json").read_text(encoding="utf-8")
+    assert 'map:\\"*.pdf\\"' in report
+    for output in (proc.stdout, proc.stderr, report):
+        assert PASSWORD not in output
+
+
+def snapshot(*folders: Path) -> set[Path]:
+    return {path for folder in folders for path in folder.rglob("*") if path.is_file()}
+
+
+@pytest.mark.ac("PWD-AC22")
+def test_no_file_written_during_a_run_holds_the_password_or_its_label(tmp_path: Path) -> None:
+    out, home, temp = tmp_path / "out", tmp_path / "home", tmp_path / "tmp"
+    for folder in (out, home, temp):
+        folder.mkdir()
+    shutil.copyfile(AES256, out / "book.pdf")
+    (out / "map.toml").write_text(f'"book.pdf" = "{PASSWORD}"\n', encoding="utf-8")
+    (out / "map.toml").chmod(0o600)
+    before = snapshot(out, home, temp)
+    # The fixture's /P permission flags, as an unsigned and a signed 32-bit number.
+    encrypt = PdfReader(AES256).trailer["/Encrypt"].get_object()
+    assert isinstance(encrypt, DictionaryObject)
+    permissions = encrypt["/P"]
+    assert isinstance(permissions, int)
+    flags = permissions & 0xFFFFFFFF
+    flag_values = {str(flags), str(flags - (1 << 32))}
+
+    proc = run(
+        ["--debug", "--password-map", "map.toml", "book.pdf"],
+        out,
+        extra_env={"HOME": str(home), "TMPDIR": str(temp), "XDG_CACHE_HOME": str(home / ".cache")},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    epub = out / "book.epub"
+    assert snapshot(out, home, temp) - before == {epub}
+    with zipfile.ZipFile(epub) as archive:
+        assert "META-INF/encryption.xml" not in archive.namelist()
+        assert not any(info.flag_bits & 0x1 for info in archive.infolist())  # not encrypted
+    text = epub_text(epub)
+    assert "<p" in text, "the EPUB has no text to search"
+    for secret in (PASSWORD, 'map:"book.pdf"', "map:&quot;book.pdf&quot;"):
+        assert secret not in text
+    for value in flag_values:
+        assert not re.search(rf"(?<![\w-]){re.escape(value)}(?!\d)", text), value
