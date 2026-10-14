@@ -187,6 +187,19 @@ def test_collision_holds_with_overwrite_when_the_epub_exists(tmp_path: Path) -> 
     assert [r.outcome for r in report.conversions] == [Outcome.CONVERTED, Outcome.SKIPPED]
 
 
+@pytest.mark.ac("BAT-AC7")
+def test_destinations_reached_through_a_folder_link_collide(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    first = copy(PUBLIC_DOMAIN_SAMPLE, real / "book.pdf")
+    copy(NOVEL, real / "book.dat")
+    (tmp_path / "alias").symlink_to(real, target_is_directory=True)
+
+    report = run([first, tmp_path / "alias" / "book.dat"])
+
+    assert codes(report) == [[], [IssueCode.OUTPUT_COLLISION]]
+    assert files_in(real) == {"book.pdf", "book.dat", "book.epub"}
+
+
 def case_insensitive(folder: Path) -> bool:
     """Whether ``folder``'s file system ignores letter case, found by experiment."""
     probe = folder / "Case-Probe"

@@ -145,13 +145,14 @@ def _destination_issues(
 
 
 def _identity(destination: Path, ignores_case: dict[Path, bool]) -> str:
-    """A key equal for two destinations exactly when they name the same file: the path,
-    case-folded when its file system ignores letter case (as macOS does by default).
-    ``ignores_case`` caches the probe per folder for one plan."""
-    folder = destination.parent
+    """A key equal for two destinations exactly when they name the same file: the path
+    with its folder's symbolic links resolved, case-folded when its file system ignores
+    letter case (as macOS does by default). ``ignores_case`` caches the probe per folder
+    for one plan."""
+    folder = Path(os.path.realpath(destination.parent))
     if folder not in ignores_case:
         ignores_case[folder] = _ignores_case(folder)
-    path = os.path.normcase(destination)
+    path = os.path.normcase(folder / destination.name)
     return path.casefold() if ignores_case[folder] else path
 
 
