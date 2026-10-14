@@ -220,7 +220,13 @@ def coverage(image: Image.Image, result: OcrPageResult) -> float:
 def page_text(page: PageText, result: OcrPageResult, dpi: int) -> PageText | None:
     """``page`` with the recognised lines as its text, or None if nothing was recognised.
     Lines are in reading order, in column order on a page set in columns."""
-    recognised = [line for line in result.lines if any(w.text.strip() for w in line.words)]
+    # Words whose text normalisation leaves nothing (control characters, say) count as
+    # not recognised, so such a result keeps the page's own text (OCR-R31).
+    recognised = [
+        OcrLine(kept, line.height)
+        for line in result.lines
+        if (kept := tuple(w for w in line.words if normalise(w.text).strip()))
+    ]
     if not recognised:
         return None
     scale = _PDF_DPI / dpi
@@ -233,7 +239,7 @@ def page_text(page: PageText, result: OcrPageResult, dpi: int) -> PageText | Non
         for group in split(piece, gutters) if gutters else [list(range(len(line.words)))]:
             words = [line.words[index] for index in group]
             part = _piece(OcrLine(tuple(words), line.height), scale, piece.size)
-            text = normalise(" ".join(w.text.strip() for w in words if w.text.strip()))
+            text = " ".join(normalise(w.text).strip() for w in words)
             if text:
                 ocr_line = Line(text, part.x0, part.x1, part.top, part.bottom, piece.size)
                 lines.append((ocr_line, column_of(part, gutters) if gutters else 0))
@@ -247,7 +253,7 @@ def _size(height: float, body: float) -> float:
 
 
 def _piece(line: OcrLine, scale: float, size: float) -> Piece:
-    words = [word for word in line.words if word.text.strip()]
+    words = line.words
     return Piece(
         [(word.x0 * scale, word.x1 * scale) for word in words],
         min(word.top for word in words) * scale,

@@ -258,6 +258,28 @@ def test_an_empty_ocr_result_keeps_a_good_text_layer(
 
 
 @pytest.mark.ac("OCR-AC25")
+def test_ocr_words_with_no_usable_text_keep_a_good_text_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A control character is not text an EPUB can carry: the result has no words.
+    def control_only(call: int, request: OcrRequest) -> OcrPageResult:
+        word = Word("\x01", 300, 1300, 340, 1360, CONFIDENCE, 95)
+        return OcrPageResult(lines=(OcrLine((word,), 60),))
+
+    source = BORN_DIGITAL / "two-pages.pdf"
+    install(monkeypatch, FakeEngine(control_only))
+
+    report, _ = convert([(source, "book.pdf")], tmp_path, "always")
+
+    [result] = report.conversions
+    assert result.output is not None
+    pages = page_contents(Path(result.output))
+    paragraphs = source.with_suffix(".txt").read_text(encoding="utf-8").split("\n\n")
+    for number, paragraph in enumerate(paragraphs, start=1):
+        assert squash(paragraph) in text_of(pages[number])
+
+
+@pytest.mark.ac("OCR-AC25")
 def test_a_blank_scanned_page_raises_no_issue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
