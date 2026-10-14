@@ -96,22 +96,30 @@ def test_sigterm_cancels_like_sigint_with_json_output(tmp_path: Path) -> None:
 
 
 @pytest.mark.ac("BAT-AC12")
-def test_a_second_sigint_exits_at_once_without_a_report(tmp_path: Path) -> None:
+@pytest.mark.parametrize("output", [(), ("--json",)], ids=["human", "json"])
+def test_a_second_sigint_exits_at_once_without_a_report(
+    tmp_path: Path, output: tuple[str, ...]
+) -> None:
+    """Also the local AC of #79: the immediate exit is a clean one, with no "Fatal Python
+    error" from a thread still using stderr or stdout while the interpreter shuts down."""
     started, terminated = tmp_path / "started", tmp_path / "terminated"
     # The worker shrugs off SIGTERM, so the batch is still stopping it at the second SIGINT.
     rule = {"action": "sleep", "seconds": 60, "started": str(started), "on_term": str(terminated)}
-    proc = start(tmp_path, rule)
+    proc = start(tmp_path, rule, "-v", *output)
     wait_for(started, proc)
 
     proc.send_signal(signal.SIGINT)
     wait_for(terminated, proc)
     proc.send_signal(signal.SIGINT)
     stopped = time.monotonic()
-    _, stderr = proc.communicate(timeout=WAIT)
+    stdout, stderr = proc.communicate(timeout=WAIT)
 
     assert proc.returncode == 130, stderr
     assert time.monotonic() - stopped < 4, "it waited out the worker's grace period"
+    assert "Fatal Python error" not in stderr
+    assert "Traceback" not in stderr
     assert "Converted:" not in stderr
+    assert "batch_finished" not in stdout
 
 
 def test_timeout_flag_stops_a_hung_conversion(tmp_path: Path) -> None:
