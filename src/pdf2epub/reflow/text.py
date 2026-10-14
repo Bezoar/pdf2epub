@@ -14,12 +14,13 @@ _HYPHEN_END = re.compile(r"(?<=\w)[-\u2010]$")
 _LAST_WORD = re.compile(r"([^\W\d_]+)[-\u2010]$")
 _FIRST_WORD = re.compile(r"^[^\W\d_]+")
 _TERMINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]\u00bb]*$")
-# CJK ideographs (including the supplementary planes' extensions and compatibility
-# ideographs), kana, Hangul and Jamo, and CJK and full-width punctuation.
-_CJK = re.compile(
-    "[\u2e80-\u2fdf\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef"
-    "\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7ff"
-    "\U00020000-\U0003134f]"
+# Chinese and Japanese, whose lines join with no space: Han ideographs (including the
+# supplementary planes' extensions and compatibility ideographs), Hiragana and Katakana,
+# and CJK and full-width punctuation. Korean (Hangul) separates words with spaces, so it
+# is not here: its lines join with a space, like Latin text.
+_NO_SPACE = re.compile(
+    "[\u2e80-\u2fdf\u3000-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+    "\uff00-\uff9f\uffe0-\uffef\U00020000-\U0003134f]"
 )
 
 
@@ -70,7 +71,7 @@ def _join(text: str, soft: bool, line: str, words: Collection[str] | None) -> st
         if head and tail and words is not None and _known(head.group(1) + tail.group(0), words):
             return text[:-1] + line
         return text + line
-    if _CJK.match(text[-1]) and _CJK.match(line[0]):
+    if _NO_SPACE.match(text[-1]) and _NO_SPACE.match(line[0]):
         return text + line
     return f"{text} {line}"
 

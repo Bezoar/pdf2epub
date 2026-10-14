@@ -92,7 +92,7 @@ Otherwise the hyphen shall be kept and the parts joined (`well-known`). When the
 
 <a id="rfl-r18"></a>**RFL-R18**: A paragraph that ends a reflowed page without terminal punctuation shall be joined to the first paragraph of the next reflowed page when that paragraph starts with a lowercase letter or other continuation (no indent and no heading). Furniture is removed before this test. Joining also skips over images that sit between the two paragraphs: the image is placed after the joined paragraph. A join never crosses a page-image fallback page.
 
-<a id="rfl-r19"></a>**RFL-R19**: Lines within a paragraph shall be joined with a single space. Lines in CJK scripts are joined with no space.
+<a id="rfl-r19"></a>**RFL-R19**: Lines within a paragraph shall be joined with a single space. Lines in Chinese and Japanese (Han, Hiragana and Katakana, and CJK punctuation) are joined with no space. Korean (Hangul) separates words with spaces, so its lines are joined with a single space, like Latin text.
 
 ## 6. Headings and inline styling
 
@@ -247,6 +247,8 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 - that sentence is in a single `Paragraph`;
 - a `PageBreak` **inline** sits inside that `Paragraph`'s inlines, at the join point;
 - a paragraph that ends with a full stop at a page end is not joined to the next page's indented paragraph.
+
+<a id="rfl-ac28"></a>**RFL-AC28** (covers [RFL-R19](#rfl-r19)): **Given** a born-digital page with a Japanese paragraph and a Korean paragraph, each wrapped over several lines, **when** it is converted, **then** the Japanese lines are joined with no space and the Korean lines with one space.
 
 <a id="rfl-ac13"></a>**RFL-AC13** (covers [RFL-R20](#rfl-r20), [RFL-R22](#rfl-r22)): **Given** a typeset fixture with 24 pt chapter titles, 14 pt bold section titles, 11 pt body text and italic and bold words in the body, **when** it is converted, **then**:
 - chapter titles are `Heading` level 1 and section titles are level 2;
