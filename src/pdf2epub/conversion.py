@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -22,6 +22,7 @@ from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Candidate
 from pdf2epub.reflow.build import build_document
+from pdf2epub.reflow.cover import book_cover
 from pdf2epub.reflow.extract import PageText, read_pages
 from pdf2epub.reflow.images import read_images
 from pdf2epub.reflow.limits import ResourceLimitExceeded
@@ -126,6 +127,7 @@ def convert(
         log.debug("conversion %d: %d pages", planned.id, page_count)
         with ParsedPdf(source_path, access.password) as pdf:
             repaired = pdf.repaired
+            source = replace(source, xmp=pdf.xmp())
             progress("open", 1, 1)
             if page_count == 0:
                 raise _Empty("The PDF has no pages.")
@@ -154,6 +156,7 @@ def convert(
         document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
             add(issue)
+        document = replace(document, cover=book_cover(options.cover, source_path, access.password))
         progress("reflow", 1, 1)
 
         write_atomically(
