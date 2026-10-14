@@ -25,6 +25,15 @@ class OcrSummary:
             "quality": self.quality,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "OcrSummary":
+        return cls(
+            engine=str(data["engine"]),
+            engine_version=str(data["engine_version"]),
+            languages=[str(language) for language in data["languages"]],
+            quality=str(data["quality"]),
+        )
+
 
 @dataclass(frozen=True)
 class ConversionResult:
@@ -52,6 +61,26 @@ class ConversionResult:
             "duration": self.duration,
             "ocr": None if self.ocr is None else self.ocr.to_dict(),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ConversionResult":
+        """The result whose wire form (``to_dict``) is ``data``."""
+
+        def optional_str(value: Any) -> str | None:
+            return None if value is None else str(value)
+
+        return cls(
+            id=int(data["id"]),
+            source=str(data["source"]),
+            destination=optional_str(data["destination"]),
+            outcome=Outcome(data["outcome"]),
+            issues=[Issue.from_dict(issue) for issue in data["issues"]],
+            output=optional_str(data["output"]),
+            password_source=optional_str(data["password_source"]),
+            pages=None if data["pages"] is None else int(data["pages"]),
+            duration=float(data["duration"]),
+            ocr=None if data["ocr"] is None else OcrSummary.from_dict(data["ocr"]),
+        )
 
 
 @dataclass(frozen=True)
