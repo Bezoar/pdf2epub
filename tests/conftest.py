@@ -5,12 +5,22 @@
   server started by the test itself stays usable. Unix-domain sockets are untouched.
 - Tests marked ``tesseract`` skip when Tesseract is missing, except where
   ``PDF2EPUB_REQUIRE_TESSERACT=1`` (the CI coverage job), where they fail instead.
+- Every EPUB a test writes under its ``tmp_path`` is checked with epubcheck when the test
+  ends, and any epubcheck error fails it (TST-R19).
+
+It also holds what the seams share: copies of the committed fixtures, a recording event
+sink, the epubcheck step, and an in-process conversion helper.
 """
 
 import ipaddress
 import os
 import shutil
 import socket
+import subprocess
+import threading
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -124,3 +134,136 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if os.environ.get(REQUIRE_TESSERACT) == "1":
         pytest.fail(f"Tesseract is not on PATH, and {REQUIRE_TESSERACT}=1 forbids skipping")
     pytest.skip("Tesseract is not on PATH")
+
+
+# --- Fixtures shared by the seams ------------------------------------------------------
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+NOVEL = FIXTURES / "born-digital" / "novel.pdf"
+PUBLIC_DOMAIN_SAMPLE = FIXTURES / "public-domain" / "nasa-sp-4319-premonition.pdf"
+
+
+@pytest.fixture
+def novel_pdf(tmp_path: Path) -> Path:
+    """A private copy of the synthetic novel fixture, so its EPUB lands in ``tmp_path``."""
+    target = tmp_path / "novel.pdf"
+    shutil.copyfile(NOVEL, target)
+    return target
+
+
+@pytest.fixture
+def sample_pdf(tmp_path: Path) -> Path:
+    """A private copy of the public-domain sample, named ``sample.pdf``."""
+    target = tmp_path / "sample.pdf"
+    shutil.copyfile(PUBLIC_DOMAIN_SAMPLE, target)
+    return target
+
+
+@dataclass
+class RecordingSink:
+    """An event sink that records every event and the thread each one arrived on."""
+
+    events: list[dict[str, Any]] = field(default_factory=list)
+    threads: set[int] = field(default_factory=set)
+
+    def __call__(self, event: dict[str, Any]) -> None:
+        self.threads.add(threading.get_ident())
+        self.events.append(event)
+
+    def of_type(self, type_: str) -> list[dict[str, Any]]:
+        return [e for e in self.events if e["type"] == type_]
+
+
+@pytest.fixture
+def sink() -> RecordingSink:
+    return RecordingSink()
+
+
+# --- epubcheck (TST-R19) ---------------------------------------------------------------
+
+# Where epubcheck is found: the jar named by EPUBCHECK_JAR (as CI sets it), else an
+# `epubcheck` program on PATH. Without either, epubcheck checks skip with a reason
+# locally, but fail on CI (where GitHub Actions sets CI=true), so they can't silently
+# stop running there.
+EPUBCHECK_JAR = "EPUBCHECK_JAR"
+
+
+def _epubcheck_command() -> list[str] | None:
+    jar = os.environ.get(EPUBCHECK_JAR)
+    if jar:
+        return ["java", "-jar", jar]
+    program = shutil.which("epubcheck")
+    if program:
+        return [program]
+    if os.environ.get("CI") == "true":
+        pytest.fail(f"epubcheck is not available on CI: set {EPUBCHECK_JAR}")
+    return None
+
+
+# EPUBs that already passed, by (path, size, modification time): each JVM start costs
+# seconds, so a file checked by its test isn't checked again at teardown.
+_PASSED: set[tuple[str, int, int]] = set()
+
+
+def run_epubcheck(epub: Path) -> None:
+    """Fail the calling test, quoting epubcheck's messages, unless ``epub`` has zero
+    epubcheck errors (and zero fatal errors)."""
+    command = _epubcheck_command()
+    if command is None:
+        pytest.skip(f"epubcheck is not available: set {EPUBCHECK_JAR} or put it on PATH")
+    stat = epub.stat()
+    key = (str(epub.resolve()), stat.st_size, stat.st_mtime_ns)
+    if key in _PASSED:
+        return
+    proc = subprocess.run(
+        [*command, "--quiet", str(epub)], capture_output=True, text=True, check=False
+    )
+    if proc.returncode != 0:
+        pytest.fail(f"epubcheck rejected {epub}:\n{proc.stdout}{proc.stderr}", pytrace=False)
+    _PASSED.add(key)
+
+
+@pytest.fixture
+def epubcheck() -> Callable[[Path], None]:
+    return run_epubcheck
+
+
+@pytest.fixture(autouse=True)
+def _epubcheck_every_written_epub(request: pytest.FixtureRequest) -> Iterator[None]:
+    """After each test that used ``tmp_path``, run epubcheck on every EPUB it wrote there
+    (TST-R19). Tests that build a deliberately broken EPUB keep it outside ``tmp_path``."""
+    if "tmp_path" not in request.fixturenames:
+        yield
+        return
+    # Requested here, during setup, so tmp_path outlives this fixture's teardown.
+    tmp_path: Path = request.getfixturevalue("tmp_path")
+    yield
+    if _epubcheck_command() is None:
+        return
+    for epub in sorted(tmp_path.rglob("*.epub")):
+        run_epubcheck(epub)
+
+
+def convert_copy(source: Path, target_dir: Path) -> Path:
+    """Convert a copy of ``source`` placed in ``target_dir``, in-process through the
+    public API, and return the EPUB it wrote. Fails the test unless it converted."""
+    from pdf2epub import (
+        BatchOptions,
+        ConversionOptions,
+        DiscoveryOptions,
+        InputSpec,
+        Outcome,
+        plan_batch,
+        run_batch,
+    )
+
+    pdf = target_dir / source.name
+    shutil.copyfile(source, pdf)
+    plan = plan_batch([InputSpec(pdf)], DiscoveryOptions())
+    report = run_batch(
+        plan, BatchOptions(isolation="inprocess"), ConversionOptions(), RecordingSink()
+    )
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert result.output is not None
+    return Path(result.output)

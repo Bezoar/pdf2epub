@@ -22,6 +22,9 @@ dependencies = [
     "pypdfium2>=5.14.0",
 ]
 
+[project.scripts]
+pdf2epub = "pdf2epub.cli:main"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
@@ -43,6 +46,11 @@ strict = true
 files = ["src", "tests", "scripts"]
 mypy_path = "src"
 
+[[tool.mypy.overrides]]
+# Neither ships type information.
+module = ["pypdfium2", "pypdfium2.*", "reportlab", "reportlab.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # tests/conftest.py blocks outbound network for the whole suite (MAIN-AC1).
@@ -55,6 +63,8 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["pdf2epub"]
+# Also measure the CLI when tests run it as a subprocess.
+patch = ["subprocess"]
 
 [tool.coverage.report]
 fail_under = 75
@@ -65,11 +75,13 @@ dev = [
     "coverage>=7.16.2",
     "hatchling>=1.32.4",
     "hypothesis>=6.169.1",
+    "lxml-stubs>=0.5.1",
     "mypy>=2.4.0",
     "packaging>=26.3",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "pyyaml>=6.0.3",
+    "reportlab>=5.0.1",
     "ruff>=0.17.0",
     "types-pyyaml>=6.0.12.20260906",
 ]

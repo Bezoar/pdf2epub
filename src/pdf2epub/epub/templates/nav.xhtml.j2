@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="{{ meta.language }}" xml:lang="{{ meta.language }}">
+<head>
+  <meta charset="UTF-8"/>
+  <title>{{ meta.title }}</title>
+  <link rel="stylesheet" type="text/css" href="{{ stylesheet }}"/>
+</head>
+<body>
+{%- macro entries(items) %}
+    <ol>
+{%- for entry in items %}
+      <li><a href="{{ entry.href }}">{{ entry.label }}</a>
+{%- if entry.children %}{{ entries(entry.children) }}{% endif -%}
+</li>
+{%- endfor %}
+    </ol>
+{%- endmacro %}
+  <nav epub:type="toc" id="toc" role="doc-toc">
+    <h1>Contents</h1>
+{{- entries(toc) }}
+  </nav>
+{%- if page_list %}
+  <nav epub:type="page-list" id="page-list" role="doc-pagelist" hidden="hidden">
+    <ol>
+{%- for target in page_list %}
+      <li><a href="{{ target.href }}">{{ target.label }}</a></li>
+{%- endfor %}
+    </ol>
+  </nav>
+{%- endif %}
+  <nav epub:type="landmarks" id="landmarks" hidden="hidden">
+    <ol>
+{%- for landmark in landmarks %}
+      <li><a epub:type="{{ landmark.type }}" href="{{ landmark.href }}">{{ landmark.label }}</a></li>
+{%- endfor %}
+    </ol>
+  </nav>
+</body>
+</html>
