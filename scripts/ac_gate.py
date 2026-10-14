@@ -1,9 +1,8 @@
 """The acceptance-criterion marker gate (TST-R17, TST-R20).
 
 Collects every AC ID defined in the spec folder, every ID named by an
-``@pytest.mark.ac(...)`` marker on a test in the test folder (a decorator of a ``test*``
-function or a ``Test*`` class, or a ``pytestmark`` value, in a ``test_*.py`` or
-``*_test.py`` file), and the pending-AC list, then
+``@pytest.mark.ac(...)`` marker on a collected test in the test folder (rules in
+``_TestModule``), and the pending-AC list, then
 fails (exit 1), naming the IDs, when:
 
 - an AC has no marked test, is not pending and is not manual;
@@ -90,49 +89,93 @@ def collect_spec_acs(specs: Path) -> dict[str, SpecAc]:
     return acs
 
 
-def _is_ac_marker(func: ast.expr) -> bool:
-    # Matches pytest.mark.ac(...) and mark.ac(...).
-    return (
-        isinstance(func, ast.Attribute)
-        and func.attr == "ac"
-        and isinstance(func.value, ast.Attribute)
-        and func.value.attr == "mark"
-    )
+class _TestModule:
+    """Finds the AC IDs that mark collected tests in one test module, without importing it.
 
+    A marker counts only when its receiver is pytest's: ``pytest.mark.ac`` (or an
+    ``import pytest as ...`` alias) or ``mark.ac`` after ``from pytest import mark``
+    (or an alias). It must decorate a ``test*`` function, or decorate or sit in the
+    ``pytestmark`` of a module or ``Test*`` class (without ``__init__``) that contains
+    at least one test.
+    """
 
-def _marker_ids(expr: ast.expr, path: Path) -> list[str]:
-    """AC IDs named by ``ac`` marker calls anywhere inside one decorator or pytestmark value."""
-    ids: list[str] = []
-    for node in ast.walk(expr):
-        if isinstance(node, ast.Call) and _is_ac_marker(node.func):
-            for arg in node.args:
-                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
-                    raise SystemExit(
-                        f"{path}:{node.lineno}: ac marker arguments must be string literals"
-                    )
-                ids.append(arg.value.strip().upper())
-    return ids
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        self.pytest_names: set[str] = set()
+        self.mark_names: set[str] = set()
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "pytest":
+                        self.pytest_names.add(alias.asname or "pytest")
+            elif isinstance(node, ast.ImportFrom) and node.module == "pytest" and node.level == 0:
+                for alias in node.names:
+                    if alias.name == "mark":
+                        self.mark_names.add(alias.asname or "mark")
 
+    def _is_ac_marker(self, func: ast.expr) -> bool:
+        if not (isinstance(func, ast.Attribute) and func.attr == "ac"):
+            return False
+        receiver = func.value
+        if isinstance(receiver, ast.Name):
+            return receiver.id in self.mark_names
+        return (
+            isinstance(receiver, ast.Attribute)
+            and receiver.attr == "mark"
+            and isinstance(receiver.value, ast.Name)
+            and receiver.value.id in self.pytest_names
+        )
 
-def _test_marks(body: list[ast.stmt], path: Path) -> list[str]:
-    """IDs that mark collected tests: decorators on ``test*`` functions and ``Test*``
-    classes, and ``pytestmark`` in a test module or a ``Test*`` class."""
-    ids: list[str] = []
-    for stmt in body:
-        if isinstance(stmt, ast.Assign | ast.AnnAssign):
-            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
-            names = {t.id for t in targets if isinstance(t, ast.Name)}
-            if "pytestmark" in names and stmt.value is not None:
-                ids += _marker_ids(stmt.value, path)
-        elif isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
-            if stmt.name.startswith("test"):
-                for dec in stmt.decorator_list:
-                    ids += _marker_ids(dec, path)
-        elif isinstance(stmt, ast.ClassDef) and stmt.name.startswith("Test"):
-            for dec in stmt.decorator_list:
-                ids += _marker_ids(dec, path)
-            ids += _test_marks(stmt.body, path)
-    return ids
+    def _marker_ids(self, exprs: list[ast.expr]) -> list[str]:
+        """AC IDs named by ``ac`` marker calls anywhere inside these expressions."""
+        ids: list[str] = []
+        for expr in exprs:
+            for node in ast.walk(expr):
+                if isinstance(node, ast.Call) and self._is_ac_marker(node.func):
+                    for arg in node.args:
+                        if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                            raise SystemExit(
+                                f"{self.path}:{node.lineno}: "
+                                "ac marker arguments must be string literals"
+                            )
+                        ids.append(arg.value.strip().upper())
+        return ids
+
+    def _scope(self, body: list[ast.stmt]) -> tuple[list[str], bool]:
+        """(IDs marking tests in this module or class body, whether it holds any test)."""
+        ids: list[str] = []
+        scope_marks: list[ast.expr] = []
+        has_tests = False
+        for stmt in body:
+            if isinstance(stmt, ast.Assign | ast.AnnAssign):
+                targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+                if stmt.value is not None and any(
+                    isinstance(t, ast.Name) and t.id == "pytestmark" for t in targets
+                ):
+                    scope_marks.append(stmt.value)
+            elif isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+                if stmt.name.startswith("test"):
+                    has_tests = True
+                    ids += self._marker_ids(stmt.decorator_list)
+            elif isinstance(stmt, ast.ClassDef) and self._collectable_class(stmt):
+                class_ids, class_has_tests = self._scope(stmt.body)
+                if class_has_tests:
+                    has_tests = True
+                    ids += class_ids + self._marker_ids(stmt.decorator_list)
+        if has_tests:
+            ids += self._marker_ids(scope_marks)
+        return ids, has_tests
+
+    @staticmethod
+    def _collectable_class(cls: ast.ClassDef) -> bool:
+        # pytest skips Test* classes that define __init__.
+        return cls.name.startswith("Test") and not any(
+            isinstance(s, ast.FunctionDef) and s.name == "__init__" for s in cls.body
+        )
+
+    def marked_ids(self) -> list[str]:
+        return self._scope(self.tree.body)[0]
 
 
 def _is_test_module(path: Path) -> bool:
@@ -144,8 +187,7 @@ def collect_marked_ids(tests: Path) -> dict[str, list[str]]:
     """Map each AC ID that marks a collected test to the test files that name it."""
     marked: dict[str, list[str]] = {}
     for path in sorted(p for p in tests.rglob("*.py") if _is_test_module(p)):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for ac_id in _test_marks(tree.body, path):
+        for ac_id in _TestModule(path).marked_ids():
             marked.setdefault(ac_id, []).append(str(path))
     return marked
 

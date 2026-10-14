@@ -52,6 +52,7 @@ def _install_network_guard() -> None:
     real_gethostbyname = socket.gethostbyname
     real_gethostbyname_ex = socket.gethostbyname_ex
     real_gethostbyaddr = socket.gethostbyaddr
+    real_getnameinfo = socket.getnameinfo
 
     def connect(self: socket.socket, address: Any) -> None:
         _check_address(self, address)
@@ -91,6 +92,11 @@ def _install_network_guard() -> None:
             raise RuntimeError(f"{BLOCKED}: address lookup of {host!r}")
         return real_gethostbyaddr(host)
 
+    def getnameinfo(sockaddr: Any, flags: int) -> tuple[str, str]:
+        if not _is_loopback(sockaddr[0]):
+            raise RuntimeError(f"{BLOCKED}: address lookup of {sockaddr!r}")
+        return real_getnameinfo(sockaddr, flags)
+
     for name, func in [
         ("connect", connect),
         ("connect_ex", connect_ex),
@@ -102,6 +108,7 @@ def _install_network_guard() -> None:
     socket.gethostbyname = gethostbyname
     socket.gethostbyname_ex = gethostbyname_ex
     socket.gethostbyaddr = gethostbyaddr
+    socket.getnameinfo = getnameinfo
 
 
 def pytest_configure(config: pytest.Config) -> None:

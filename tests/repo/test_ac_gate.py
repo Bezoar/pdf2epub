@@ -185,6 +185,96 @@ class Helper:
         assert f"unmarked and not pending: {ignored}" in result.output
 
 
+@pytest.mark.ac("TST-AC11")
+def test_scope_marks_count_only_where_tests_are_collected(tmp_path: Path) -> None:
+    spec = "".join(ac(f"xyz-ac{n}", f"XYZ-AC{n}") for n in range(1, 6))
+    specs, tests, pending = make_repo(tmp_path, spec, marked=["XYZ-AC5"], pending=[])
+    (tests / "test_helpers_only.py").write_text(
+        'import pytest\n\npytestmark = pytest.mark.ac("XYZ-AC1")\n\n\ndef helper() -> None:\n'
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (tests / "test_classes.py").write_text(
+        """
+import pytest
+
+
+@pytest.mark.ac("XYZ-AC2")
+class TestEmpty:
+    pass
+
+
+@pytest.mark.ac("XYZ-AC3")
+class TestWithInit:  # pytest does not collect a Test class that defines __init__
+    def __init__(self) -> None:
+        pass
+
+    def test_x(self) -> None:
+        pass
+
+
+class TestHelperOnly:
+    pytestmark = pytest.mark.ac("XYZ-AC4")
+
+    def helper(self) -> None:
+        pass
+""",
+        encoding="utf-8",
+    )
+    result = run_gate(specs, tests, pending)
+    assert result.returncode == 1
+    for ignored in ["XYZ-AC1", "XYZ-AC2", "XYZ-AC3", "XYZ-AC4"]:
+        assert f"unmarked and not pending: {ignored}" in result.output
+    assert "XYZ-AC5" not in result.output
+
+
+@pytest.mark.ac("TST-AC11")
+def test_only_pytest_mark_receivers_count(tmp_path: Path) -> None:
+    spec = "".join(ac(f"xyz-ac{n}", f"XYZ-AC{n}") for n in range(1, 6))
+    specs, tests, pending = make_repo(tmp_path, spec, marked=[], pending=[])
+    (tests / "test_aliases.py").write_text(
+        """
+import pytest as pt
+from pytest import mark
+from pytest import mark as m2
+
+import other
+
+
+@pt.mark.ac("XYZ-AC1")
+def test_a() -> None:
+    pass
+
+
+@mark.ac("XYZ-AC2")
+def test_b() -> None:
+    pass
+
+
+@m2.ac("XYZ-AC3")
+def test_c() -> None:
+    pass
+
+
+@other.mark.ac("XYZ-AC4")
+def test_d() -> None:
+    pass
+
+
+@other.ac("XYZ-AC5")
+def test_e() -> None:
+    pass
+""",
+        encoding="utf-8",
+    )
+    result = run_gate(specs, tests, pending)
+    assert result.returncode == 1
+    for counted in ["XYZ-AC1", "XYZ-AC2", "XYZ-AC3"]:
+        assert counted not in result.output
+    for ignored in ["XYZ-AC4", "XYZ-AC5"]:
+        assert f"unmarked and not pending: {ignored}" in result.output
+
+
 # --- TST-AC14 -------------------------------------------------------------------------
 
 AC14_SPEC = (

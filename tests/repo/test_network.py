@@ -40,6 +40,7 @@ def test_outbound_name_lookups_are_blocked() -> None:
         lambda: socket.gethostbyname("pdf2epub-test.invalid"),
         lambda: socket.gethostbyname_ex("pdf2epub-test.invalid"),
         lambda: socket.gethostbyaddr("192.0.2.1"),
+        lambda: socket.getnameinfo(("192.0.2.1", 53), socket.NI_NAMEREQD),
     ):
         with pytest.raises(RuntimeError, match=BLOCKED):
             lookup()
