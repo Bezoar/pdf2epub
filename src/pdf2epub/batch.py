@@ -95,7 +95,10 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
     conversions: list[PlannedConversion] = []
     seen: set[str] = set()
     for source in _discover(inputs, options.recursive):
-        key = os.path.realpath(source)
+        try:
+            key = os.path.realpath(source)
+        except ValueError:  # e.g. a NUL byte from a files-from list; reported not_found
+            key = str(source)
         if key in seen:
             continue  # BAT-R5: planned once, at its first occurrence
         seen.add(key)
@@ -153,6 +156,8 @@ def _content_issues(source: Path) -> list[Issue]:
     try:
         with source.open("rb") as file:
             head = file.read(MAGIC_WINDOW)
+    except ValueError:  # a path the OS cannot even name, e.g. one holding a NUL byte
+        return [Issue(IssueCode.NOT_FOUND, f"Cannot read {str(source)!r}: not a valid path.")]
     except OSError as error:
         reason = error.strerror or str(error)
         return [Issue(IssueCode.NOT_FOUND, f"Cannot read {source}: {reason}.")]

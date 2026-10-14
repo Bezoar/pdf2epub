@@ -202,3 +202,15 @@ def test_missing_input_is_planned_and_reported_right_after_batch_started(
     assert finished["outcome"] == "failed"
     assert [issue["code"] for issue in finished["issues"]] == ["not_found"]
     assert [e["id"] for e in sink.of_type("conversion_started")] == [0]
+
+
+def test_an_impossible_path_is_not_found_and_planning_continues(tmp_path: Path) -> None:
+    # BAT-R4: a path that cannot be read gets not_found; a NUL byte can arrive from a
+    # files-from list and must not abort planning.
+    good = touch_pdf(tmp_path / "good.pdf")
+    listed = read_files_from("-", stdin=io.StringIO(f"bad\0name.pdf\n{good}\n"))
+
+    plan = plan_batch(listed, DiscoveryOptions())
+
+    assert [[i.code for i in c.issues] for c in plan.conversions] == [["not_found"], []]
+    assert plan.conversions[1].source == str(good)
