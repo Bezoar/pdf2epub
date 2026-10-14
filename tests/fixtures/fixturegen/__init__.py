@@ -41,6 +41,7 @@ def registry() -> list[Fixture]:
         pagenumbers,
         twopage,
         typography,
+        verse,
     )
 
     # The novel comes first: the cross-reference fixture is cut from it.
@@ -68,6 +69,7 @@ def registry() -> list[Fixture]:
             pagenumbers.FRONT_MATTER_TRUTH,
             pagenumbers.build_front_matter,
         ),
+        Fixture(verse.PATH, verse.GROUND_TRUTH, verse.build),
         Fixture(cjk.PATH, cjk.GROUND_TRUTH, cjk.build),
         Fixture(twopage.PATH, twopage.GROUND_TRUTH, twopage.build),
     ]

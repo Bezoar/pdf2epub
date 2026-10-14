@@ -46,6 +46,7 @@ Fixed-layout output and an accessibility audit are [roadmap](../worksheets/roadm
 |---|---|
 | `Heading` | `<h1>`–`<h6>`, with its anchor as `id` |
 | `Paragraph` | `<p>` |
+| `LineBlock` | `<p class="lines">` with `<br/>` between lines ([EPUB-R20](#epub-r20)) |
 | Bold and italic inlines | `<b>` and `<i>` |
 | `Image` | `<figure>` with `<img>`, plus a `<figcaption>` when there is a caption |
 | `PageBreak` | `<span epub:type="pagebreak" role="doc-pagebreak" id="page-<page>" aria-label="<label>"/>`, inside the `<p>` when the marker is an inline, otherwise between blocks |
@@ -171,6 +172,15 @@ A failed check is a bug: the conversion fails with [`internal_error`](api.md#cod
 - the page-break spans have the IDs `page-1` … `page-4`, all distinct;
 - their `aria-label`s read `i`, `i`, `A&B 1` and `<2>` once unescaped;
 - the `page-list` has 4 entries with those labels, linking to `#page-1` … `#page-4`;
+- epubcheck reports zero errors.
+
+
+<a id="epub-r20"></a>**EPUB-R20**: A `LineBlock` ([reflow](reflow.md#rfl-r36)) shall be rendered as one `<p class="lines">`, with a `<br/>` between consecutive lines and none after the last. A `monospace` line block also has the class `code` (`<p class="lines code">`) and wraps its lines in one `<code>` element, so a reader shows it in its own monospace font. The default stylesheet ([EPUB-R10](#epub-r10)) gives line blocks no first-line indent and some space above and below, and gives `code` line blocks `white-space: pre-wrap`, so their spaces are kept while long lines still wrap. It sets no font family.
+
+<a id="epub-ac14"></a>**EPUB-AC14** (covers [EPUB-R20](#epub-r20), [EPUB-R7](#epub-r7)): **Given** a document model with a `LineBlock` of three lines and a `monospace` `LineBlock` whose second line starts with four spaces (built through the writer's test seam), **when** the EPUB is written, **then**:
+- each block is one `<p>` with the class `lines` (and `code` for the monospace one), holding the lines in order with exactly one `<br/>` between consecutive lines;
+- the monospace block's lines are inside one `<code>`, and its second line keeps its four leading spaces;
+- the stylesheet gives `p.code` `white-space: pre-wrap`;
 - epubcheck reports zero errors.
 
 ## Open points
