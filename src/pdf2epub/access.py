@@ -196,8 +196,8 @@ def _unsupported(detail: str) -> Issue:
 def _xml_root(head: bytes) -> str | None:
     """The root element's name, as ``<namespace> <local name>``, of the XML document
     starting with ``head``; None when ``head`` doesn't reach a root element as
-    well-formed XML, or declares a DTD. Without a DTD there are no entities to expand, and parsing stops at
-    the root's start tag."""
+    well-formed XML, or declares a DTD. Without a DTD there are no entities to expand,
+    and parsing stops at the root's start tag."""
     if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
         return None  # an .acsm token has no DTD; refuse to expand anyone's entities
     roots: list[str] = []
