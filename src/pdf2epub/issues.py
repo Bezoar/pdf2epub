@@ -111,6 +111,17 @@ class Issue:
             "hint": self.hint,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Issue":
+        """The issue whose wire form (``to_dict``) is ``data``."""
+        return cls(
+            code=IssueCode(data["code"]),
+            message=str(data["message"]),
+            pages=[int(page) for page in data["pages"]],
+            reason=None if data["reason"] is None else str(data["reason"]),
+            hint=None if data["hint"] is None else str(data["hint"]),
+        )
+
 
 def derive_outcome(issues: list[Issue]) -> Outcome:
     """A conversion's outcome from its issues, in the order API-R12 gives."""

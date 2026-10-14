@@ -10,7 +10,7 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -58,6 +58,13 @@ class Reporter(Protocol):
 
     def issue(self, issue: Issue) -> None: ...
 
+    def temporary(self, path: Path) -> None:
+        """The conversion is about to write its EPUB to the temporary file ``path``."""
+
+    def commit(self) -> bool:
+        """The EPUB is complete in its temporary file: whether to rename it over the
+        destination now. False abandons the conversion as cancelled."""
+
 
 class _WriteFailed(Exception):
     pass
@@ -96,10 +103,21 @@ def convert(
         issues.append(issue)
         reporter.issue(issue)
 
+    def boundary() -> None:
+        """A stage or page boundary, where a cancelled batch stops this conversion
+        (BAT-R17)."""
+        if cancel is not None and cancel.cancelled:
+            raise _Cancelled
+
+    def progress(stage: str, done: int, of: int, **fields: Any) -> None:
+        reporter.progress(stage, done, of, **fields)
+        boundary()
+
     try:
         assert planned.destination is not None, "a conversion that runs has a destination"
         source_path, destination = Path(planned.source), Path(planned.destination)
 
+        boundary()
         log.debug("conversion %d: opening %s", planned.id, source_path)
         access = unlock(source_path, candidates)
         password_source = access.source
@@ -108,14 +126,14 @@ def convert(
         log.debug("conversion %d: %d pages", planned.id, page_count)
         with ParsedPdf(source_path, access.password) as pdf:
             repaired = pdf.repaired
-            reporter.progress("open", 1, 1)
+            progress("open", 1, 1)
             if page_count == 0:
                 raise _Empty("The PDF has no pages.")
 
             pages: list[PageText] = []
             for page in read_pages(pdf):
                 pages.append(page)
-                reporter.progress("analyse", len(pages), page_count, page=page.page)
+                progress("analyse", len(pages), page_count, page=page.page)
 
         images = read_images(source_path, access.password)
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
@@ -136,9 +154,11 @@ def convert(
         document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
             add(issue)
-        reporter.progress("reflow", 1, 1)
+        progress("reflow", 1, 1)
 
-        write_atomically(write_epub(document), destination, cancel)
+        write_atomically(
+            write_epub(document), destination, cancel, reporter.temporary, reporter.commit
+        )
         output = str(destination)
         reporter.progress("write", 1, 1)
         log.info("converted %s to %s", source_path, destination)
@@ -180,11 +200,19 @@ def convert(
     )
 
 
-def write_atomically(data: bytes, destination: Path, cancel: CancelToken | None = None) -> None:
+def write_atomically(
+    data: bytes,
+    destination: Path,
+    cancel: CancelToken | None = None,
+    on_temporary: Callable[[Path], None] | None = None,
+    may_commit: Callable[[], bool] | None = None,
+) -> None:
     """Write ``data`` to a hidden temporary file beside ``destination``, then rename it
     over the destination (BAT-R13), unless ``cancel`` is set by then. The temporary file
     never outlives a failure or a cancellation, and an existing destination is untouched
-    by either (BAT-R14)."""
+    by either (BAT-R14). ``on_temporary`` is told the temporary file's path as soon as it
+    exists, so that whoever kills this process can delete it; ``may_commit``, when given,
+    has the last word on whether the rename happens."""
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(
@@ -193,12 +221,16 @@ def write_atomically(data: bytes, destination: Path, cancel: CancelToken | None 
     except OSError as error:
         raise _WriteFailed(f"Could not write {destination}: {error.strerror or error}") from error
     try:
+        if on_temporary is not None:
+            on_temporary(Path(temporary))
         with os.fdopen(handle, "wb") as file:
             os.fchmod(file.fileno(), 0o666 & ~_UMASK)
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
         if cancel is not None and cancel.cancelled:
+            raise _Cancelled
+        if may_commit is not None and not may_commit():
             raise _Cancelled
         os.replace(temporary, destination)
     except OSError as error:
