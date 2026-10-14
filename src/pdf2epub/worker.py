@@ -10,7 +10,8 @@ touching argv or the environment:
 - ``options``: the ``ConversionOptions``;
 - ``log_level``: the level of the parent's ``pdf2epub`` logger;
 - ``candidates``: the password candidates as (value, source label) pairs, each value
-  wrapped in a ``Secret`` again as soon as the request is read.
+  wrapped in a ``Secret`` again as soon as the request is read;
+- ``engine``: the run's OCR ``EngineProbe``, or None.
 
 The worker answers on its stdout with JSON Lines messages, one per line, which the parent
 turns into events and log records:
@@ -138,7 +139,12 @@ def main() -> int:
 
     candidates = [Candidate(Secret(value), source) for value, source in request.pop("candidates")]
     result = convert(
-        request["planned"], request["options"], _PipeReporter(channel), None, candidates
+        request["planned"],
+        request["options"],
+        _PipeReporter(channel),
+        None,
+        candidates,
+        request["engine"],
     )
     channel.send("result", result=result.to_dict())
     return 0

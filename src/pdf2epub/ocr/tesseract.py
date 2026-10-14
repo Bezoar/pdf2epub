@@ -60,13 +60,14 @@ class Tesseract:
     program: Path
     tessdata_dir: Path | None = None
     _capabilities: Capabilities | None = field(default=None, init=False, repr=False)
+    _languages: frozenset[str] = field(default=frozenset(), init=False, repr=False)
 
     def capabilities(self) -> Capabilities:
         """Tesseract's version, from ``--version``, and whether its orientation data
         (``osd``) is installed, from ``--list-langs``; asked once."""
         if self._capabilities is None:
             version = _version(self._probe(["--version"]))
-            languages = self._probe(["--list-langs"]).split()
+            languages = self._languages = _languages(self._probe(["--list-langs"]))
             self._capabilities = Capabilities(
                 name="tesseract",
                 version=version,
@@ -76,6 +77,19 @@ class Tesseract:
                 licence="Apache-2.0",
             )
         return self._capabilities
+
+    def languages(self) -> frozenset[str]:
+        """The languages Tesseract has data for, from ``--list-langs``; asked once, with
+        the capabilities."""
+        self.capabilities()
+        return self._languages
+
+    def parameters(self) -> frozenset[str] | None:
+        """The names of Tesseract's parameters, from ``--print-parameters``; None if it
+        lists none."""
+        lines = self._probe(["--print-parameters"]).splitlines()
+        names = {line.split()[0] for line in lines if "\t" in line and line.split()}
+        return frozenset(names) or None
 
     def recognise(self, request: OcrRequest) -> OcrPageResult:
         image = io.BytesIO()
@@ -150,6 +164,14 @@ def _kill(process: "subprocess.Popen[bytes]") -> None:
     with contextlib.suppress(ProcessLookupError):  # it may have exited on its own by now
         os.killpg(process.pid, signal.SIGKILL)
     process.communicate()
+
+
+def _languages(text: str) -> frozenset[str]:
+    """The language codes in ``tesseract --list-langs`` output: every line after the
+    heading (``List of available languages in "…" (3):``)."""
+    lines = text.splitlines()
+    starts = [i + 1 for i, line in enumerate(lines) if line.startswith("List of available")]
+    return frozenset(line.strip() for line in lines[starts[-1] if starts else 0 :] if line.strip())
 
 
 def _version(text: str) -> str:

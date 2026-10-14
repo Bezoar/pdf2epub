@@ -25,6 +25,7 @@ from typing import Any
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, Reporter
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
+from pdf2epub.ocr.engine import EngineProbe
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import PASSWORD_VARIABLES, Candidate
 from pdf2epub.results import ConversionResult
@@ -50,9 +51,12 @@ def run_in_worker(
     cancel: CancelToken | None,
     timeout: float,
     candidates: Sequence[Candidate] = (),
+    engine: EngineProbe | None = None,
 ) -> ConversionResult:
     """Run ``planned`` in a new worker subprocess and return its result. The password
-    ``candidates`` reach the worker only in its request, over its stdin pipe (BAT-R22)."""
+    ``candidates`` reach the worker only in its request, over its stdin pipe (BAT-R22).
+    ``engine``, the run's OCR engine probe, goes with them, so the worker doesn't probe
+    again (OCR-R24)."""
     started = time.monotonic()
     deadline = started + timeout
     # BAT-R22: password variables are never handed to a worker; candidates go over its pipe.
@@ -63,6 +67,7 @@ def run_in_worker(
         "log_level": logging.getLogger("pdf2epub").getEffectiveLevel(),
         # Revealed only to be written to the worker's pipe, as plain (value, label) pairs.
         "candidates": [(c.secret.reveal(), c.source) for c in candidates],
+        "engine": engine,
     }
     worker = subprocess.Popen(
         [sys.executable, "-m", "pdf2epub.worker"],

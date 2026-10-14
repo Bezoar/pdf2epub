@@ -35,6 +35,26 @@ jobs:
       - name: AC-marker gate (TST-R17, TST-R20)
         run: uv run python scripts/ac_gate.py
 
+  install:
+    # MAIN-AC5: on clean runners, with nothing checked out, install the commit under test
+    # from git as a user would, then run it.
+    name: Install from git (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    steps:
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: uv tool install
+        env:
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: uv tool install "git+https://github.com/${{ github.repository }}@${COMMIT}"
+      - name: Run the installed command
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          pdf2epub --version
+
   test:
     name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

@@ -24,7 +24,9 @@ from pdf2epub.errors import UsageError
 from pdf2epub.events import Emitter, EventSink
 from pdf2epub.isolation import run_in_worker
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity, derive_outcome
-from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
+from pdf2epub.ocr import engine as ocr_engine
+from pdf2epub.ocr.engine import EngineProbe
+from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions, OcrOptions
 from pdf2epub.passwords import Candidate, PasswordProvider, distinct
 from pdf2epub.reflow.cover import check_cover
 from pdf2epub.results import BatchReport, ConversionResult, Totals
@@ -288,11 +290,14 @@ def run_batch(
     time limit (BAT-R19 to BAT-R21); with ``"inprocess"``, in this process.
 
     Raises ``UsageError``, before any event, when ``conversion_options.cover`` names an
-    image file that can't be read or decoded (RFL-R28).
+    image file that can't be read or decoded (RFL-R28), or when the run's preflight finds
+    an unknown OCR engine option or too many candidate passwords for a file (API-R29).
     """
     # Preflight: a cover file that can't be used is a usage error, before any event
     # (RFL-R28, BAT-R25).
     check_cover(conversion_options.cover)
+    engine = ocr_engine.probe_engine(conversion_options.ocr)
+    check_engine_options(conversion_options.ocr, engine)
     candidates = _preflight(plan, batch_options, passwords)
     emitter = Emitter(sink)
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -331,10 +336,16 @@ def run_batch(
             found = candidates.get(planned.id, ())
             if batch_options.isolation == "subprocess":
                 result = run_in_worker(
-                    planned, conversion_options, reporter, cancel, batch_options.timeout, found
+                    planned,
+                    conversion_options,
+                    reporter,
+                    cancel,
+                    batch_options.timeout,
+                    found,
+                    engine,
                 )
             else:
-                result = convert(planned, conversion_options, reporter, cancel, found)
+                result = convert(planned, conversion_options, reporter, cancel, found, engine)
         emitter.emit("conversion_finished", **result.to_dict())
         results.append(result)
 
@@ -381,6 +392,24 @@ def _preflight(
                 )
             candidates[planned.id] = found
     return candidates
+
+
+def check_engine_options(options: OcrOptions, engine: EngineProbe) -> None:
+    """Raise ``UsageError`` for an engine option the probed engine doesn't take
+    (OCR-R25). Keys may carry the ``tesseract.`` namespace. With no engine, or one that
+    couldn't list its options, nothing can be checked: the options are ignored."""
+    if engine.engine is None or engine.parameters is None:
+        return
+    unknown = [
+        key
+        for key in options.engine_options
+        if key.removeprefix("tesseract.") not in engine.parameters
+    ]
+    if unknown:
+        raise UsageError(
+            f"unknown OCR engine option {', '.join(unknown)}: not a Tesseract parameter "
+            "(see `tesseract --print-parameters`)"
+        )
 
 
 def _not_attempted(planned: PlannedConversion) -> ConversionResult:
