@@ -29,7 +29,7 @@ def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     [
         (["--no-such-flag", "a.pdf"], "--no-such-flag"),
         (["--files-from", "missing-list.txt"], "missing-list.txt"),
-        (["a.pdf", "b.pdf", "-o", "existing.epub"], "existing.epub"),
+        (["a.pdf", "b.pdf", "-o", "existing.txt"], "existing.txt"),
         ([], "no inputs"),
     ],
     ids=["unknown-flag", "missing-files-from", "output-is-a-file", "no-inputs"],
@@ -39,12 +39,12 @@ def test_usage_error_exits_2_with_a_reason_and_converts_nothing(
 ) -> None:
     shutil.copyfile(NOVEL, tmp_path / "a.pdf")
     shutil.copyfile(NOVEL, tmp_path / "b.pdf")
-    (tmp_path / "existing.epub").write_bytes(b"not touched")
+    (tmp_path / "existing.txt").write_bytes(b"not touched")
 
     proc = run(args, tmp_path)
 
     assert proc.returncode == 2, proc.stderr
     assert reason in proc.stderr
     assert proc.stdout == ""
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.pdf", "b.pdf", "existing.epub"]
-    assert (tmp_path / "existing.epub").read_bytes() == b"not touched"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.pdf", "b.pdf", "existing.txt"]
+    assert (tmp_path / "existing.txt").read_bytes() == b"not touched"
