@@ -52,6 +52,10 @@ _Avoid_: rasterising, image mode
 Text repeated on printed pages for navigation rather than content: running headers, running footers, page numbers.
 _Avoid_: boilerplate, chrome, artifacts
 
+**Line block**:
+A block of text whose line breaks carry meaning, such as verse, song lyrics, an address or code, so its lines are kept as they are instead of being joined into a paragraph.
+_Avoid_: preformatted text (for verse), poem block
+
 **Text layer**:
 The text a PDF page already carries, whether typeset or added by earlier OCR.
 _Avoid_: embedded text, hidden text (except for text we add under a page image)
