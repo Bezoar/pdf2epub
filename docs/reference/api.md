@@ -52,3 +52,5 @@ report = run_batch(plan, BatchOptions(), ConversionOptions(), sink=print, passwo
 ```
 
 Hold every password as a `Secret`: it prints as `***` and refuses JSON encoding. Events and reports name only the source label (`cli #1`, `env`, `file:line 3`, `map:"<key>"`) in `password_source`, never the password. More than 25 candidate passwords for one file is a usage error: `run_batch` raises `UsageError` before any event.
+
+To let the user type a password, set `PasswordSources.prompt` to a function `(path, attempt) -> Secret | None`. The core calls it from the thread that runs `run_batch` once the supplied candidates have failed, at most 3 times per file; `None` skips the file. Conversions that need a prompt run after every other conversion has finished. Without a prompt, a conversion that a password would let go ahead emits `password_required` with the labels of the sources tried, then fails as `missing_password`, `wrong_password` or `restricted`.
