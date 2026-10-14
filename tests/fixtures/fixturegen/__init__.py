@@ -39,6 +39,7 @@ def registry() -> list[Fixture]:
         not_a_pdf,
         novel,
         oversized,
+        pagenumbers,
         structure,
         typography,
     )
@@ -73,6 +74,18 @@ def registry() -> list[Fixture]:
             structure.OUTLINE_TO_PAGE,
             structure.OUTLINE_TO_PAGE_TRUTH,
             structure.build_outline_to_page,
+        ),
+        Fixture(
+            pagenumbers.PAGE_LABELS, pagenumbers.PAGE_LABELS_TRUTH, pagenumbers.build_page_labels
+        ),
+        Fixture(pagenumbers.ODD_LABELS, pagenumbers.ODD_LABELS_TRUTH, pagenumbers.build_odd_labels),
+        Fixture(pagenumbers.MISSING, pagenumbers.MISSING_TRUTH, pagenumbers.build_missing),
+        Fixture(pagenumbers.REPEATED, pagenumbers.REPEATED_TRUTH, pagenumbers.build_repeated),
+        Fixture(pagenumbers.TRIPLED, pagenumbers.TRIPLED_TRUTH, pagenumbers.build_tripled),
+        Fixture(
+            pagenumbers.FRONT_MATTER,
+            pagenumbers.FRONT_MATTER_TRUTH,
+            pagenumbers.build_front_matter,
         ),
     ]
 

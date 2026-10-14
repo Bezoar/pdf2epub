@@ -24,7 +24,7 @@ from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.chapters import Position, make_chapters
 from pdf2epub.reflow.extract import Line, PageText, normalise
-from pdf2epub.reflow.furniture import PageBlocks, find_furniture
+from pdf2epub.reflow.furniture import Furniture, PageBlocks, find_furniture
 from pdf2epub.reflow.headings import heading_levels
 from pdf2epub.reflow.images import PlacedImage
 from pdf2epub.reflow.layout import (
@@ -46,6 +46,7 @@ from pdf2epub.reflow.model import (
     Paragraph,
     Text,
 )
+from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
 from pdf2epub.reflow.wordlists import wordlist
@@ -70,7 +71,10 @@ def build_document(
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
     metadata, issues = _metadata(source, options)
-    blocks, positions = _body(source, pages, images, wordlist(metadata.language))
+    blocks, positions, furniture = _body(source, pages, images, wordlist(metadata.language))
+    gaps = sequence_gaps(furniture.page_numbers)
+    if gaps is not None:
+        issues.append(gaps)
     outline = [replace(entry, title=normalise(entry.title).strip()) for entry in source.outline]
     chapters, toc = make_chapters(blocks, positions, outline, metadata.title)
     assets: dict[ImageAsset, None] = {}
@@ -110,8 +114,8 @@ def _body(
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
     words: Collection[str] | None,
-) -> tuple[list[Block], list[Position]]:
-    """The book's blocks in reading order, with where each starts."""
+) -> tuple[list[Block], list[Position], Furniture]:
+    """The book's blocks in reading order, with where each starts, and its furniture."""
     typography = measure(pages)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
@@ -172,7 +176,7 @@ def _body(
             blocks.append(Heading(item.level, inlines, anchor=f"heading-{headings}"))
         else:
             blocks.append(item)
-    return blocks, [position for _, position in stream]
+    return blocks, [position for _, position in stream], furniture
 
 
 # Points of slack when deciding that an image sits in the gap between two lines.
