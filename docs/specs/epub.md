@@ -97,7 +97,7 @@ With no cover, neither is present.
 
 <a id="epub-r16"></a>**EPUB-R16**: Before writing, the writer shall always run built-in checks:
 - every XHTML file is well-formed;
-- every manifest item exists, and every packaged file is in the manifest;
+- every manifest item exists, and every packaged file is in the manifest, except the container entries `mimetype` and `META-INF/container.xml`, which by definition are not manifest items;
 - every internal link and anchor resolves;
 - the spine is not empty.
 

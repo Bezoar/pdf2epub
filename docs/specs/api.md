@@ -169,7 +169,7 @@ class ConversionResult:
 class BatchReport:
     tool_version: str
     started_at: str           # ISO-8601 UTC, e.g. "2026-10-13T09:15:02Z"
-    results: list[ConversionResult]   # input (plan) order
+    conversions: list[ConversionResult]   # input (plan) order
     totals: Totals            # converted, skipped, failed
     interrupted: bool
     exit_code: int
@@ -177,7 +177,7 @@ class BatchReport:
 
 <a id="api-r13"></a>**API-R13**: `ConversionResult` shall carry exactly the fields above. `output` is set only when an EPUB was written by this run. `ocr` is `null` when the conversion ran no OCR attempt.
 
-<a id="api-r14"></a>**API-R14**: `BatchReport.results` shall list conversions in **plan order**, whatever order they finished in, and `totals` shall count each outcome. `exit_code` follows [batch §7](batch.md#7-exit-codes).
+<a id="api-r14"></a>**API-R14**: `BatchReport.conversions` shall list conversions in **plan order**, whatever order they finished in, and `totals` shall count each outcome. `exit_code` follows [batch §7](batch.md#7-exit-codes).
 
 <a id="api-r15"></a>**API-R15**: Every path in events, results and the report shall be **absolute**.
 
@@ -351,8 +351,12 @@ Inline draft of `events.v1.json`. Shape only; `additionalProperties` stays open 
         "fell_back": {"type": "boolean"}
       },
       "required": ["id", "stage", "done", "of"],
-      "if": {"properties": {"stage": {"const": "ocr"}}},
-      "then": {"required": ["page", "trigger", "confidence", "coverage", "attempts", "fell_back"]}
+      "allOf": [
+        {"if": {"properties": {"stage": {"enum": ["analyse", "ocr"]}}},
+         "then": {"required": ["page"]}},
+        {"if": {"properties": {"stage": {"const": "ocr"}}},
+         "then": {"required": ["page", "trigger", "confidence", "coverage", "attempts", "fell_back"]}}
+      ]
     },
     "issue_event": {
       "properties": {

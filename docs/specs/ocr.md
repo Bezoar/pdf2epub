@@ -34,7 +34,7 @@ Font names, Producer/Creator strings and guesses about which OCR engine made a l
 
 <a id="ocr-r9"></a>**OCR-R9**: For each conversion, rejected pages shall be reported as [`text_layer_rejected`](api.md#code-text_layer_rejected) (info), grouped as one issue per reason with a sorted page list. Reasons are `garbled` (garbage ratio), `implausible_words` (word plausibility) or `low_coverage` (text-layer coverage). If several signals fail on a page, the reason is the first in that order.
 
-<a id="ocr-r10"></a>**OCR-R10**: Under `mode = "auto"`, a rejected page shall be re-OCR'd through the [retry ladder](#4-preprocessing-acceptance-and-retry-ladder). If no attempt is accepted, the page becomes a page-image fallback with reason `ocr_low_confidence`, and its hidden searchable text shall be whichever of the best OCR attempt and the original text layer scores better on the signals in [OCR-R7](#ocr-r7).
+<a id="ocr-r10"></a>**OCR-R10**: Under `mode = "auto"`, a rejected page shall be re-OCR'd through the [retry ladder](#4-preprocessing-acceptance-and-retry-ladder). If attempts completed but none was accepted, the page becomes a page-image fallback with reason `ocr_low_confidence`. If the ladder ended because the page budget ran out or the engine failed, the reason is set by [OCR-R22](#ocr-r22) or [OCR-R23](#ocr-r23) instead. In every case the fallback's hidden searchable text shall be whichever of the best OCR attempt and the original text layer scores better on the signals in [OCR-R7](#ocr-r7).
 
 ## 3. Engine protocol and Tesseract adapter
 
@@ -61,7 +61,7 @@ Results are word-level: no character-level detail and no alternative readings.
 
 <a id="ocr-r16"></a>**OCR-R16**: The pipeline, not the engine, shall compute **coverage**: the share of the page's ink pixels (from the binarised image) that fall inside the bounding boxes of recognised words. It catches dropped text that OCR confidence misses.
 
-<a id="ocr-r17"></a>**OCR-R17**: An empty OCR result (no words) on a page shall not be an issue: such pages are blank or illustrations. The page keeps its rendered image if it has a significant image ([reflow](reflow.md) decides), and otherwise contributes no text.
+<a id="ocr-r17"></a>**OCR-R17**: An empty OCR result (no words) on a page **with no text layer** shall not be an issue: such pages are blank or illustrations. The page keeps its rendered image if it has a significant image ([reflow](reflow.md) decides), and otherwise contributes no text.
 
 ## 4. Preprocessing, acceptance and retry ladder
 
@@ -119,6 +119,8 @@ The coverage threshold, the ladder's steps and the render DPI are internal const
 
 <a id="ocr-r30"></a>**OCR-R30**: Each conversion's result shall carry `ocr: {engine, engine_version, languages, quality}` when it OCR'd at least one page, and `ocr: null` otherwise. Nothing about OCR shall be written into the EPUB's metadata.
 
+<a id="ocr-r31"></a>**OCR-R31**: An empty OCR result on a page that **has** a text layer (possible under `mode = "always"`, or after the layer was rejected) shall never silently drop that text. If the layer passes the text-layer quality check ([OCR-R7](#ocr-r7)), the page keeps it as its text. Otherwise the page becomes a page-image fallback with reason `ocr_low_confidence`, with the original layer as its hidden searchable text.
+
 ## 7. Acceptance criteria
 
 All page images below are synthetic fixtures from [testing](testing.md) unless named otherwise. "Fake engine" means a test double at the `OcrEngine` seam that returns scripted results.
@@ -170,6 +172,8 @@ All page images below are synthetic fixtures from [testing](testing.md) unless n
 <a id="ocr-ac23"></a>**OCR-AC23** (covers [OCR-R28](#ocr-r28)): **Given** a scanned fixture whose source text had italic words, **when** it converts with real Tesseract, **then** the EPUB contains no `<em>`, `<i>`, `<strong>` or `<b>` elements in text from OCR'd pages.
 
 <a id="ocr-ac24"></a>**OCR-AC24** (covers [OCR-R29](#ocr-r29), [OCR-R30](#ocr-r30)): **Given** a 2-page scanned fixture and the fake engine, **when** it converts, **then** exactly 2 `progress` events with stage `ocr` are emitted, each with numeric `confidence` and `coverage`, integer `attempts` ≥ 1, boolean `fell_back` and a `trigger`; the conversion result has `ocr.engine = "tesseract"`, `ocr.languages` and `ocr.quality = "balanced"`; and a born-digital conversion in the same batch has `ocr: null`. The EPUB's package metadata contains no mention of OCR or Tesseract.
+
+<a id="ocr-ac25"></a>**OCR-AC25** (covers [OCR-R31](#ocr-r31), [OCR-R17](#ocr-r17)): **Given** a fake engine that returns no words for every page, **when** a born-digital fixture with a good typeset text layer is converted with `mode = "always"`, **then** every page keeps its original text and no `page_fallback` issue is raised; **when** the must-reject garbled-layer fixture is converted with `mode = "always"`, **then** each of its pages is a page image with `page_fallback` reason `ocr_low_confidence`; **and when** a blank scanned page with no text layer is converted, **then** no issue is raised.
 
 ## Open points
 

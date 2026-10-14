@@ -68,7 +68,7 @@ In `mode = "auto"`, a page whose score is above an internal threshold shall beco
 
 <a id="rfl-r15"></a>**RFL-R15**: A page-image fallback page shall be carried in the document model as a **page image**:
 - a render of the whole page (the un-cleaned render for scanned pages), downscaled to the image size limit ([RFL-R27](#rfl-r27));
-- its searchable text: the page's own text for `complex` and `multi_column` pages, in column order: every line of one column, top to bottom, before any line of the next column, columns left to right. Lines from different columns shall never be interleaved, in the hidden text any more than in visible text. For OCR-driven fallbacks, the text chosen by [ocr](ocr.md).
+- its searchable text: the page's own text for `complex` and `multi_column` pages, in column order: every line of one column, top to bottom, before any line of the next column, columns left to right. Lines from different columns shall never be interleaved, in the hidden text any more than in visible text. On any page detected as multi-column ([RFL-R11](#rfl-r11)), this column order applies whatever the text's source: OCR words are assigned to the columns found by RFL-R11 and emitted column by column, even though OCR itself treats the page as one column ([ocr](ocr.md#ocr-r28)). For OCR-driven fallbacks, the text chosen by [ocr](ocr.md).
 
 The page image sits in reading order where the page was. [epub](epub.md#epub-r9) defines its markup.
 
@@ -223,6 +223,8 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 - every two-column page is a `PageImage` with a [`page_fallback`](api.md#code-page_fallback) issue, reason `multi_column`, listing those pages;
 - no `Paragraph` contains text from both columns;
 - each of those pages' searchable text holds the whole left column's text before any of the right column's.
+
+**And given** a 300 DPI scanned rendering of the same fixture with real Tesseract, **then** the same two checks hold for its OCR'd hidden text.
 
 <a id="rfl-ac9"></a>**RFL-AC9** (covers [RFL-R13](#rfl-r13), [RFL-R14](#rfl-r14), [RFL-R15](#rfl-r15)): **Given** a fixture with one page holding a ruled table and an equation, and other pages of plain prose, **when** it is converted in `mode = "auto"`, **then**:
 - that page is a `PageImage` whose `text` contains the table's cell text;
