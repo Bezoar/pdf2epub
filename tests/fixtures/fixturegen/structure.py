@@ -11,6 +11,10 @@
   ``Two`` (``Three``) that points to the whole of page 3, where no heading is; its ground
   truth ``outline-to-page.txt`` is the four paragraphs.
 
+- ``image-page-in-paragraph.pdf``: a paragraph that breaks mid-sentence at the end of
+  page 1 and runs on at the top of page 3, with page 2 holding only an image; its ground
+  truth ``image-page-in-paragraph.txt`` is the whole paragraph.
+
 Images are hex-encoded inline images, so the files do not depend on the zlib build.
 """
 
@@ -25,6 +29,8 @@ IMAGE_BETWEEN_LINES = "born-digital/image-between-lines.pdf"
 IMAGE_BETWEEN_LINES_TRUTH = "born-digital/image-between-lines.txt"
 OUTLINE_TO_PAGE = "born-digital/outline-to-page.pdf"
 OUTLINE_TO_PAGE_TRUTH = "born-digital/outline-to-page.txt"
+IMAGE_PAGE = "born-digital/image-page-in-paragraph.pdf"
+IMAGE_PAGE_TRUTH = "born-digital/image-page-in-paragraph.txt"
 
 PAGE_WIDTH, PAGE_HEIGHT = 432.0, 648.0
 MARGIN_X, TOP = 54.0, 560.0
@@ -97,3 +103,19 @@ def build_outline_to_page(out_dir: Path) -> None:
         canvas.showPage()
     canvas.save()
     (out_dir / OUTLINE_TO_PAGE_TRUTH).write_text("\n\n".join(PAGE_TEXT) + "\n", encoding="utf-8")
+
+
+def build_image_page(out_dir: Path) -> None:
+    canvas = _canvas(out_dir, IMAGE_PAGE)
+    for page, lines in enumerate([BEFORE, None, AFTER]):
+        if lines is None:
+            inline_image(canvas, MARGIN_X, 300.0, 150)
+        else:
+            canvas.setFont(FONT, SIZE)
+            for n, line in enumerate(lines):
+                x = MARGIN_X + (INDENT if page == 0 and n == 0 else 0)
+                canvas.drawString(x, TOP - n * LEADING, line)
+        canvas.showPage()
+    canvas.save()
+    text = " ".join([*BEFORE, *AFTER])
+    (out_dir / IMAGE_PAGE_TRUTH).write_text(text + "\n", encoding="utf-8")

@@ -76,6 +76,7 @@ def registry() -> list[Fixture]:
             structure.OUTLINE_TO_PAGE_TRUTH,
             structure.build_outline_to_page,
         ),
+        Fixture(structure.IMAGE_PAGE, structure.IMAGE_PAGE_TRUTH, structure.build_image_page),
         Fixture(
             pagenumbers.PAGE_LABELS, pagenumbers.PAGE_LABELS_TRUTH, pagenumbers.build_page_labels
         ),

@@ -123,6 +123,8 @@ def write_epub(document: Document) -> bytes:
                     (piece, _block_markup(_block(piece, images, figures, continued=n > 0)))
                     for n, piece in enumerate(pieces)
                 ]
+                if any(len(m.encode("utf-8")) + shell > SPLIT_BYTES for _, m in rendered_pieces):
+                    raise PackageCheckError(f"a paragraph in chapter {index + 1} can't be split")
             else:
                 rendered_pieces = [(block, markup)]
             for piece, piece_markup in rendered_pieces:
@@ -241,35 +243,52 @@ def _inline(inline: Inline) -> dict[str, Any]:
     return {"kind": "text", "text": inline.text, "bold": inline.bold, "italic": inline.italic}
 
 
-# What a word or a page-break marker adds to a paragraph's markup, at most: its escaped
-# text plus room for its <b> and <i> tags, or the marker's span.
-_INLINE_MARKUP, _MARKER_MARKUP = 16, 160
+# What a paragraph's wrapper (``<p class="continued">`` ... ``</p>``, indented) and each
+# word or page-break marker add to its markup, at most: a word's escaped text plus room for
+# its ``<b><i>`` ... ``</i></b>`` tags, or the marker's span.
+_WRAPPER_MARKUP, _INLINE_MARKUP, _MARKER_MARKUP = 64, 16, 160
 
 
 def _paragraph_pieces(paragraph: Paragraph, budget: int) -> list[Paragraph]:
     """A paragraph too large for one chapter file, cut at word boundaries into pieces
-    whose markup fits within ``budget`` bytes (EPUB-R8)."""
+    whose markup fits within ``budget`` bytes (EPUB-R21). A single word too long for
+    a piece on its own is cut between characters."""
     pieces: list[list[Inline]] = [[]]
-    size = _INLINE_MARKUP
+    size = _WRAPPER_MARKUP
     for inline in paragraph.inlines:
         tokens: list[tuple[Inline, int]]
         if isinstance(inline, PageBreak):
             tokens = [(inline, _MARKER_MARKUP)]
         else:
             tokens = [
-                (
-                    Text(word, inline.bold, inline.italic),
-                    len(escape(word).encode()) + _INLINE_MARKUP,
-                )
+                (Text(chunk, inline.bold, inline.italic), _cost(chunk))
                 for word in re.findall(r"\S+\s*|\s+", inline.text)
+                for chunk in _chunks(word, budget - _WRAPPER_MARKUP)
             ]
         for token, cost in tokens:
             if pieces[-1] and size + cost > budget:
                 pieces.append([])
-                size = _INLINE_MARKUP
+                size = _WRAPPER_MARKUP
             pieces[-1].append(token)
             size += cost
     return [Paragraph(inlines) for inlines in pieces]
+
+
+def _cost(text: str) -> int:
+    return len(escape(text).encode("utf-8")) + _INLINE_MARKUP
+
+
+def _chunks(word: str, budget: int) -> list[str]:
+    """``word`` as one chunk, or cut between characters into chunks that each cost at most
+    ``budget``."""
+    if _cost(word) <= budget:
+        return [word]
+    chunks = [""]
+    for char in word:
+        if chunks[-1] and _cost(chunks[-1] + char) > budget:
+            chunks.append("")
+        chunks[-1] += char
+    return chunks
 
 
 def _block(

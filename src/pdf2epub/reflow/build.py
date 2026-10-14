@@ -163,6 +163,10 @@ def _body(
             open_paragraph.items.extend(start.items)
             open_paragraph.last = start.last
             del found[first_text]
+        elif open_paragraph is not None and found and first_text is None:
+            # A page of images only: the paragraph may still run on past them (RFL-R18),
+            # so this page's marker goes inside it and the images after it.
+            open_paragraph.items.append(Join(marker))
         else:
             stream.append((marker, (page.page, -1.0)))
             open_paragraph = None
@@ -196,7 +200,7 @@ def _split_at_images(draft: DraftParagraph, images: list[PlacedImage]) -> list[D
         if any(
             image.top >= above.bottom - _GAP_SLACK
             and image.bottom <= below.top + _GAP_SLACK
-            and min(image.x1, below.x1) > max(image.x0, below.x0)
+            and any(min(image.x1, line.x1) > max(image.x0, line.x0) for line in (above, below))
             for image in images
         ):
             parts.append([])

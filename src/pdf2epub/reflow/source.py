@@ -86,8 +86,15 @@ def open_source(path: Path) -> SourcePdf:
 # The most outline entries read, and the deepest nesting followed: an outline is a tree
 # the file describes, so it is bounded like anything else in it.
 _MAX_OUTLINE, _MAX_OUTLINE_DEPTH = 10_000, 15
-# The XYZ view mode, whose second parameter is the top of the view (PDF 32000-1 12.3.2.2).
-_VIEW_XYZ = 1
+# Where each view mode that has a top keeps it among its parameters (PDF 32000-1
+# 12.3.2.2, pdfium's PDFDEST_VIEW_* codes): XYZ [left top zoom], FitH [top],
+# FitR [left bottom right top], FitBH [top]. The other modes show the whole page.
+_TOP_PARAMETER = {
+    pdfium_c.PDFDEST_VIEW_XYZ: 1,
+    pdfium_c.PDFDEST_VIEW_FITH: 0,
+    pdfium_c.PDFDEST_VIEW_FITR: 3,
+    pdfium_c.PDFDEST_VIEW_FITBH: 0,
+}
 
 
 def _outline(document: pdfium.PdfDocument) -> list[OutlineEntry]:
@@ -101,9 +108,10 @@ def _outline(document: pdfium.PdfDocument) -> list[OutlineEntry]:
         if index is not None and 0 <= index < len(document):
             page = index + 1
             mode, params = destination.get_view() if destination is not None else (0, [])
+            at = _TOP_PARAMETER.get(mode)
             # pdfium reports a null (unchanged) top as 0, which no real view uses.
-            if mode == _VIEW_XYZ and len(params) >= 2 and params[1]:
-                top = max(document.get_page_size(index)[1] - float(params[1]), 0.0)
+            if at is not None and len(params) > at and params[at]:
+                top = max(document.get_page_size(index)[1] - float(params[at]), 0.0)
         title = " ".join(item.get_title().split())
         entries.append(OutlineEntry(item.level, title, page, top))
     return entries

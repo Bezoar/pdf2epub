@@ -364,3 +364,23 @@ def test_a_nested_outline_entry_without_a_heading_links_to_its_page(tmp_path: Pa
     file, fragment = urldefrag(three.href)
     assert file == toc[1].href and fragment == "page-3"
     assert epub.resolves(three.href)
+
+
+IMAGE_PAGE = BORN_DIGITAL / "image-page-in-paragraph.pdf"
+
+
+def test_a_paragraph_runs_on_past_a_page_of_images_only(tmp_path: Path) -> None:
+    # RFL-R18: the join skips over images; the image comes after the joined paragraph.
+    _, path = convert(IMAGE_PAGE, tmp_path)
+    epub = open_epub(path)
+    [paragraph] = ground_truth(IMAGE_PAGE)
+
+    [name] = epub.spine
+    body = epub.xml(name).find(f"{XHTML}body")
+    assert body is not None
+    kinds = [etree.QName(e).localname for e in body if e.get(EPUB_TYPE) != "pagebreak"]
+    assert kinds == ["p", "figure"]
+    p = body.find(f"{XHTML}p")
+    assert p is not None and text_of(p) == paragraph
+    inline = [str(e.get("id")) for e in p.iter() if e.get(EPUB_TYPE) == "pagebreak"]
+    assert inline == ["page-2", "page-3"]

@@ -56,7 +56,7 @@ def make_chapters(
     ``title`` is the book title, for a book with no chapters."""
     resolved = [entry for entry in outline if entry.page is not None]
     if len(resolved) >= _MIN_OUTLINE:
-        found = _from_outline(blocks, positions, resolved)
+        found = _from_outline(blocks, positions, outline)
     else:
         found = _from_headings(blocks)
     if found is None:
@@ -80,17 +80,24 @@ def _from_outline(
     blocks: list[Block], positions: list[Position], outline: list[OutlineEntry]
 ) -> tuple[list[Chapter], list[TocEntry]] | None:
     roots: list[_Node] = []
-    stack: list[tuple[int, _Node]] = []
+    stack: list[tuple[int, _Node | None]] = []
+    """The entries the next one may nest in; None for one that resolves to no block."""
     # The furthest position reached so far, at each block: sorted, so the first block at
     # or after a destination is found by bisection.
     reached = list(accumulate(positions, max))
     for entry in outline:
-        assert entry.page is not None
-        target = bisect_left(reached, (entry.page, -1.0 if entry.top is None else entry.top))
-        if target == len(blocks):
-            continue  # it points past the last block
         while stack and stack[-1][0] >= entry.level:
             stack.pop()
+        target = len(blocks)
+        if entry.page is not None:
+            top = -1.0 if entry.top is None else entry.top
+            target = bisect_left(reached, (entry.page, top))
+        if target == len(blocks):
+            # It points nowhere, or past the last block: no TOC entry, but it keeps its
+            # place in the tree, so its children are not promoted to chapters.
+            stack.append((entry.level, None))
+            continue
+        parent = next((node for _, node in reversed(stack) if node is not None), None)
         block = blocks[target]
         if isinstance(block, Heading) and positions[target][0] == entry.page:
             anchor = block.anchor
@@ -99,9 +106,11 @@ def _from_outline(
             # page-break marker has this ID (EPUB-R19).
             anchor = f"page-{entry.page}"
         node = _Node(entry.title or f"Page {entry.page}", target, not stack, anchor)
-        (stack[-1][1].children if stack else roots).append(node)
+        # Under an entry that resolves nowhere, with no resolved ancestor, it is a
+        # top-level TOC entry that doesn't start a chapter.
+        (parent.children if parent is not None else roots).append(node)
         stack.append((entry.level, node))
-    if not roots:
+    if not any(node.starts for node in roots):
         return None
     return _assemble(blocks, roots)
 
@@ -135,13 +144,14 @@ def heading_text(heading: Heading) -> str:
 
 
 def _assemble(blocks: list[Block], roots: list[_Node]) -> tuple[list[Chapter], list[TocEntry]]:
-    starts = sorted({_pull_back(blocks, node.target) for node in roots})
+    starts = sorted({_pull_back(blocks, node.target) for node in roots if node.starts})
     if starts[0] > 0:
         starts.insert(0, 0)  # front matter
     bounds = [*starts, len(blocks)]
     titles: dict[int, str] = {}
     for node in roots:
-        titles.setdefault(_pull_back(blocks, node.target), node.label)
+        if node.starts:
+            titles.setdefault(_pull_back(blocks, node.target), node.label)
     chapters = [Chapter(titles.get(start), blocks[start:end]) for start, end in pairwise(bounds)]
 
     def chapter_of(target: int) -> int:
