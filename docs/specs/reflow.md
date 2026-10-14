@@ -98,7 +98,7 @@ Otherwise the hyphen shall be kept and the parts joined (`well-known`). When the
 
 <a id="rfl-r18"></a>**RFL-R18**: A paragraph that ends a reflowed page without terminal punctuation shall be joined to the first paragraph of the next reflowed page when that paragraph starts with a lowercase letter or other continuation (no indent and no heading). Furniture is removed before this test. Joining also skips over images that sit between the two paragraphs: the image is placed after the joined paragraph. A join never crosses a page-image fallback page.
 
-<a id="rfl-r19"></a>**RFL-R19**: Lines within a paragraph shall be joined with a single space. Lines in CJK scripts are joined with no space.
+<a id="rfl-r19"></a>**RFL-R19**: Lines within a paragraph shall be joined with a single space. Lines in Chinese and Japanese (Han, Hiragana and Katakana, and CJK punctuation) are joined with no space. Korean (Hangul) separates words with spaces, so its lines are joined with a single space, like Latin text.
 
 ## 6. Headings and inline styling
 
@@ -316,6 +316,8 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 - the code is `monospace` `LineBlock`s whose lines match the source lines exactly, leading spaces included;
 - no line-end hyphen is removed and no two lines are joined;
 - the block ending the first page is not joined to the next page's text: a `PageBreak` block sits between it and the code that continues on the next page.
+
+<a id="rfl-ac28"></a>**RFL-AC28** (covers [RFL-R19](#rfl-r19)): **Given** a born-digital page with a Japanese paragraph and a Korean paragraph, each wrapped over several lines, **when** it is converted, **then** the Japanese lines are joined with no space and the Korean lines with one space.
 
 ## Open points
 

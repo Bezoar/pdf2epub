@@ -33,11 +33,13 @@ def registry() -> list[Fixture]:
     """Every fixture generator, in a fixed order."""
     from fixturegen import (
         blank,
+        cjk,
         damaged,
         hostile,
         not_a_pdf,
         novel,
         pagenumbers,
+        twopage,
         typography,
         verse,
     )
@@ -68,6 +70,8 @@ def registry() -> list[Fixture]:
             pagenumbers.build_front_matter,
         ),
         Fixture(verse.PATH, verse.GROUND_TRUTH, verse.build),
+        Fixture(cjk.PATH, cjk.GROUND_TRUTH, cjk.build),
+        Fixture(twopage.PATH, twopage.GROUND_TRUTH, twopage.build),
     ]
 
 
