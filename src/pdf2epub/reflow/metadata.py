@@ -77,14 +77,17 @@ def read_xmp(packet: bytes | None) -> Xmp:
 
 def _values(root: etree._Element, name: str) -> list[str]:
     """The non-empty values of the first ``dc:name`` property: its ``rdf:li`` items in
-    order (the ``x-default`` one first, for a language alternative), or its text."""
+    order (the ``x-default`` one first, in an ``rdf:Alt``), or its text."""
     element = next(root.iter(f"{{{_DC}}}{name}"), None)
     if element is None:
         return []
     items = list(element.iter(f"{{{_RDF}}}li"))
     if not items:
         items = [element]
-    items.sort(key=lambda item: item.get(_XML_LANG) != "x-default")
+    if element.find(f"{{{_RDF}}}Alt") is not None:
+        # A language alternative (a title): the x-default item first. Sequences and bags
+        # (creators, languages) keep their order.
+        items.sort(key=lambda item: item.get(_XML_LANG) != "x-default")
     values = (
         " ".join(normalise("".join(str(text) for text in item.itertext())).split())
         for item in items
@@ -146,9 +149,9 @@ def _pdf_date(value: str | None) -> str | None:
     if match is None:
         return None
     year, month, day, hour, minute, second, zulu, sign, tz_hour, tz_minute = match.groups()
-    offset = timedelta(hours=int(tz_hour or 0), minutes=int(tz_minute or 0))
-    zone = timezone(-offset if sign == "-" else offset) if sign and not zulu else UTC
     try:
+        offset = timedelta(hours=int(tz_hour or 0), minutes=int(tz_minute or 0))
+        zone = timezone(-offset if sign == "-" else offset) if sign and not zulu else UTC
         moment = datetime(
             int(year),
             int(month or 1),
@@ -157,7 +160,7 @@ def _pdf_date(value: str | None) -> str | None:
             int(minute or 0),
             int(second or 0),
             tzinfo=zone,
-        )
-    except ValueError:
+        ).astimezone(UTC)
+    except (ValueError, OverflowError):
         return None
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")

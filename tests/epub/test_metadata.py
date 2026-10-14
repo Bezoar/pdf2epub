@@ -84,7 +84,7 @@ def test_xmp_metadata_comes_before_the_info_dictionary(tmp_path: Path) -> None:
     assert dc(package, "title") == ["XMP Title"]
     assert dc(package, "creator") == ["Ann Example", "Bob Example"]
     assert dc(package, "language") == ["de"]
-    # EPUB-R14: no modification date, so the creation date, in UTC.
+    # EPUB-R14: no valid modification date, so the creation date, in UTC.
     assert modified(package) == "2011-02-03T02:05:06Z"
 
 

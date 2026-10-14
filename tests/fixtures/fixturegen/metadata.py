@@ -6,8 +6,10 @@
 - ``scan0001.pdf``: no metadata at all (no Info, no XMP, no ``/Lang``, no dates);
 - ``lang-fr.pdf``: the catalog's ``/Lang (fr)`` and nothing else;
 - ``xmp.pdf``: an XMP packet with title ``XMP Title``, creators ``Ann Example`` then
-  ``Bob Example`` and language ``de``, beside an Info dictionary with ``/Title (Info
-  Title)``, ``/Author (Info Author)`` and ``/CreationDate (D:20110203040506+02'00')``.
+  ``Bob Example`` (the second marked ``x-default``, which must not reorder them) and
+  language ``de``, beside an Info dictionary with ``/Title (Info Title)``, ``/Author
+  (Info Author)``, an invalid ``/ModDate`` (offset ``+99'00'``) and ``/CreationDate
+  (D:20110203040506+02'00')``.
 
 Written with ``rawpdf``, so every byte is under control.
 """
@@ -33,7 +35,7 @@ _XMP_PACKET = """<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
       </rdf:Alt></dc:title>
       <dc:creator><rdf:Seq>
         <rdf:li>Ann Example</rdf:li>
-        <rdf:li>Bob Example</rdf:li>
+        <rdf:li xml:lang="x-default">Bob Example</rdf:li>
       </rdf:Seq></dc:creator>
       <dc:language><rdf:Bag><rdf:li>de</rdf:li></rdf:Bag></dc:language>
     </rdf:Description>
@@ -85,6 +87,7 @@ def build_lang_fr(out_dir: Path) -> None:
 
 def build_xmp(out_dir: Path) -> None:
     info = (
-        b"<< /Title (Info Title) /Author (Info Author) /CreationDate (D:20110203040506+02'00') >>"
+        b"<< /Title (Info Title) /Author (Info Author) /ModDate (D:20200102030405+99'00')"
+        b" /CreationDate (D:20110203040506+02'00') >>"
     )
     _write(out_dir, XMP, _document(info=info, xmp=True))
