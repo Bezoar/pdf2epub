@@ -1,6 +1,6 @@
 # Reflow
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [ocr](ocr.md), [epub](epub.md) · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [ocr](ocr.md), [epub](epub.md) · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
 
 This spec owns how one opened PDF becomes a structured book: parsing and its failures, text extraction, layout analysis, furniture removal, page joins, de-hyphenation, headings and inline styling, page-image fallback for complex and multi-column pages, chapters and the table of contents, page-break markers, metadata, images and the cover, and page sequence gaps. Its output is the **document model** handed to the EPUB writer.
 
@@ -321,13 +321,15 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 
 ## Open points
 
-- Assumed `mode = "reflow"` disables only the `complex` fallback. Multi-column pages still fall back, because "never interleave" is absolute.
-- Lists and block quotes are rendered as paragraphs in v1, since the scope decision doesn't mention them. _(Owner review in [#51](https://github.com/Bezoar/pdf2epub/issues/51), OP26: changed. The assumption first covered preformatted text too; verse and code are now line blocks ([RFL-R36](#rfl-r36), added by [#52](https://github.com/Bezoar/pdf2epub/issues/52)).)_
-- The PDF's declared language (`/Lang` or XMP) is used before defaulting to `en`. The scope decision says "`--language`, else `en`"; using declared metadata is consistent with the metadata precedence and the OCR language order.
-- Which wordlists ship in v1 isn't decided. Assumed at least English; other languages get soft-hyphen-only joining.
-- Assumed: a page join never crosses a page-image fallback page, and images between two joined paragraphs move after the joined paragraph.
-- The printed "Contents" page is kept as ordinary text (the archived spec's drop-it heuristic is not carried over).
-- Assumed minimum run length of 5 numbered pages before a page sequence gap can fire; calibrate on fixtures.
-- Resource-limit values, complexity threshold and heading-detection tolerances are internal constants to calibrate on fixtures.
-- [RFL-R35](#rfl-r35) reads the `empty_document` registry entry ("no page yields any text or image") as a document-level check on top of the per-page blank-page rule. A test of a single blank page that expects no issue (for example [OCR-AC25](ocr.md#ocr-ac25)'s blank scanned page) therefore puts that page in a document with at least one page that yields content.
-- A `resource_limit` hit fails the whole conversion (severity error per the registry), rather than degrading only the offending page.
+The owner accepted points OP25–OP34 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review). OP26 was accepted with a change, noted on the item: verse and code keep their line breaks. OP28 was accepted for v1; wordlists for more languages are on the [roadmap](../worksheets/roadmap.md#wordlists-for-more-languages).
+
+- **OP25** Assumed `mode = "reflow"` disables only the `complex` fallback. Multi-column pages still fall back, because "never interleave" is absolute.
+- **OP26** Lists and block quotes are rendered as paragraphs in v1, since the scope decision doesn't mention them. _(Owner review in [#51](https://github.com/Bezoar/pdf2epub/issues/51), OP26: changed. The assumption first covered preformatted text too; verse and code are now line blocks ([RFL-R36](#rfl-r36), added by [#52](https://github.com/Bezoar/pdf2epub/issues/52)).)_
+- **OP27** The PDF's declared language (`/Lang` or XMP) is used before defaulting to `en`. The scope decision says "`--language`, else `en`"; using declared metadata is consistent with the metadata precedence and the OCR language order.
+- **OP28** Which wordlists ship in v1 isn't decided. Assumed at least English; other languages get soft-hyphen-only joining.
+- **OP29** Assumed: a page join never crosses a page-image fallback page, and images between two joined paragraphs move after the joined paragraph.
+- **OP30** The printed "Contents" page is kept as ordinary text (the archived spec's drop-it heuristic is not carried over).
+- **OP31** Assumed minimum run length of 5 numbered pages before a page sequence gap can fire; calibrate on fixtures.
+- **OP32** Resource-limit values, complexity threshold and heading-detection tolerances are internal constants to calibrate on fixtures.
+- **OP33** [RFL-R35](#rfl-r35) reads the `empty_document` registry entry ("no page yields any text or image") as a document-level check on top of the per-page blank-page rule. A test of a single blank page that expects no issue (for example [OCR-AC25](ocr.md#ocr-ac25)'s blank scanned page) therefore puts that page in a document with at least one page that yields content.
+- **OP34** A `resource_limit` hit fails the whole conversion (severity error per the registry), rather than degrading only the offending page.

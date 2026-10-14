@@ -1,6 +1,6 @@
 # Command-line interface
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [batch](batch.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md) · **Decisions:** [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [batch](batch.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md) · **Decisions:** [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [ADR 0001](../adr/0001-python-core.md)
 
 The command line is the first **front end**. This spec owns:
 
@@ -295,10 +295,12 @@ With `-v`, a `✓` line and a `- <path>: output_exists` line also appear. With `
 
 ## Open points
 
-- **Report layout ([CLI-R15](#cli-r15), [CLI-R16](#cli-r16)):** I chose the exact human report layout (symbols `✓ ✗ ! -`, section order, line formats). The decisions fixed only the contents and their order.
-- **`--ask-password` without a terminal ([CLI-R7](#cli-r7)):** I assumed this is a usage error rather than being silently ignored.
-- **Malformed stdin ([CLI-R13](#cli-r13)):** I assumed malformed or unmatched stdin lines in `--interactive` are ignored and logged at DEBUG, and that end of input on stdin counts as "skip".
-- **Progress when not a terminal ([CLI-R14](#cli-r14)):** I assumed no progress output at all when stderr isn't a terminal; only the report is printed.
-- **`--report` failure ([CLI-R18](#cli-r18)):** I assumed a `--report` write failure doesn't change the exit code. The decisions didn't say.
-- **Help and version on stdout ([§2.6](#26-general)):** `--help` and `--version` print to stdout, following the argparse convention. That is an exception to "stdout empty unless `--json`".
-- **Help epilog ([CLI-R9](#cli-r9)):** I assumed the README links. Its content is owned by [main](main.md).
+The owner accepted points OP47–OP53 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP47** **Report layout ([CLI-R15](#cli-r15), [CLI-R16](#cli-r16)):** I chose the exact human report layout (symbols `✓ ✗ ! -`, section order, line formats). The decisions fixed only the contents and their order.
+- **OP48** **`--ask-password` without a terminal ([CLI-R7](#cli-r7)):** I assumed this is a usage error rather than being silently ignored.
+- **OP49** **Malformed stdin ([CLI-R13](#cli-r13)):** I assumed malformed or unmatched stdin lines in `--interactive` are ignored and logged at DEBUG, and that end of input on stdin counts as "skip".
+- **OP50** **Progress when not a terminal ([CLI-R14](#cli-r14)):** I assumed no progress output at all when stderr isn't a terminal; only the report is printed.
+- **OP51** **`--report` failure ([CLI-R18](#cli-r18)):** I assumed a `--report` write failure doesn't change the exit code. The decisions didn't say.
+- **OP52** **Help and version on stdout ([§2.6](#26-general)):** `--help` and `--version` print to stdout, following the argparse convention. That is an exception to "stdout empty unless `--json`".
+- **OP53** **Help epilog ([CLI-R9](#cli-r9)):** I assumed the README links. Its content is owned by [main](main.md).

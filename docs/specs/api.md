@@ -1,6 +1,6 @@
 # Core API and wire protocol
 
-**Status:** draft · **Depends on:** [main](main.md), [batch](batch.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md) · **Decisions:** [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [batch](batch.md), [passwords](passwords.md), [reflow](reflow.md), [ocr](ocr.md) · **Decisions:** [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [Batch mode semantics and end-of-batch report](https://github.com/Bezoar/pdf2epub/issues/9), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
 
 This spec owns the **contract** every front end builds on: the Python entry points, the event stream and its JSON Lines encoding (`--json`), the `--report` file, the issue-code registry, outcomes, results, options *shape*, the password-provider protocol, cancellation, versioning and the JSON Schema. It does **not** own the rules for when an issue fires or which outcome a situation produces; each registry entry links to the spec that does. Option *meanings and defaults* belong to the owning specs ([batch](batch.md), [reflow](reflow.md), [ocr](ocr.md), [passwords](passwords.md)); flag names belong to [cli](cli.md).
 
@@ -459,11 +459,13 @@ Fixture names refer to the fixtures in [testing](testing.md).
 
 ## Open points
 
-- Page numbers in issues and `progress.page` are **1-based PDF page indices** (not printed page labels). Assumed; not fixed by a decision.
-- `progress` events of stages `analyse` and `ocr` carry a `page` field; the decisions named only `done`/`of`. Added so front ends can show which page is being OCR'd.
-- `ConversionResult` gained `ocr` (from the OCR decision) and `BatchReport` lists `tool_version`/`started_at` on `batch_finished`; `exit_code` in the schema is limited to 0, 1 and 130 because usage errors (2) produce no batch.
-- Grouping is per **(code, reason)** pair, so `Issue` keeps a single `reason`; this reconciles "one issue per code with a page list" with per-page reasons.
-- A page whose OCR crashed or timed out appears both in `ocr_failed`/`ocr_timeout` (engine diagnostic) and in exactly one `page_fallback` issue with the matching reason.
-- stdin messages carry no `v` field; unknown or malformed lines are ignored. End of stdin is treated as declining pending requests.
-- `Secret.reveal()` is the assumed name of the only accessor.
-- `"inprocess"` vs `"subprocess"` equivalence (API-AC3) assumes deterministic EPUB output as specified in [epub](epub.md).
+The owner accepted points OP2–OP9 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP2** Page numbers in issues and `progress.page` are **1-based PDF page indices** (not printed page labels). Assumed; not fixed by a decision.
+- **OP3** `progress` events of stages `analyse` and `ocr` carry a `page` field; the decisions named only `done`/`of`. Added so front ends can show which page is being OCR'd.
+- **OP4** `ConversionResult` gained `ocr` (from the OCR decision) and `BatchReport` lists `tool_version`/`started_at` on `batch_finished`; `exit_code` in the schema is limited to 0, 1 and 130 because usage errors (2) produce no batch.
+- **OP5** Grouping is per **(code, reason)** pair, so `Issue` keeps a single `reason`; this reconciles "one issue per code with a page list" with per-page reasons.
+- **OP6** A page whose OCR crashed or timed out appears both in `ocr_failed`/`ocr_timeout` (engine diagnostic) and in exactly one `page_fallback` issue with the matching reason.
+- **OP7** stdin messages carry no `v` field; unknown or malformed lines are ignored. End of stdin is treated as declining pending requests.
+- **OP8** `Secret.reveal()` is the assumed name of the only accessor.
+- **OP9** `"inprocess"` vs `"subprocess"` equivalence (API-AC3) assumes deterministic EPUB output as specified in [epub](epub.md).

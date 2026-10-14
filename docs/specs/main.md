@@ -1,6 +1,6 @@
 # pdf2epub — main specification
 
-**Status:** draft · **Depends on:** — · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [Scope of password-based PDF decryption](https://github.com/Bezoar/pdf2epub/issues/3), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Implementation language and packaging](https://github.com/Bezoar/pdf2epub/issues/7), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** — · **Decisions:** [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [Scope of password-based PDF decryption](https://github.com/Bezoar/pdf2epub/issues/3), [Front-end integration patterns for the core](https://github.com/Bezoar/pdf2epub/issues/4), [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [Implementation language and packaging](https://github.com/Bezoar/pdf2epub/issues/7), [Spec breakdown into main and satellite specs](https://github.com/Bezoar/pdf2epub/issues/14), [ADR 0001](../adr/0001-python-core.md)
 
 This is the entry point to the pdf2epub specification. It owns the purpose, the legal scope, use cases, goals and non-goals, the architecture overview with the index of which spec owns what, the cross-cutting non-functional requirements, and the top-level v1 acceptance criteria (a)–(g). Everything else is in a satellite spec (see [§5](#52-which-spec-owns-what)). Vocabulary follows [`GLOSSARY.md`](../../GLOSSARY.md).
 
@@ -184,4 +184,6 @@ Requirements MAIN-R1 to MAIN-R19 are covered by these ACs or by the satellite AC
 
 ## Open points
 
-- The pages-per-second and memory targets in §6.5 come from the archived spec. They stay informative until a metrics corpus exists (roadmap).
+The owner accepted point OP1 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP1** The pages-per-second and memory targets in §6.5 come from the archived spec. They stay informative until a metrics corpus exists (roadmap).

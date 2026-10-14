@@ -1,6 +1,6 @@
 # Passwords and encryption
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [batch](batch.md) · **Decisions:** [Scope of password-based PDF decryption](https://github.com/Bezoar/pdf2epub/issues/3), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [batch](batch.md) · **Decisions:** [Scope of password-based PDF decryption](https://github.com/Bezoar/pdf2epub/issues/3), [Password and decryption UX](https://github.com/Bezoar/pdf2epub/issues/8), [Core API shape for front ends](https://github.com/Bezoar/pdf2epub/issues/10), [MIT-compatible PDF library stack](https://github.com/Bezoar/pdf2epub/issues/2), [ADR 0001](../adr/0001-python-core.md)
 
 This spec owns how pdf2epub classifies an encrypted input and opens a **password-protected PDF** with a password the user legitimately holds. It covers:
 
@@ -342,10 +342,12 @@ The same holds for the worker process's environment and argv.
 
 ## Open points
 
-- **Cap counting ([PWD-R13](#pwd-r13)):** I assumed the empty password and prompt attempts don't count towards the 25-candidate cap, and that duplicates are counted once, after de-duplication.
-- **Prompt skipped after failures ([PWD-R20](#pwd-r20)):** if supplied candidates failed and the user then skips the prompt, I assumed `wrong_password` rather than `missing_password`. It names the sources tried, which is more useful.
-- **`password_required` for owner passwords ([PWD-R22](#pwd-r22)):** I assumed the event is also emitted when only an owner password is missing (`restricted`), so a GUI can ask for it.
-- **DRM wrappers ([PWD-R3](#pwd-r3)):** I assumed `.lcpdf` and `.acsm` files are recognised only when named explicitly or listed with `--files-from`. Folder scans pick only `*.pdf` ([batch](batch.md)), so wrappers in a folder are silently not picked up.
-- **Owner/user indistinguishable ([PWD-R9](#pwd-r9)):** I assumed a match counts as a user-password match when the library can't tell, so a restricted file fails closed with `restricted` (the same behaviour PWD-R9 states).
-- **Readable-file warning ([PWD-R17](#pwd-r17)):** I assumed it is a stderr log line, not an issue, because it isn't tied to a conversion.
-- **Hint wording ([PWD-R28](#pwd-r28)):** the hints for `missing_password`, `wrong_password` and `unsupported_encryption` are my wording. Only the `restricted` and `drm_protected` hints were decided.
+The owner accepted points OP18–OP24 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP18** **Cap counting ([PWD-R13](#pwd-r13)):** I assumed the empty password and prompt attempts don't count towards the 25-candidate cap, and that duplicates are counted once, after de-duplication.
+- **OP19** **Prompt skipped after failures ([PWD-R20](#pwd-r20)):** if supplied candidates failed and the user then skips the prompt, I assumed `wrong_password` rather than `missing_password`. It names the sources tried, which is more useful.
+- **OP20** **`password_required` for owner passwords ([PWD-R22](#pwd-r22)):** I assumed the event is also emitted when only an owner password is missing (`restricted`), so a GUI can ask for it.
+- **OP21** **DRM wrappers ([PWD-R3](#pwd-r3)):** I assumed `.lcpdf` and `.acsm` files are recognised only when named explicitly or listed with `--files-from`. Folder scans pick only `*.pdf` ([batch](batch.md)), so wrappers in a folder are silently not picked up.
+- **OP22** **Owner/user indistinguishable ([PWD-R9](#pwd-r9)):** I assumed a match counts as a user-password match when the library can't tell, so a restricted file fails closed with `restricted` (the same behaviour PWD-R9 states).
+- **OP23** **Readable-file warning ([PWD-R17](#pwd-r17)):** I assumed it is a stderr log line, not an issue, because it isn't tied to a conversion.
+- **OP24** **Hint wording ([PWD-R28](#pwd-r28)):** the hints for `missing_password`, `wrong_password` and `unsupported_encryption` are my wording. Only the `restricted` and `drm_protected` hints were decided.
