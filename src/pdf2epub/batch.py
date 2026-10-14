@@ -94,7 +94,8 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
 
     conversions: list[PlannedConversion] = []
     seen: set[str] = set()
-    for source in _discover(inputs, options.recursive):
+    claimed: set[str] = set()
+    for source, folder in _discover(inputs, options.recursive):
         try:
             key = os.path.realpath(source)
         except ValueError:  # e.g. a NUL byte from a files-from list; reported not_found
@@ -103,29 +104,51 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
             continue  # BAT-R5: planned once, at its first occurrence
         seen.add(key)
         issues = _content_issues(source)
+        destination: Path | None = None
+        if not any(issue.code is IssueCode.NOT_FOUND for issue in issues):
+            destination = _destination(source, folder, options, single)
+        if destination is not None and not issues:
+            issues = _destination_issues(destination, claimed)
         conversions.append(
             PlannedConversion(
                 id=len(conversions),
                 source=str(source),
-                destination=(
-                    None
-                    if any(issue.code is IssueCode.NOT_FOUND for issue in issues)
-                    else str(_destination(source, options, single))
-                ),
+                destination=None if destination is None else str(destination),
                 issues=issues,
             )
         )
     return BatchPlan(conversions=conversions, single=single)
 
 
-def _discover(inputs: Sequence[InputSpec], recursive: bool) -> Iterator[Path]:
-    """Every candidate file, absolute, in input order (BAT-R1, BAT-R3, BAT-R6)."""
+def _destination_issues(destination: Path, claimed: set[str]) -> list[Issue]:
+    """``output_collision`` when an earlier conversion in the plan already maps to
+    ``destination`` (BAT-R11), else ``output_exists`` when the EPUB is already there
+    (BAT-R12); ``run_batch`` drops ``output_exists`` under ``overwrite``. Only conversions
+    that would run claim their destination."""
+    key = os.path.normcase(destination)
+    if key in claimed:
+        return [
+            Issue(
+                IssueCode.OUTPUT_COLLISION,
+                f"An earlier conversion in this batch already writes {destination}.",
+            )
+        ]
+    claimed.add(key)
+    if os.path.lexists(destination):
+        return [Issue(IssueCode.OUTPUT_EXISTS, f"{destination} already exists.")]
+    return []
+
+
+def _discover(inputs: Sequence[InputSpec], recursive: bool) -> Iterator[tuple[Path, Path | None]]:
+    """Every candidate file, absolute, in input order (BAT-R1, BAT-R3, BAT-R6), with the
+    folder input it was found in (None for a file named explicitly)."""
     for spec in inputs:
         path = Path(os.path.abspath(spec.path))
         if path.is_dir():
-            yield from sorted(_scan(path, recursive), key=lambda p: _natural_key(p, path))
+            for found in sorted(_scan(path, recursive), key=lambda p: _natural_key(p, path)):
+                yield found, path
         else:
-            yield path
+            yield path, None
 
 
 def _scan(folder: Path, recursive: bool) -> Iterator[Path]:
@@ -166,12 +189,19 @@ def _content_issues(source: Path) -> list[Issue]:
     return []
 
 
-def _destination(source: Path, options: DiscoveryOptions, single: bool) -> Path:
-    name = source.with_suffix(".epub").name
+def _destination(
+    source: Path, folder: Path | None, options: DiscoveryOptions, single: bool
+) -> Path:
+    """Where ``source``'s EPUB goes (BAT-R9, BAT-R10): beside it by default; with
+    ``output``, that file for a single conversion, else into that folder, under the
+    source's path relative to the folder input it was found in, if any."""
+    epub = source.with_suffix(".epub")
     if options.output is None:
-        return source.with_name(name)
+        return epub
     output = Path(os.path.abspath(options.output))
-    return output if single else output / name
+    if single:
+        return output
+    return output / (epub.relative_to(folder) if folder is not None else epub.name)
 
 
 class _Reporter:
@@ -214,8 +244,13 @@ def run_batch(
         ],
     )
 
-    # API-R18: conversions settled at planning time finish first, in plan order.
-    settled = {p.id: _settled(p) for p in plan.conversions if p.issues}
+    # API-R18: conversions settled at planning time finish first, in plan order. Under
+    # overwrite an existing EPUB settles nothing: it is replaced on success (BAT-R12).
+    settled = {
+        p.id: _unrun(p, issues)
+        for p in plan.conversions
+        if (issues := _planning_issues(p, batch_options.overwrite))
+    }
     for result in settled.values():
         for issue in result.issues:
             emitter.emit("issue", id=result.id, issue=issue.to_dict())
@@ -230,7 +265,7 @@ def run_batch(
             result = _not_attempted(planned)
         else:
             emitter.emit("conversion_started", id=planned.id)
-            result = convert(planned, conversion_options, _Reporter(emitter, planned.id))
+            result = convert(planned, conversion_options, _Reporter(emitter, planned.id), cancel)
         emitter.emit("conversion_finished", **result.to_dict())
         results.append(result)
 
@@ -256,9 +291,13 @@ def _not_attempted(planned: PlannedConversion) -> ConversionResult:
     return _unrun(planned, [issue])
 
 
-def _settled(planned: PlannedConversion) -> ConversionResult:
-    """The result of a conversion settled by its planning issues; it never runs."""
-    return _unrun(planned, list(planned.issues))
+def _planning_issues(planned: PlannedConversion, overwrite: bool) -> list[Issue]:
+    """The planning issues that settle ``planned`` without running it."""
+    return [
+        issue
+        for issue in planned.issues
+        if not (overwrite and issue.code is IssueCode.OUTPUT_EXISTS)
+    ]
 
 
 def _unrun(planned: PlannedConversion, issues: list[Issue]) -> ConversionResult:
