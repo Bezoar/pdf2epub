@@ -159,7 +159,7 @@ Candidate values are carried only as [`Secret`](api.md), which is enforced by ty
 
 <a id="pwd-r25"></a>**PWD-R25**: Password environment variables (`PDF2EPUB_PASSWORD`) shall be removed from the environment of every child process, including conversion workers and the OCR engine. Passwords reach a worker only over its pipe ([batch](batch.md)).
 
-<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no secret material to disk (no password, password hash, key, or record of which source opened which file) and shall cache nothing between runs. The decrypted book content written into the EPUB is the requested output and is not secret material.
+<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no secret material to disk (no password value, password hash, decryption key or password cache) and shall cache nothing between runs. Source labels are not secret material: they appear in reports and events as [PWD-R24](#pwd-r24) requires. The decrypted book content written into the EPUB is the requested output and is not secret material.
 
 ## 8. Output
 

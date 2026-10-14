@@ -446,6 +446,8 @@ Fixture names refer to the fixtures in [testing](testing.md).
 
 <a id="api-ac15"></a>**API-AC15** (covers [API-R27](#api-r27)): **Given** any batch, **when** it runs, **then** `batch_started.jobs` is 1 and every event of type `conversion_started`, `progress`, `password_required`, `password_request` and `conversion_finished` has an integer `id` that appears in `batch_started.planned`.
 
+<a id="api-ac16"></a>**API-AC16** (covers [API-R1](#api-r1)): **Given** the installed package, **when** `pdf2epub --json` converts the novel fixture, **then** every stdout line validates against the schema shipped in the package, whose `v` is the constant `1`; **and** the `pdf2epub` package docstring and the API reference page both state that the Python API is provisional and may change in any 0.x release, while the `--json` protocol is the stable contract.
+
 ## Open points
 
 - Page numbers in issues and `progress.page` are **1-based PDF page indices** (not printed page labels). Assumed; not fixed by a decision.
