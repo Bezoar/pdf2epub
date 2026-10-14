@@ -18,6 +18,7 @@ MEDIA_TYPES = {
     ".xhtml": "application/xhtml+xml",
     ".css": "text/css",
     ".ncx": "application/x-dtbncx+xml",
+    ".png": "image/png",
 }
 
 

@@ -11,6 +11,7 @@ decoded here).
 
 import io
 import logging
+import re
 import zlib
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
@@ -21,10 +22,12 @@ from typing import BinaryIO
 from pdfminer.ascii85 import ascii85decode, asciihexdecode
 from pdfminer.ccitt import ccittfaxdecode
 from pdfminer.converter import PDFPageAggregator
-from pdfminer.layout import LAParams, LTContainer, LTImage, LTItem, LTPage
+from pdfminer.layout import LAParams, LTChar, LTContainer, LTImage, LTItem, LTPage
 from pdfminer.lzw import LZWDecoder
+from pdfminer.pdfcolor import PDFColorSpace
 from pdfminer.pdfdocument import PDFDocument, PDFXRefFallback
-from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
+from pdfminer.pdffont import PDFFont
+from pdfminer.pdfinterp import PDFGraphicState, PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdftypes import (
@@ -42,6 +45,7 @@ from pdfminer.pdftypes import (
 )
 from pdfminer.psexceptions import PSException
 from pdfminer.runlength import rldecode
+from pdfminer.utils import Matrix
 
 from pdf2epub.reflow.limits import (
     MAX_STREAM_BYTES,
@@ -86,7 +90,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         """Each page's layout, in order. Raises ``ResourceLimitExceeded`` naming the page
         where a limit is hit, and ``CorruptPdf`` if a page can't be parsed."""
         manager = PDFResourceManager(caching=True)
-        device = PDFPageAggregator(manager, laparams=laparams)
+        device = _StyledAggregator(manager, laparams=laparams)
         interpreter = _GuardedInterpreter(manager, device)
         for number, page in enumerate(self.pages(), start=1):
             try:
@@ -106,6 +110,65 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         traceback: TracebackType | None,
     ) -> None:
         self._file.close()
+
+
+# Font flags (PDF 32000-1 9.8.2) and font-name style suffixes (RFL-R22).
+_ITALIC_FLAG, _FORCE_BOLD_FLAG = 1 << 6, 1 << 18
+_BOLD_WEIGHT = 600
+_BOLD_NAME = re.compile(r"bold|black|heavy|demi|semibold", re.IGNORECASE)
+_ITALIC_NAME = re.compile(r"italic|oblique|[-,](?:it|ital)$", re.IGNORECASE)
+STYLE = "pdf2epub_style"
+"""The attribute every ``LTChar`` this module lays out carries: ``(bold, italic)``."""
+
+
+def font_style(font: PDFFont) -> tuple[bool, bool]:
+    """``(bold, italic)`` for ``font``, from its descriptor's flags, weight and italic
+    angle, and from the style suffix of its name (``Times-BoldItalic``, ``Arial,Bold``,
+    ``MinionPro-It``)."""
+    descriptor = font.descriptor if isinstance(font.descriptor, dict) else {}
+    flags = _number(descriptor.get("Flags"))
+    weight = _number(descriptor.get("FontWeight"))
+    angle = _number(descriptor.get("ItalicAngle"))
+    name = str(font.fontname).split("+", 1)[-1]
+    bold = bool(flags & _FORCE_BOLD_FLAG) or weight >= _BOLD_WEIGHT or bool(_BOLD_NAME.search(name))
+    italic = bool(flags & _ITALIC_FLAG) or angle != 0 or bool(_ITALIC_NAME.search(name))
+    return bold, italic
+
+
+def _number(value: object) -> int:
+    value = resolve1(value)
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return int(value)
+    return 0
+
+
+class _StyledAggregator(PDFPageAggregator):
+    """Marks every character with its font's bold and italic style (``STYLE``)."""
+
+    def __init__(self, manager: PDFResourceManager, laparams: LAParams) -> None:
+        super().__init__(manager, laparams=laparams)
+        self._styles: dict[int, tuple[PDFFont, tuple[bool, bool]]] = {}
+        """Each font's style, by ``id`` (the font is kept here, so the id stays its own)."""
+
+    def render_char(
+        self,
+        matrix: Matrix,
+        font: PDFFont,
+        fontsize: float,
+        scaling: float,
+        rise: float,
+        cid: int,
+        ncs: PDFColorSpace,
+        graphicstate: PDFGraphicState,
+    ) -> float:
+        advance = super().render_char(matrix, font, fontsize, scaling, rise, cid, ncs, graphicstate)
+        char = self.cur_item._objs[-1]
+        if isinstance(char, LTChar):
+            known = self._styles.get(id(font))
+            if known is None:
+                known = self._styles[id(font)] = (font, font_style(font))
+            setattr(char, STYLE, known[1])
+        return advance
 
 
 class _GuardedInterpreter(PDFPageInterpreter):
