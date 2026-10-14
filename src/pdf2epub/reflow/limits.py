@@ -1,11 +1,13 @@
 """Resource limits on decoded content from an untrusted PDF (RFL-R6).
 
-The limits are internal constants. They are checked before anything is decoded: an
-image by the dimensions it declares, a stream by inflating it in bounded chunks and
-counting, so a decompression bomb is caught without ever being held in memory.
+The limits are internal constants. An image is checked by the dimensions it declares,
+before anything decodes it. A stream is decoded stage by stage, each stage stopping as
+soon as its output passes the limit, so a decompression bomb is caught before more
+than the limit is ever held in memory.
 """
 
 import zlib
+from collections.abc import Iterable
 
 MAX_PIXELS = 100_000_000
 """The most pixels any single image or page render may decode to (100 megapixels: a
@@ -40,32 +42,54 @@ def check_image(width: int, height: int) -> None:
         )
 
 
-def check_inflated_size(data: bytes, layers: int) -> None:
-    """Raise if ``data``, inflated ``layers`` times over (a ``/FlateDecode`` chain),
-    comes to more than ``MAX_STREAM_BYTES``. Data that isn't valid zlib is left for the
-    parser to deal with: it is only counted up to the point where it goes bad."""
-    decoders = [zlib.decompressobj() for _ in range(layers)]
-    total = 0
+def check_stream_size(size: int) -> None:
+    """Raise if a content stream of ``size`` bytes is above ``MAX_STREAM_BYTES``."""
+    if size > MAX_STREAM_BYTES:
+        raise ResourceLimitExceeded(
+            f"decompressed stream size limit of {MAX_STREAM_BYTES:,} bytes",
+            "A content stream",
+        )
 
-    def feed(level: int, data: bytes) -> None:
-        nonlocal total
-        decoder = decoders[level]
-        while data:
-            out = decoder.decompress(data, _CHUNK)
-            data = decoder.unconsumed_tail
-            if not out:  # all input consumed without output: nothing more to come yet
-                return
-            if level + 1 < layers:
-                feed(level + 1, out)
-                continue
-            total += len(out)
-            if total > MAX_STREAM_BYTES:
-                raise ResourceLimitExceeded(
-                    f"decompressed stream size limit of {MAX_STREAM_BYTES:,} bytes",
-                    "A content stream",
-                )
 
+def inflate(data: bytes) -> bytes:
+    """``data`` inflated in bounded chunks, raising as soon as the output passes
+    ``MAX_STREAM_BYTES``. Like the parser, it keeps what it got before any damage."""
+    decoder = zlib.decompressobj()
+    out = bytearray()
     try:
-        feed(0, data)
+        while data:
+            chunk = decoder.decompress(data, _CHUNK)
+            data = decoder.unconsumed_tail
+            if not chunk:  # all input consumed: nothing more to come
+                break
+            out += chunk
+            check_stream_size(len(out))
     except zlib.error:
-        return
+        pass
+    return bytes(out)
+
+
+def join_bounded(chunks: Iterable[bytes]) -> bytes:
+    """The chunks a streaming decoder yields, joined, raising as soon as they pass
+    ``MAX_STREAM_BYTES``."""
+    out = bytearray()
+    for chunk in chunks:
+        out += chunk
+        check_stream_size(len(out))
+    return bytes(out)
+
+
+def run_length_size(data: bytes) -> int:
+    """How many bytes ``/RunLengthDecode`` makes of ``data``, without decoding it."""
+    size, index = 0, 0
+    while index < len(data):
+        length = data[index]
+        if length == 128:  # end of data
+            break
+        if length < 128:  # copy the next length + 1 bytes
+            size += min(length + 1, len(data) - index - 1)
+            index += length + 2
+        else:  # repeat the next byte 257 - length times
+            size += 257 - length
+            index += 2
+    return size

@@ -87,8 +87,7 @@ def convert(
         source = open_source(source_path)
         page_count = source.page_count
         with ParsedPdf(source_path) as pdf:
-            if pdf.repaired:
-                add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
+            repaired = pdf.repaired
             reporter.progress("open", 1, 1)
             if page_count == 0:
                 raise _Empty("The PDF has no pages.")
@@ -98,10 +97,13 @@ def convert(
                 pages.append(page)
                 reporter.progress("analyse", len(pages), page_count, page=page.page)
 
-        # RFL-R35: checked before anything else can add an issue, so empty_document is
-        # the only one. Until book images join the model, a page's content is its text.
+        # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
+        # so empty_document is the only one. Until book images join the model, a page's
+        # content is its text.
         if not any(page.blocks for page in pages):
             raise _Empty("No page of the PDF has any text or image.")
+        if repaired:
+            add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
         document, found = build_document(source, pages, options)
         for issue in found:

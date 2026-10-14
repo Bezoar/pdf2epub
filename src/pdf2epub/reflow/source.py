@@ -67,8 +67,15 @@ def open_source(path: Path) -> SourcePdf:
     )
 
 
-# pdfium's load errors that mean the file itself is broken.
-_CORRUPT = (pdfium_c.FPDF_ERR_SUCCESS, pdfium_c.FPDF_ERR_UNKNOWN, pdfium_c.FPDF_ERR_FORMAT)
+# pdfium's load errors that mean the file itself is broken: all but the password and
+# security-handler failures, which are about access, not damage.
+_CORRUPT = (
+    pdfium_c.FPDF_ERR_SUCCESS,
+    pdfium_c.FPDF_ERR_UNKNOWN,
+    pdfium_c.FPDF_ERR_FILE,
+    pdfium_c.FPDF_ERR_FORMAT,
+    pdfium_c.FPDF_ERR_PAGE,
+)
 
 
 def _has_no_pages(data: bytes) -> bool:

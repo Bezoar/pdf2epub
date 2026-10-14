@@ -3,28 +3,51 @@
 
 pdfminer only lays pages out: it never runs JavaScript or actions, never follows links
 and never fetches anything an external stream names. What it would decode is checked
-first: every content stream (pages and form XObjects alike) against the decompressed
-stream size limit before pdfminer inflates it, and every image against the pixel limit
-by the dimensions it declares (images are never decoded here).
+first: every content stream (pages and form XObjects alike) is decoded with every stage
+bounded by the decompressed stream size limit before pdfminer decodes it, and every
+image is held to the pixel limit by the dimensions it declares (images are never
+decoded here).
 """
 
+import io
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
 from types import TracebackType
 from typing import BinaryIO
 
+from pdfminer.ascii85 import ascii85decode, asciihexdecode
 from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTContainer, LTImage, LTItem, LTPage
+from pdfminer.lzw import LZWDecoder
 from pdfminer.pdfdocument import PDFDocument, PDFXRefFallback
 from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
-from pdfminer.pdftypes import LITERALS_FLATE_DECODE, PDFStream, resolve1
+from pdfminer.pdftypes import (
+    LITERALS_ASCII85_DECODE,
+    LITERALS_ASCIIHEX_DECODE,
+    LITERALS_FLATE_DECODE,
+    LITERALS_LZW_DECODE,
+    LITERALS_RUNLENGTH_DECODE,
+    PDFStream,
+    resolve1,
+)
 from pdfminer.psexceptions import PSException
+from pdfminer.runlength import rldecode
 
-from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image, check_inflated_size
+from pdf2epub.reflow.limits import (
+    ResourceLimitExceeded,
+    check_image,
+    check_stream_size,
+    inflate,
+    join_bounded,
+    run_length_size,
+)
 from pdf2epub.reflow.source import CorruptPdf
+
+log = logging.getLogger(__name__)
 
 
 class ParsedPdf(AbstractContextManager["ParsedPdf"]):
@@ -91,14 +114,35 @@ class _GuardedInterpreter(PDFPageInterpreter):
 
 
 def _check_stream(stream: PDFStream) -> None:
+    """Decode ``stream`` as pdfminer would, but bounded at every stage. A stage that
+    fails is left for pdfminer to handle as it does; filters that never make a content
+    stream bigger (image codecs) end the check."""
     if stream.rawdata is None:  # already decoded (and checked) once
         return
-    filters = [name for name, _ in stream.get_filters()]
-    flate = 0
-    while flate < len(filters) and filters[flate] in LITERALS_FLATE_DECODE:
-        flate += 1
-    if flate:
-        check_inflated_size(stream.rawdata, flate)
+    data = stream.rawdata
+    check_stream_size(len(data))
+    try:
+        if stream.decipher and stream.objid is not None and stream.genno is not None:
+            data = stream.decipher(stream.objid, stream.genno, data, stream.attrs)
+        for name, _ in stream.get_filters():
+            if name in LITERALS_FLATE_DECODE:
+                data = inflate(data)
+            elif name in LITERALS_LZW_DECODE:
+                data = join_bounded(LZWDecoder(io.BytesIO(data)).run())
+            elif name in LITERALS_RUNLENGTH_DECODE:
+                check_stream_size(run_length_size(data))
+                data = rldecode(data)
+            elif name in LITERALS_ASCII85_DECODE:
+                data = ascii85decode(data)
+            elif name in LITERALS_ASCIIHEX_DECODE:
+                data = asciihexdecode(data)
+            else:
+                return
+            check_stream_size(len(data))
+    except ResourceLimitExceeded:
+        raise
+    except Exception:  # a broken stage: pdfminer decodes (or rejects) it its own way
+        log.debug("could not pre-check a content stream", exc_info=True)
 
 
 def _check_images(item: LTItem) -> None:
