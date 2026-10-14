@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 from fixturegen import registry
 
+# One xdist worker runs this whole module, so the module-scoped generator runs happen once.
+pytestmark = pytest.mark.xdist_group("fixture-generators")
+
 FIXTURES = Path(__file__).resolve().parent
 GENERATE = FIXTURES / "generate.py"
 
