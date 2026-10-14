@@ -111,6 +111,20 @@ def test_recursive_scan_skips_hidden_entries_and_symlinked_folders(
     assert found == [str(scanned_folder / "one.PDF"), str(scanned_folder / "sub" / "two.pdf")]
 
 
+@pytest.mark.ac("BAT-AC19")
+def test_a_named_folder_link_is_scanned_but_links_inside_it_are_not(tmp_path: Path) -> None:
+    books = tmp_path / "books"
+    touch_pdf(books / "a.pdf")
+    touch_pdf(tmp_path / "other" / "b.pdf")
+    os.symlink(tmp_path / "other", books / "more", target_is_directory=True)
+    shelf = tmp_path / "shelf"
+    os.symlink(books, shelf, target_is_directory=True)
+
+    found = sources([InputSpec(shelf)], DiscoveryOptions(recursive=True))
+
+    assert found == [str(shelf / "a.pdf")]
+
+
 @pytest.mark.ac("BAT-AC4")
 def test_folder_contents_are_naturally_sorted_and_duplicates_planned_once(
     tmp_path: Path,
@@ -154,6 +168,9 @@ def test_files_are_recognised_by_content_not_name(tmp_path: Path, sink: Recordin
     assert book_result.output == str(tmp_path / "book.epub")
     assert (tmp_path / "book.epub").is_file()
     assert fake_result.outcome == "failed"
+    assert fake_result.destination == str(tmp_path / "fake.epub")
+    assert fake_result.output is None
+    assert not (tmp_path / "fake.epub").exists()
     assert [issue.code for issue in fake_result.issues] == ["not_a_pdf"]
 
     types_and_ids = [(e["type"], e.get("id")) for e in sink.events]
@@ -175,7 +192,11 @@ def test_missing_input_is_planned_and_reported_right_after_batch_started(
     assert [c.id for c in plan.conversions] == [0, 1]
     assert sink.events[0]["type"] == "batch_started"
     assert sink.events[0]["total"] == 2
-    finished = sink.events[1]
+    # The planning issue is also announced on its own (API-R17), just before the result.
+    issue_event, finished = sink.events[1:3]
+    assert issue_event["type"] == "issue"
+    assert issue_event["id"] == 1
+    assert issue_event["issue"]["code"] == "not_found"
     assert finished["type"] == "conversion_finished"
     assert finished["id"] == 1
     assert finished["outcome"] == "failed"

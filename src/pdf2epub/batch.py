@@ -104,7 +104,11 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
             PlannedConversion(
                 id=len(conversions),
                 source=str(source),
-                destination=None if issues else str(_destination(source, options, single)),
+                destination=(
+                    None
+                    if any(issue.code is IssueCode.NOT_FOUND for issue in issues)
+                    else str(_destination(source, options, single))
+                ),
                 issues=issues,
             )
         )
@@ -208,6 +212,8 @@ def run_batch(
     # API-R18: conversions settled at planning time finish first, in plan order.
     settled = {p.id: _settled(p) for p in plan.conversions if p.issues}
     for result in settled.values():
+        for issue in result.issues:
+            emitter.emit("issue", id=result.id, issue=issue.to_dict())
         emitter.emit("conversion_finished", **result.to_dict())
 
     results: list[ConversionResult] = []
