@@ -39,7 +39,7 @@ Every behaviour change is test-first. For each acceptance criterion (AC) in the 
 3. Run it and see it fail **for the expected reason**: an assertion about the missing behaviour, not an import error, a typo or a fixture failure.
 4. Write the least code that makes it pass.
 5. Refactor only while every test is green.
-6. Repeat until every AC in the ticket has a marked, passing test.
+6. Repeat until every non-manual spec AC in the ticket has a marked, passing test, and remove those AC IDs from the pending-AC list `tests/ac_pending.txt` in the same PR ([TST-R20](../specs/testing.md#tst-r20)); the marker gate fails while a marked AC is still listed. Manual ACs are confirmed in the v1 acceptance ticket, and a ticket's local ACs (no spec ID) as the ticket describes.
 
 Commit history does not have to show the red step; the rule is still binding.
 
@@ -82,6 +82,7 @@ Expected values come from the spec (exact issue codes, exit codes, event fields)
   | `tests/ocr/` | the `OcrEngine` protocol (fake engine, and real Tesseract) |
   | `tests/epub/` | the EPUB on disk (read back, epubcheck) |
   | `tests/fixtures/` | fixture generators, committed fixtures, the public-domain sample and its `PROVENANCE.md` |
+  | `tests/repo/` | repository and CI tooling: the AC-marker gate, workflow definitions, README and `--help` text, built package metadata, the smoke script |
 
   `PasswordProvider` tests live with the API tests that drive them.
 - Tests that need the real Tesseract binary must be marked `@pytest.mark.tesseract`. Locally they skip with a visible reason when Tesseract is missing. In the CI coverage job a skipped `tesseract` test fails the job.
