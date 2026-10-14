@@ -1,0 +1,263 @@
+"""Worker isolation, timeouts and cancellation through ``plan_batch`` / ``run_batch``
+(API-R5, API-R6, BAT-R17, BAT-R19 to BAT-R21).
+
+Crashes, hangs and slowness come from the test hooks in ``tests/hooks``; a worker picks
+them up from its environment, so each test that needs one sets it with ``monkeypatch``.
+"""
+
+import shutil
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+import worker_hooks
+from conftest import NOVEL, PUBLIC_DOMAIN_SAMPLE, RecordingSink
+
+from pdf2epub import (
+    BatchOptions,
+    BatchReport,
+    CancelToken,
+    ConversionOptions,
+    DiscoveryOptions,
+    InputSpec,
+    IssueCode,
+    Outcome,
+    plan_batch,
+    run_batch,
+)
+from pdf2epub import conversion as conversion_module
+from pdf2epub.options import Isolation
+from pdf2epub.reflow.source import open_source
+
+
+def run(
+    sources: list[Path],
+    isolation: Isolation,
+    sink: Any,
+    cancel: CancelToken | None = None,
+    timeout: int = 1800,
+) -> BatchReport:
+    plan = plan_batch([InputSpec(source) for source in sources], DiscoveryOptions())
+    return run_batch(
+        plan,
+        BatchOptions(isolation=isolation, timeout=timeout),
+        ConversionOptions(),
+        sink,
+        cancel=cancel,
+    )
+
+
+def copies(source: Path, folder: Path, *names: str) -> list[Path]:
+    folder.mkdir(parents=True, exist_ok=True)
+    targets = [folder / name for name in names]
+    for target in targets:
+        shutil.copyfile(source, target)
+    return targets
+
+
+def leftovers(folder: Path) -> list[str]:
+    """Hidden (temporary) files left in ``folder``."""
+    return sorted(p.name for p in folder.iterdir() if p.name.startswith("."))
+
+
+def use_hooks(monkeypatch: pytest.MonkeyPatch, rules: worker_hooks.Rules) -> None:
+    """Install ``rules`` in every worker this test starts."""
+    for name, value in worker_hooks.environment(rules).items():
+        monkeypatch.setenv(name, value)
+
+
+def issue_codes(report: BatchReport) -> list[list[IssueCode]]:
+    return [[issue.code for issue in result.issues] for result in report.conversions]
+
+
+@pytest.mark.ac("API-AC3")
+def test_subprocess_and_inprocess_runs_agree(tmp_path: Path) -> None:
+    results = {}
+    for isolation in ("inprocess", "subprocess"):
+        [pdf] = copies(PUBLIC_DOMAIN_SAMPLE, tmp_path / isolation, "sample.pdf")
+        sink = RecordingSink()
+        report = run([pdf], isolation, sink)
+        events = [e["type"] for e in sink.events]
+        progress = [(e["stage"], e["done"], e["of"]) for e in sink.of_type("progress")]
+        [result] = report.conversions
+        assert result.output is not None
+        epub = Path(result.output).read_bytes()
+        results[isolation] = (events, progress, result.outcome, issue_codes(report), epub)
+
+    assert results["subprocess"] == results["inprocess"]
+    assert results["subprocess"][2] is Outcome.CONVERTED
+
+
+@pytest.mark.ac("BAT-AC13")
+def test_a_crashing_worker_fails_its_conversion_and_the_batch_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    crash, good = copies(NOVEL, tmp_path, "crash.pdf", "good.pdf")
+    use_hooks(monkeypatch, {"crash.pdf": {"action": "abort"}})
+    sink = RecordingSink()
+
+    report = run([crash, good], "subprocess", sink)
+
+    first, second = report.conversions
+    assert first.outcome is Outcome.FAILED
+    assert [issue.code for issue in first.issues] == [IssueCode.INTERNAL_ERROR]
+    assert first.issues[0].message.endswith("please report this bug")
+    assert second.outcome is Outcome.CONVERTED
+    assert good.with_suffix(".epub").is_file()
+    assert not crash.with_suffix(".epub").exists()
+    assert report.exit_code == 1
+    assert [e["type"] for e in sink.events][-1] == "batch_finished"
+
+
+@pytest.mark.ac("BAT-AC13")
+def test_an_unexpected_exception_inprocess_fails_only_that_conversion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    crash, good = copies(NOVEL, tmp_path, "crash.pdf", "good.pdf")
+    hooked = worker_hooks.wrap(open_source, {"crash.pdf": {"action": "raise"}})
+    monkeypatch.setattr(conversion_module, "open_source", hooked)
+
+    report = run([crash, good], "inprocess", RecordingSink())
+
+    first, second = report.conversions
+    assert [issue.code for issue in first.issues] == [IssueCode.INTERNAL_ERROR]
+    assert first.issues[0].message.endswith("please report this bug")
+    assert second.outcome is Outcome.CONVERTED
+    assert report.exit_code == 1
+
+
+@pytest.mark.ac("BAT-AC14")
+def test_a_hung_worker_is_stopped_at_the_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hung, good = copies(NOVEL, tmp_path, "hung.pdf", "good.pdf")
+    rules = {"hung.pdf": {"action": "sleep", "seconds": 60}}
+    use_hooks(monkeypatch, rules)
+
+    started = time.monotonic()
+    sink = RecordingSink()
+    report = run([hung, good], "subprocess", sink, timeout=2)
+    elapsed = time.monotonic() - started
+
+    first, second = report.conversions
+    assert [issue.code for issue in first.issues] == [IssueCode.TIMEOUT]
+    assert first.outcome is Outcome.FAILED
+    # The next conversion runs (under the same 2-second limit, so a slow machine may stop
+    # it too).
+    assert [e["id"] for e in sink.of_type("conversion_started")] == [0, 1]
+    assert IssueCode.NOT_ATTEMPTED not in [issue.code for issue in second.issues]
+    assert elapsed < 15
+    assert leftovers(tmp_path) == []
+    assert not hung.with_suffix(".epub").exists()
+
+
+@pytest.mark.ac("BAT-AC14")
+def test_a_worker_that_ignores_sigterm_is_killed_after_the_grace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hung, good = copies(NOVEL, tmp_path, "hung.pdf", "good.pdf")
+    term = tmp_path / "term"
+    rules = {"hung.pdf": {"action": "sleep", "seconds": 60, "on_term": str(term)}}
+    use_hooks(monkeypatch, rules)
+
+    started = time.monotonic()
+    sink = RecordingSink()
+    report = run([hung, good], "subprocess", sink, timeout=2)
+    elapsed = time.monotonic() - started
+
+    first, second = report.conversions
+    assert [issue.code for issue in first.issues] == [IssueCode.TIMEOUT]
+    assert term.exists(), "the worker got SIGTERM first"
+    # The next conversion runs (under the same 2-second limit, so a slow machine may stop
+    # it too).
+    assert [e["id"] for e in sink.of_type("conversion_started")] == [0, 1]
+    assert IssueCode.NOT_ATTEMPTED not in [issue.code for issue in second.issues]
+    assert elapsed < 15
+    term.unlink()
+    assert leftovers(tmp_path) == []
+
+
+class CancelOnFirstProgress:
+    """A recording sink that cancels the batch on the first ``progress`` event of one
+    conversion."""
+
+    def __init__(self, cancel: CancelToken, conversion_id: int) -> None:
+        self.recording = RecordingSink()
+        self._cancel = cancel
+        self._id = conversion_id
+
+    def __call__(self, event: dict[str, Any]) -> None:
+        self.recording(event)
+        if event["type"] == "progress" and event["id"] == self._id:
+            self._cancel.cancel()
+
+
+@pytest.mark.ac("API-AC4")
+@pytest.mark.parametrize("isolation", ["inprocess", "subprocess"])
+def test_cancelling_mid_batch_marks_the_rest_not_attempted(
+    tmp_path: Path, isolation: Isolation
+) -> None:
+    pdfs = copies(NOVEL, tmp_path, "a.pdf", "b.pdf", "c.pdf")
+    cancel = CancelToken()
+    sink = CancelOnFirstProgress(cancel, 0)
+
+    report = run(pdfs, isolation, sink, cancel=cancel)
+
+    assert report.interrupted is True
+    assert report.exit_code == 130
+    for result in report.conversions[1:]:
+        assert result.outcome is Outcome.SKIPPED
+        assert [issue.code for issue in result.issues] == [IssueCode.NOT_ATTEMPTED]
+    # BAT-R17: the conversion running at the time is not attempted either.
+    assert [issue.code for issue in report.conversions[0].issues] == [IssueCode.NOT_ATTEMPTED]
+    assert not any(pdf.with_suffix(".epub").exists() for pdf in pdfs)
+    assert leftovers(tmp_path) == []
+    assert sink.recording.events[-1]["type"] == "batch_finished"
+
+
+@pytest.mark.ac("BAT-AC11")
+def test_cancelling_in_subprocess_mode_stops_the_worker(tmp_path: Path) -> None:
+    pdfs = copies(NOVEL, tmp_path, "a.pdf", "b.pdf", "c.pdf")
+    cancel = CancelToken()
+    sink = CancelOnFirstProgress(cancel, 1)
+
+    report = run(pdfs, "subprocess", sink, cancel=cancel)
+
+    first, *rest = report.conversions
+    assert first.outcome is Outcome.CONVERTED
+    assert pdfs[0].with_suffix(".epub").is_file()
+    for result, pdf in zip(rest, pdfs[1:], strict=True):
+        assert result.outcome is Outcome.SKIPPED
+        assert [issue.code for issue in result.issues] == [IssueCode.NOT_ATTEMPTED]
+        assert not pdf.with_suffix(".epub").exists()
+    assert leftovers(tmp_path) == []
+    last = sink.recording.events[-1]
+    assert last["type"] == "batch_finished"
+    assert last["interrupted"] is True
+    assert last["exit_code"] == report.exit_code == 130
+
+
+@pytest.mark.ac("BAT-AC11")
+def test_cancelling_during_a_slow_worker_stops_it_promptly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, slow, c = copies(NOVEL, tmp_path, "a.pdf", "slow.pdf", "c.pdf")
+    rules = {"slow.pdf": {"action": "sleep", "seconds": 60}}
+    use_hooks(monkeypatch, rules)
+    cancel = CancelToken()
+
+    def sink(event: dict[str, Any]) -> None:
+        if event["type"] == "conversion_started" and event["id"] == 1:
+            cancel.cancel()
+
+    started = time.monotonic()
+    report = run([a, slow, c], "subprocess", sink, cancel=cancel)
+
+    assert time.monotonic() - started < 15
+    assert [r.outcome for r in report.conversions] == [
+        Outcome.CONVERTED,
+        Outcome.SKIPPED,
+        Outcome.SKIPPED,
+    ]
+    assert report.exit_code == 130

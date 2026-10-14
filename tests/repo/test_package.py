@@ -203,3 +203,17 @@ def test_wheel_ships_the_event_schema(built: Built) -> None:
 def test_package_reports_the_version_declared_in_pyproject() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert pdf2epub.__version__ == project["version"]
+
+
+def test_wheel_has_no_worker_test_hooks(built: Built) -> None:
+    """Local AC of #28: the hooks that make a worker crash, hang or run slowly exist only
+    in the test suite (tests/hooks); the wheel carries neither them nor a way to load
+    them."""
+    hooks = REPO / "tests" / "hooks"
+    assert (hooks / "worker_hooks.py").is_file()  # the hooks this test looks for exist
+    with zipfile.ZipFile(built.wheel) as zf:
+        names = zf.namelist()
+        code = b"".join(zf.read(n) for n in names if n.endswith(".py"))
+    assert not [n for n in names if "hooks" in n or n.endswith("sitecustomize.py")]
+    assert b"worker_hooks" not in code
+    assert b"PDF2EPUB_TEST_HOOKS" not in code

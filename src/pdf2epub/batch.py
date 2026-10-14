@@ -21,6 +21,7 @@ from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
 from pdf2epub.errors import UsageError
 from pdf2epub.events import Emitter, EventSink
+from pdf2epub.isolation import run_in_worker
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity, derive_outcome
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
 from pdf2epub.passwords import PasswordProvider
@@ -258,6 +259,9 @@ class _Reporter:
     def issue(self, issue: Issue) -> None:
         self._emitter.emit("issue", id=self._id, issue=issue.to_dict())
 
+    def temporary(self, path: Path) -> None:
+        pass  # this process deletes its own temporary file
+
 
 def run_batch(
     plan: BatchPlan,
@@ -269,9 +273,9 @@ def run_batch(
 ) -> BatchReport:
     """Run every planned conversion, synchronously, and return the batch report (API-R3).
 
-    Events go to ``sink`` from the calling thread only (API-R4). Every conversion runs in
-    this process for now, whatever ``batch_options.isolation`` says: worker subprocesses
-    (BAT-R19) arrive with worker isolation.
+    Events go to ``sink`` from the calling thread only (API-R4). With ``isolation =
+    "subprocess"`` each conversion runs in its own worker subprocess, under the batch's
+    time limit (BAT-R19 to BAT-R21); with ``"inprocess"``, in this process.
     """
     emitter = Emitter(sink)
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -306,7 +310,13 @@ def run_batch(
             result = _not_attempted(planned)
         else:
             emitter.emit("conversion_started", id=planned.id)
-            result = convert(planned, conversion_options, _Reporter(emitter, planned.id), cancel)
+            reporter = _Reporter(emitter, planned.id)
+            if batch_options.isolation == "subprocess":
+                result = run_in_worker(
+                    planned, conversion_options, reporter, cancel, batch_options.timeout
+                )
+            else:
+                result = convert(planned, conversion_options, reporter, cancel)
         emitter.emit("conversion_finished", **result.to_dict())
         results.append(result)
 

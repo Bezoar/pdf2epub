@@ -3,18 +3,12 @@
 # Each build ticket removes the IDs it implements, in the same PR as their marked tests.
 # The v1 acceptance ticket requires this list to be empty.
 
-API-AC3
-API-AC4
 API-AC5
 API-AC8
 API-AC12
 API-AC13
 API-AC17
 
-BAT-AC11
-BAT-AC12
-BAT-AC13
-BAT-AC14
 BAT-AC15
 
 CLI-AC3
@@ -25,7 +19,6 @@ CLI-AC9
 CLI-AC10
 CLI-AC11
 CLI-AC12
-CLI-AC17
 
 EPUB-AC3
 EPUB-AC4

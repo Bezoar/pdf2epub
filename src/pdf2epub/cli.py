@@ -10,13 +10,18 @@ object per line; the human report, warnings and logging go to stderr (CLI-R2).
 
 import argparse
 import logging
+import os
+import signal
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
+from types import FrameType
 from typing import Any, BinaryIO, TextIO
 
-from pdf2epub.batch import InputSpec, plan_batch, read_files_from, run_batch
+from pdf2epub.batch import EXIT_INTERRUPTED, InputSpec, plan_batch, read_files_from, run_batch
+from pdf2epub.cancel import CancelToken
 from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, encode_event
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
@@ -131,11 +136,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except UsageError as error:
         parser.error(str(error))  # exits 2 with the reason on stderr (BAT-R25)
     final = FinalEvent()
+    cancel = CancelToken()
     if args.json:
         writer = JsonLinesWriter(sys.stdout.buffer)
-        report = run_batch(
-            plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(writer, final)
-        )
+        with interrupts(cancel):
+            report = run_batch(
+                plan,
+                BatchOptions(**batch_fields),
+                ConversionOptions(),
+                Tee(writer, final),
+                cancel=cancel,
+            )
     else:
         reporter = HumanReport(
             sys.stderr,
@@ -148,9 +159,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         for handler in handlers:
             handler.addFilter(reporter.clear_progress)
         try:
-            report = run_batch(
-                plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
-            )
+            with interrupts(cancel):
+                report = run_batch(
+                    plan,
+                    BatchOptions(**batch_fields),
+                    ConversionOptions(),
+                    Tee(reporter, final),
+                    cancel=cancel,
+                )
         finally:
             for handler in handlers:
                 handler.removeFilter(reporter.clear_progress)
@@ -158,6 +174,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.report is not None and final.event is not None:
         write_report(final.event, Path(args.report))
     return report.exit_code
+
+
+@contextmanager
+def interrupts(cancel: CancelToken) -> Iterator[None]:
+    """While the batch runs, the first SIGINT or SIGTERM cancels it, so it ends with the
+    report and exit code 130; a second one ends the process at once with 130 and no
+    report (CLI-R19, BAT-R18)."""
+    received = False
+
+    def handle(signum: int, frame: FrameType | None) -> None:
+        nonlocal received
+        if received:
+            os._exit(EXIT_INTERRUPTED)
+        received = True
+        cancel.cancel()
+
+    previous = {signum: signal.signal(signum, handle) for signum in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 def configure_logging(verbose: bool, debug: bool) -> None:
