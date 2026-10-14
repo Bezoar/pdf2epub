@@ -157,6 +157,8 @@ def convert(
 
         recognised = ocr_pages(source_path, access.password, pages, images, options, progress)
         pages, images, ocr = recognised.pages, recognised.images, recognised.summary
+        for issue in recognised.issues:
+            add(issue)
 
         document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
