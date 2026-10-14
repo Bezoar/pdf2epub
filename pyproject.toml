@@ -55,7 +55,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # tests/conftest.py blocks outbound network for the whole suite (MAIN-AC1).
-addopts = ["--strict-markers"]
+# Tests run in parallel, one pytest-xdist worker per CPU; `-n 0` runs them in one process.
+# `loadgroup` keeps tests marked with the same `xdist_group` on one worker.
+addopts = ["--strict-markers", "-n", "auto", "--dist", "loadgroup"]
 markers = [
     "ac(id, ...): the acceptance criteria (spec AC IDs) this test verifies",
     "tesseract: needs the real Tesseract binary",
@@ -82,6 +84,7 @@ dev = [
     "packaging>=26.3",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
     "pyyaml>=6.0.3",
     "reportlab>=5.0.1",
     "ruff>=0.17.0",
