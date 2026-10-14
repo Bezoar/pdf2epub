@@ -15,6 +15,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from PIL import Image, ImageChops
 
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 
 MAX_EDGE = 1600
@@ -35,12 +36,17 @@ class Render:
     extension: str
 
 
-def render_pages(path: Path, pages: Sequence[int]) -> Iterator[tuple[int, Render]]:
-    """Render each of ``pages`` (1-based) of the PDF at ``path``, in the order given.
+def render_pages(
+    path: Path, pages: Sequence[int], password: Secret | None = None
+) -> Iterator[tuple[int, Render]]:
+    """Render each of ``pages`` (1-based) of the PDF at ``path`` (opened with
+    ``password`` if it needs one), in the order given.
     Raises ``ResourceLimitExceeded`` naming the page whose render would be too big."""
     if not pages:
         return
-    document = pdfium.PdfDocument(path)
+    document = pdfium.PdfDocument(
+        path, password=password.reveal() if password is not None else None
+    )
     try:
         for number in pages:
             page = document[number - 1]

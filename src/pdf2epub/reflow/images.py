@@ -13,6 +13,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 from pdf2epub.reflow.model import ImageAsset
 
@@ -32,11 +33,14 @@ class PlacedImage:
     bottom: float
 
 
-def read_images(path: Path) -> dict[int, list[PlacedImage]]:
-    """The images on each page of ``path``, by 1-based page index, top to bottom. Raises
-    ``ResourceLimitExceeded`` for an image above the pixel limit."""
+def read_images(path: Path, password: Secret | None = None) -> dict[int, list[PlacedImage]]:
+    """The images on each page of ``path`` (opened with ``password`` if it needs one),
+    by 1-based page index, top to bottom. Raises ``ResourceLimitExceeded`` for an image
+    above the pixel limit."""
     images: dict[int, list[PlacedImage]] = {}
-    document = pdfium.PdfDocument(path)
+    document = pdfium.PdfDocument(
+        path, password=password.reveal() if password is not None else None
+    )
     try:
         for index in range(len(document)):
             page = document[index]

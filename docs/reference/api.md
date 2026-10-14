@@ -36,3 +36,19 @@ report = run_batch(plan, BatchOptions(), ConversionOptions(), sink=print)
 ```
 
 `plan_batch` plans the conversions without converting anything. `run_batch` runs them synchronously, passes every event (a `dict`, the same object as its `--json` line) to `sink` from the calling thread, and returns the `BatchReport`, whose `to_dict()` is the `batch_finished` payload without the envelope fields.
+
+### Passwords
+
+Pass a `PasswordProvider` to `run_batch` to open password-protected PDFs. The standard one is `SourcePasswordProvider`, built from the raw password sources; it applies the trial order, the source labels and de-duplication itself:
+
+```python
+from pathlib import Path
+from pdf2epub import PasswordSources, Secret, SourcePasswordProvider
+
+provider = SourcePasswordProvider(
+    PasswordSources(values=[Secret("hunter2")], password_file=Path("passwords.txt"))
+)
+report = run_batch(plan, BatchOptions(), ConversionOptions(), sink=print, passwords=provider)
+```
+
+Hold every password as a `Secret`: it prints as `***` and refuses JSON encoding. Events and reports name only the source label (`cli #1`, `env`, `file:line 3`, `map:"<key>"`) in `password_source`, never the password. More than 25 candidate passwords for one file is a usage error: `run_batch` raises `UsageError` before any event.

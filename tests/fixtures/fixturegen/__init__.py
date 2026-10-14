@@ -35,6 +35,7 @@ def registry() -> list[Fixture]:
         blank,
         cjk,
         damaged,
+        encrypted,
         headings,
         hostile,
         layouts,
@@ -99,6 +100,9 @@ def registry() -> list[Fixture]:
         Fixture(layouts.COMPLEX_PAGE, layouts.COMPLEX_PAGE_TRUTH, layouts.build_complex_page),
         Fixture(layouts.FALLBACKS, layouts.FALLBACKS_TRUTH, layouts.build_fallbacks),
         Fixture(layouts.COMPLEX_PAGES, layouts.COMPLEX_PAGES_TRUTH, layouts.build_complex_pages),
+        Fixture(encrypted.AES256, encrypted.AES256_TRUTH, encrypted.build_aes256),
+        Fixture(encrypted.AES128, encrypted.AES128_TRUTH, encrypted.build_aes128),
+        Fixture(encrypted.RC4_128, encrypted.RC4_128_TRUTH, encrypted.build_rc4_128),
     ]
 
 

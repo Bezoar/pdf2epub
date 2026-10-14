@@ -10,14 +10,17 @@ import logging
 import os
 import tempfile
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from pdf2epub.access import AccessDenied, unlock
 from pdf2epub.cancel import CancelToken
 from pdf2epub.epub import write_epub
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
+from pdf2epub.passwords import Candidate
 from pdf2epub.reflow.build import build_document
 from pdf2epub.reflow.extract import PageText, read_pages
 from pdf2epub.reflow.images import read_images
@@ -79,11 +82,15 @@ def convert(
     options: ConversionOptions,
     reporter: Reporter,
     cancel: CancelToken | None = None,
+    candidates: Sequence[Candidate] = (),
 ) -> ConversionResult:
+    """Convert ``planned``. If the source is password-protected, ``candidates`` are the
+    passwords that may open it, in trial order (PWD-R12)."""
     started = time.monotonic()
     issues: list[Issue] = []
     output: str | None = None
     page_count: int | None = None
+    password_source: str | None = None
 
     def add(issue: Issue) -> None:
         issues.append(issue)
@@ -94,10 +101,12 @@ def convert(
         source_path, destination = Path(planned.source), Path(planned.destination)
 
         log.debug("conversion %d: opening %s", planned.id, source_path)
-        source = open_source(source_path)
+        access = unlock(source_path, candidates)
+        password_source = access.source
+        source = open_source(source_path, access.password)
         page_count = source.page_count
         log.debug("conversion %d: %d pages", planned.id, page_count)
-        with ParsedPdf(source_path) as pdf:
+        with ParsedPdf(source_path, access.password) as pdf:
             repaired = pdf.repaired
             reporter.progress("open", 1, 1)
             if page_count == 0:
@@ -108,16 +117,23 @@ def convert(
                 pages.append(page)
                 reporter.progress("analyse", len(pages), page_count, page=page.page)
 
-        images = read_images(source_path)
+        images = read_images(source_path, access.password)
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
         # so empty_document is the only one. A page's content is its text and its book
         # images.
         if not any(page.lines for page in pages) and not images:
             raise _Empty("No page of the PDF has any text or image.")
+        if access.owner_password_used:
+            add(
+                Issue(
+                    IssueCode.OWNER_PASSWORD_USED,
+                    f"converted using owner password from {access.source}",
+                )
+            )
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
-        document, found = build_document(source, pages, images, options)
+        document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
             add(issue)
         reporter.progress("reflow", 1, 1)
@@ -126,6 +142,8 @@ def convert(
         output = str(destination)
         reporter.progress("write", 1, 1)
         log.info("converted %s to %s", source_path, destination)
+    except AccessDenied as error:
+        add(error.issue)
     except CorruptPdf as error:
         add(Issue(IssueCode.CORRUPT_PDF, str(error)))
     except _Empty as error:
@@ -155,7 +173,7 @@ def convert(
         outcome=derive_outcome(issues),
         issues=issues,
         output=output,
-        password_source=None,
+        password_source=password_source,
         pages=page_count,
         duration=round(time.monotonic() - started, 3),
         ocr=None,

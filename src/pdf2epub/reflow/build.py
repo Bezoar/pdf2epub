@@ -26,6 +26,7 @@ from itertools import pairwise
 
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.chapters import Position, make_chapters
 from pdf2epub.reflow.complexity import is_complex
 from pdf2epub.reflow.extract import Line, PageText, normalise
@@ -76,12 +77,13 @@ def build_document(
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
     options: ConversionOptions,
+    password: Secret | None = None,
 ) -> tuple[Document, list[Issue]]:
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
     metadata, issues = _metadata(source, options)
     reasons = {page.page: reason for page in pages if (reason := _fallback(page, options))}
-    page_images = _page_images(source, pages, reasons)
+    page_images = _page_images(source, pages, reasons, password)
     blocks, positions, furniture = _body(
         source, pages, images, page_images, wordlist(metadata.language)
     )
@@ -134,14 +136,17 @@ def _fallback_issues(reasons: dict[int, str]) -> list[Issue]:
 
 
 def _page_images(
-    source: SourcePdf, pages: list[PageText], reasons: dict[int, str]
+    source: SourcePdf,
+    pages: list[PageText],
+    reasons: dict[int, str],
+    password: Secret | None,
 ) -> dict[int, PageImage]:
     """The page image block for each page that falls back: a render of the page, and its
     lines (in column order on a multi-column page) as its searchable text."""
     text = {page.page: "\n".join(line.text for line in page.lines) for page in pages}
     return {
         number: PageImage(ImageAsset(render.data, render.media_type), text[number] or None, number)
-        for number, render in render_pages(source.path, sorted(reasons))
+        for number, render in render_pages(source.path, sorted(reasons), password)
     }
 
 
