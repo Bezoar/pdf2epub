@@ -13,7 +13,7 @@ Package layout (EPUB-R2, EPUB-R4)::
     OEBPS/images/cover.jpg|png    the cover image (manifest property cover-image)
     OEBPS/chapter-NNN.xhtml       each chapter, in document order; a chapter split for
     OEBPS/chapter-NNN-P.xhtml     size (EPUB-R8) goes on in parts 2, 3, ...
-    OEBPS/images/image-NNN.jpg/png  book images, each stored once
+    OEBPS/images/image-NNN.jpg|png  book images and page images, each stored once
 
 Output is deterministic (EPUB-R15): entries in sorted order after ``mimetype``, fixed
 timestamps, a fixed compression level, and names and ids derived from document order.
@@ -42,6 +42,7 @@ from pdf2epub.reflow.model import (
     Inline,
     LineBlock,
     PageBreak,
+    PageImage,
     Paragraph,
     Text,
     TocEntry,
@@ -107,6 +108,11 @@ def write_epub(document: Document) -> bytes:
         for n, asset in enumerate(dict.fromkeys(document.images), start=1)
     }
     figures = iter(range(1, 1_000_000))
+    labels = {
+        marker.page: marker.label
+        for chapter in document.chapters
+        for marker in _page_breaks(chapter.blocks)
+    }
 
     page_list: list[_Nav] = []
     chapter_files: list[list[str]] = []
@@ -118,7 +124,7 @@ def write_epub(document: Document) -> bytes:
         parts: list[list[tuple[Block, str]]] = [[]]
         size = shell
         for block in chapter.blocks:
-            markup = _block_markup(_block(block, images, figures))
+            markup = _block_markup(_block(block, images, figures, labels=labels))
             oversized = len(markup.encode("utf-8")) + shell > SPLIT_BYTES
             rendered_pieces: list[tuple[Block, str]] = [(block, markup)]
             if oversized and isinstance(block, Paragraph):
@@ -340,9 +346,20 @@ def _block(
     images: dict[ImageAsset, str],
     figures: Iterator[int],
     continued: bool = False,
+    labels: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     if isinstance(block, PageBreak):
         return _inline(block)
+    if isinstance(block, PageImage):
+        # EPUB-R9, EPUB-R11: a full-width figure, its alt text the page's label, and the
+        # page's text in a visually hidden element.
+        label = (labels or {}).get(block.page, str(block.page))
+        return {
+            "kind": "page_image",
+            "src": images[block.asset],
+            "alt": f"Page {label}",
+            "text": block.text,
+        }
     if isinstance(block, Image):
         # EPUB-R11: the caption, or "Figure <n>" numbered within the book.
         number = next(figures)

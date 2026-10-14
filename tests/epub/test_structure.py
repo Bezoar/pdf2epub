@@ -103,6 +103,7 @@ def open_epub(epub: Path) -> Epub:
     items = {i.get("id"): str(i.get("href")) for i in opf.findall("opf:manifest/opf:item", OPF_NS)}
     spine = [items[r.get("idref")] for r in opf.findall("opf:spine/opf:itemref", OPF_NS)]
     # EPUB-R4: the cover page (if any), then the nav, then the chapters.
+    assert "nav.xhtml" in spine, f"the spine has no nav: {spine}"
     return Epub(archive, spine[spine.index("nav.xhtml") + 1 :])
 
 

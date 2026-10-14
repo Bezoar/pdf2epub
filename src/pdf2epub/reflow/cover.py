@@ -9,14 +9,13 @@ limit (RFL-R6) before it is decoded.
 from pathlib import Path
 from typing import Literal
 
-import pypdfium2 as pdfium
 from PIL import Image
 
 from pdf2epub.errors import UsageError
 from pdf2epub.passwords import Secret
-from pdf2epub.reflow.images import encode, render_page
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 from pdf2epub.reflow.model import ImageAsset
+from pdf2epub.reflow.render import encode, render_pages
 
 Cover = Literal["page1"] | Path | None
 
@@ -34,13 +33,8 @@ def book_cover(cover: Cover, source: Path, password: Secret | None = None) -> Im
     if cover is None:
         return None
     if cover == "page1":
-        document = pdfium.PdfDocument(
-            source, password=password.reveal() if password is not None else None
-        )
-        try:
-            return encode(render_page(document, 0))
-        finally:
-            document.close()
+        [(_, asset)] = render_pages(source, [1], password)
+        return asset
     return load_cover(Path(cover))
 
 

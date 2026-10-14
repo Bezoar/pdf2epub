@@ -185,15 +185,19 @@ def double_deflated_run(value: int, length: int) -> bytes:
 def find_period(data: bytes, period: int) -> Periodic:
     """``data`` as a ``Periodic`` whose unit is ``period`` bytes long, taken from the
     longest stretch of ``data`` that repeats with that period."""
-    best_start, best_length, start = 0, 0, None
-    for index in range(len(data) - period + 1):
-        same = index + period < len(data) and data[index] == data[index + period]
-        if same and start is None:
-            start = index
-        elif not same and start is not None:
-            if index - start > best_length:
-                best_start, best_length = start, index - start
+    runs: list[tuple[int, int]] = []
+    """Each stretch where ``data[i] == data[i + period]``, as (start, length)."""
+    start = None
+    for index in range(len(data) - period):
+        if data[index] == data[index + period]:
+            if start is None:
+                start = index
+        elif start is not None:
+            runs.append((start, index - start))
             start = None
+    if start is not None:  # a stretch running to the end
+        runs.append((start, len(data) - period - start))
+    best_start, best_length = max(runs, key=lambda run: run[1], default=(0, 0))
     count = (best_length + period) // period
     unit = data[best_start : best_start + period]
     end = best_start + period * count
