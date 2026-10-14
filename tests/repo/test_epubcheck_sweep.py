@@ -1,6 +1,7 @@
 """The suite-wide epubcheck sweep in tests/conftest.py (TST-R19): an invalid EPUB that a
 test writes under its ``tmp_path`` fails the suite, naming the EPUB and the test."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -29,10 +30,14 @@ def test_an_invalid_epub_under_tmp_path_fails_the_test_that_wrote_it(
     (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (tmp_path / "test_inner.py").write_text(WRITES_AN_INVALID_EPUB, encoding="utf-8")
     basetemp = tmp_path_factory.mktemp("inner")
+    env = dict(os.environ)
+    if env.get("EPUBCHECK_JAR"):  # the inner run has another working directory
+        env["EPUBCHECK_JAR"] = str(Path(env["EPUBCHECK_JAR"]).resolve())
 
     run = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", f"--basetemp={basetemp}"],
         cwd=tmp_path,
+        env=env,
         capture_output=True,
         text=True,
         check=False,

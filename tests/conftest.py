@@ -297,6 +297,8 @@ class _EpubcheckServer:
     def check(self, epub: Path) -> tuple[int, str]:
         """epubcheck's exit code for ``epub``, and everything it printed."""
         assert self._proc.stdin is not None and self._proc.stdout is not None
+        if "\n" in str(epub) or "\r" in str(epub):  # the protocol is one path per line
+            pytest.fail(f"can't send a path with a line break to epubcheck: {epub!r}")
         with self._lock:
             self._proc.stdin.write(f"{epub}\n")
             self._proc.stdin.flush()
