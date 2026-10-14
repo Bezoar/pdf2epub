@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from pdf2epub.cancel import CancelToken
 from pdf2epub.epub import write_epub
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
@@ -59,6 +60,10 @@ class _WriteFailed(Exception):
     pass
 
 
+class _Cancelled(Exception):
+    pass
+
+
 class _Empty(Exception):
     """The PDF has no pages, or none yields any content (RFL-R4, RFL-R35)."""
 
@@ -70,7 +75,10 @@ _REPAIRED = (
 
 
 def convert(
-    planned: PlannedConversion, options: ConversionOptions, reporter: Reporter
+    planned: PlannedConversion,
+    options: ConversionOptions,
+    reporter: Reporter,
+    cancel: CancelToken | None = None,
 ) -> ConversionResult:
     started = time.monotonic()
     issues: list[Issue] = []
@@ -114,7 +122,7 @@ def convert(
             add(issue)
         reporter.progress("reflow", 1, 1)
 
-        write_atomically(write_epub(document), destination)
+        write_atomically(write_epub(document), destination, cancel)
         output = str(destination)
         reporter.progress("write", 1, 1)
         log.info("converted %s to %s", source_path, destination)
@@ -127,6 +135,9 @@ def convert(
         add(Issue(IssueCode.RESOURCE_LIMIT, str(error), pages=pages_hit))
     except _WriteFailed as error:
         add(Issue(IssueCode.WRITE_FAILED, str(error)))
+    except _Cancelled:
+        # BAT-R17: the conversion running when the batch is cancelled is not attempted.
+        add(Issue(IssueCode.NOT_ATTEMPTED, "The batch was interrupted during this conversion."))
     except Exception as error:
         log.debug("conversion %d failed unexpectedly", planned.id, exc_info=True)
         add(
@@ -151,9 +162,11 @@ def convert(
     )
 
 
-def write_atomically(data: bytes, destination: Path) -> None:
+def write_atomically(data: bytes, destination: Path, cancel: CancelToken | None = None) -> None:
     """Write ``data`` to a hidden temporary file beside ``destination``, then rename it
-    over the destination (BAT-R13). The temporary file never outlives a failure."""
+    over the destination (BAT-R13), unless ``cancel`` is set by then. The temporary file
+    never outlives a failure or a cancellation, and an existing destination is untouched
+    by either (BAT-R14)."""
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(
@@ -167,7 +180,12 @@ def write_atomically(data: bytes, destination: Path) -> None:
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
+        if cancel is not None and cancel.cancelled:
+            raise _Cancelled
         os.replace(temporary, destination)
     except OSError as error:
         Path(temporary).unlink(missing_ok=True)
         raise _WriteFailed(f"Could not write {destination}: {error.strerror or error}") from error
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
