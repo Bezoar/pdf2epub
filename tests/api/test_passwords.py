@@ -453,6 +453,19 @@ def test_an_adept_token_after_any_prolog_is_refused_drm_protected(
     assert [i.code for i in result.issues] == ["drm_protected"]
 
 
+@pytest.mark.ac("PWD-AC5")
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_a_utf16_adept_token_is_refused_drm_protected(tmp_path: Path, encoding: str) -> None:
+    token = tmp_path / "token.acsm"
+    text = TOKEN.decode("utf-8").replace('encoding="UTF-8"', 'encoding="UTF-16"')
+    token.write_bytes("﻿".encode(encoding) + text.encode(encoding))
+
+    report, _ = run([token])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["drm_protected"]
+
+
 def test_a_zip_without_an_lcp_licence_is_not_a_pdf(tmp_path: Path) -> None:
     archive = tmp_path / "book.lcpdf"
     with zipfile.ZipFile(archive, "w") as zip_file:

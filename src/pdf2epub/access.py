@@ -271,14 +271,13 @@ def is_drm_wrapper(path: Path) -> bool:
     archive or an Adobe ``.acsm`` fulfilment token. Only the layout is looked at; nothing
     in the wrapper is read beyond that."""
     try:
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as archive:
+                return _LCP_LICENSE in archive.namelist()
+        # Expat works out the encoding (UTF-8 or UTF-16, from a byte-order mark or the
+        # XML declaration) and fails at once on anything that isn't XML, a PDF included.
         with path.open("rb") as file:
-            if file.read(_XML_CHUNK).lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
-                file.seek(0)
-                return _xml_root(file) == _ACSM_ROOT
-        if not zipfile.is_zipfile(path):
-            return False
-        with zipfile.ZipFile(path) as archive:
-            return _LCP_LICENSE in archive.namelist()
+            return _xml_root(file) == _ACSM_ROOT
     except (OSError, ValueError, zipfile.BadZipFile):
         return False
 
