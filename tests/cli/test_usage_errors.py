@@ -34,18 +34,19 @@ def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     ],
     ids=["unknown-flag", "missing-files-from", "output-is-a-file", "no-inputs"],
 )
+@pytest.mark.parametrize("mode", [[], ["--json"]], ids=["human", "json"])
 def test_usage_error_exits_2_with_a_reason_and_converts_nothing(
-    tmp_path: Path, args: list[str], reason: str
+    tmp_path: Path, args: list[str], reason: str, mode: list[str]
 ) -> None:
     shutil.copyfile(NOVEL, tmp_path / "a.pdf")
     shutil.copyfile(NOVEL, tmp_path / "b.pdf")
     (tmp_path / "existing.txt").write_bytes(b"not touched")
 
-    proc = run(args, tmp_path)
+    proc = run([*mode, *args], tmp_path)
 
     assert proc.returncode == 2, proc.stderr
     assert reason in proc.stderr
-    assert proc.stdout == ""
+    assert proc.stdout == ""  # in --json mode: no events at all, so no batch_started
     assert sorted(p.name for p in tmp_path.iterdir()) == ["a.pdf", "b.pdf", "existing.txt"]
     assert (tmp_path / "existing.txt").read_bytes() == b"not touched"
 

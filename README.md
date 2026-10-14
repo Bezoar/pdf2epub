@@ -36,6 +36,8 @@ A single conversion prints one result line to stderr, for example:
 
 The exit code is `0` when every conversion succeeded or was skipped, and `1` when any failed.
 
+For programs, `--json` writes the events as JSON Lines on stdout, and `--report FILE` writes the final report as JSON. See the [API reference](docs/reference/api.md): the `--json` protocol is the stable contract, while the Python API is provisional.
+
 ## Legal scope
 
 pdf2epub is meant to be clearly on the right side of anti-circumvention law (such as US DMCA §1201 and Art. 6 of the EU InfoSoc Directive). Its scope is fixed as follows. This is risk reduction, not legal advice.

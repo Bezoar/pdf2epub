@@ -5,6 +5,7 @@ followed by the type's fields from the v1 catalogue (API-R17). The core hands ea
 the caller's sink, from the thread that called ``run_batch`` (API-R4).
 """
 
+import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -31,3 +32,12 @@ class Emitter:
         event: Event = {"v": PROTOCOL_VERSION, "type": type_, "t": elapsed, **fields}
         self._sink(event)
         return event
+
+
+def encode_event(event: Event) -> str:
+    """The wire form of one event: a single line of JSON with a trailing newline, as
+    written to stdout under ``--json`` and to the ``--report`` file (API-R19, API-R20).
+
+    Anything that isn't plain JSON data, a ``Secret`` included, raises ``TypeError``
+    (API-R8)."""
+    return json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n"

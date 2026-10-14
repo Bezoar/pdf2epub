@@ -8,11 +8,16 @@
 - Every EPUB a test writes under its ``tmp_path`` is checked with epubcheck when the test
   ends, and any epubcheck error fails it (TST-R19).
 
+- Every event a ``RecordingSink`` receives, and every event or report a test passes to
+  ``validate_event``, is checked against the JSON Schema shipped in the package; an
+  invalid one fails the test, naming the event type and the offending field (TST-R18).
+
 It also holds what the seams share: copies of the committed fixtures, a recording event
-sink, the epubcheck step, and an in-process conversion helper.
+sink, the schema check, the epubcheck step, and an in-process conversion helper.
 """
 
 import ipaddress
+import json
 import os
 import shutil
 import socket
@@ -20,10 +25,13 @@ import subprocess
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from functools import cache
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 
 BLOCKED = "outbound network access is blocked in the test suite"
 LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "ip6-localhost", ""}
@@ -159,15 +167,66 @@ def sample_pdf(tmp_path: Path) -> Path:
     return target
 
 
+# --- The event schema (TST-R18) --------------------------------------------------------
+
+# The schema's definition for each known event type, where its name differs from the type.
+_DEFINITION = {"issue": "issue_event"}
+
+
+@cache
+def _schema() -> dict[str, Any]:
+    """The JSON Schema shipped inside the installed package (API-R26)."""
+    packaged = resources.files("pdf2epub") / "schema" / "events.v1.json"
+    schema: dict[str, Any] = json.loads(packaged.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return schema
+
+
+@cache
+def _validator(definition: str | None) -> Draft202012Validator:
+    """The whole schema; or, for a known type, the envelope plus that type's definition
+    alone, whose errors name the offending field rather than "no oneOf branch matched"."""
+    schema = _schema()
+    if definition is None:
+        return Draft202012Validator(schema)
+    single = {key: value for key, value in schema.items() if key != "oneOf"}
+    single["$ref"] = f"#/$defs/{definition}"
+    return Draft202012Validator(single)
+
+
+def validate_event(event: Any) -> None:
+    """Fail the calling test unless ``event`` (an event, or a ``--report`` document)
+    validates against the packaged schema. The failure names the event type and each
+    offending field."""
+    type_ = event.get("type") if isinstance(event, dict) else None
+    definition = _DEFINITION.get(type_, type_) if isinstance(type_, str) else None
+    if definition not in _schema()["$defs"]:
+        definition = None
+    errors = list(_validator(definition).iter_errors(event))
+    if not errors and definition is not None:
+        # The full schema stays the authority; the single-type check only words the error.
+        errors = list(_validator(None).iter_errors(event))
+    if errors:
+        details = "; ".join(
+            f"{'/'.join(map(str, e.absolute_path)) or 'top level'}: {e.message}" for e in errors
+        )
+        pytest.fail(f"invalid {type_!r} event: {details}\n{event!r}", pytrace=False)
+
+
 @dataclass
 class RecordingSink:
-    """An event sink that records every event and the thread each one arrived on."""
+    """An event sink that records every event and the thread each one arrived on.
+
+    It validates each event against the packaged schema as it arrives (TST-R18). An
+    invalid event fails the test at once: pytest's failure is a ``BaseException``, so the
+    core can't mistake it for a conversion error."""
 
     events: list[dict[str, Any]] = field(default_factory=list)
     threads: set[int] = field(default_factory=set)
 
     def __call__(self, event: dict[str, Any]) -> None:
         self.threads.add(threading.get_ident())
+        validate_event(event)
         self.events.append(event)
 
     def of_type(self, type_: str) -> list[dict[str, Any]]:

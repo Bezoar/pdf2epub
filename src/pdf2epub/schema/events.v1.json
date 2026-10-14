@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Bezoar/pdf2epub/schema/events.v1.json",
+  "title": "pdf2epub event (protocol v1)",
+  "type": "object",
+  "required": ["v", "type", "t"],
+  "properties": {
+    "v": {"const": 1},
+    "type": {"type": "string"},
+    "t": {"type": "number", "minimum": 0}
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/batch_started"},
+    {"$ref": "#/$defs/conversion_started"},
+    {"$ref": "#/$defs/progress"},
+    {"$ref": "#/$defs/issue_event"},
+    {"$ref": "#/$defs/password_required"},
+    {"$ref": "#/$defs/password_request"},
+    {"$ref": "#/$defs/conversion_finished"},
+    {"$ref": "#/$defs/batch_finished"},
+    {"properties": {"type": {"not": {"enum": ["batch_started", "conversion_started", "progress", "issue", "password_required", "password_request", "conversion_finished", "batch_finished"]}}}}
+  ],
+  "$defs": {
+    "id": {"type": "integer", "minimum": 0},
+    "abspath": {"type": "string", "pattern": "^(/|[A-Za-z]:\\\\)"},
+    "severity": {"enum": ["error", "warning", "info"]},
+    "outcome": {"enum": ["converted", "skipped", "failed"]},
+    "issue": {
+      "type": "object",
+      "required": ["code", "severity", "pages", "reason", "message", "hint"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "severity": {"$ref": "#/$defs/severity"},
+        "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "reason": {"type": ["string", "null"]},
+        "message": {"type": "string"},
+        "hint": {"type": ["string", "null"]}
+      }
+    },
+    "ocr_summary": {
+      "type": "object",
+      "required": ["engine", "engine_version", "languages", "quality"],
+      "properties": {
+        "engine": {"type": "string"},
+        "engine_version": {"type": "string"},
+        "languages": {"type": "array", "items": {"type": "string"}},
+        "quality": {"enum": ["fast", "balanced", "best"]}
+      }
+    },
+    "conversion_result": {
+      "type": "object",
+      "required": ["id", "source", "destination", "outcome", "issues", "output", "password_source", "pages", "duration", "ocr"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "source": {"$ref": "#/$defs/abspath"},
+        "destination": {"oneOf": [{"$ref": "#/$defs/abspath"}, {"type": "null"}]},
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+        "output": {"oneOf": [{"$ref": "#/$defs/abspath"}, {"type": "null"}]},
+        "password_source": {"type": ["string", "null"]},
+        "pages": {"type": ["integer", "null"], "minimum": 0},
+        "duration": {"type": "number", "minimum": 0},
+        "ocr": {"oneOf": [{"$ref": "#/$defs/ocr_summary"}, {"type": "null"}]}
+      }
+    },
+    "batch_started": {
+      "properties": {
+        "type": {"const": "batch_started"},
+        "tool_version": {"type": "string"},
+        "total": {"type": "integer", "minimum": 0},
+        "jobs": {"type": "integer", "minimum": 1},
+        "planned": {"type": "array", "items": {
+          "type": "object",
+          "required": ["id", "source", "destination"],
+          "properties": {
+            "id": {"$ref": "#/$defs/id"},
+            "source": {"$ref": "#/$defs/abspath"},
+            "destination": {"oneOf": [{"$ref": "#/$defs/abspath"}, {"type": "null"}]}
+          }
+        }}
+      },
+      "required": ["tool_version", "total", "jobs", "planned"]
+    },
+    "conversion_started": {
+      "properties": {"type": {"const": "conversion_started"}, "id": {"$ref": "#/$defs/id"}},
+      "required": ["id"]
+    },
+    "progress": {
+      "properties": {
+        "type": {"const": "progress"},
+        "id": {"$ref": "#/$defs/id"},
+        "stage": {"enum": ["open", "analyse", "ocr", "reflow", "write"]},
+        "done": {"type": "integer", "minimum": 0},
+        "of": {"type": "integer", "minimum": 0},
+        "page": {"type": "integer", "minimum": 1},
+        "trigger": {"enum": ["no_text_layer", "text_layer_rejected", "forced"]},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "coverage": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "attempts": {"type": "integer", "minimum": 0},
+        "fell_back": {"type": "boolean"}
+      },
+      "required": ["id", "stage", "done", "of"],
+      "allOf": [
+        {"if": {"properties": {"stage": {"enum": ["analyse", "ocr"]}}},
+         "then": {"required": ["page"]}},
+        {"if": {"properties": {"stage": {"const": "ocr"}}},
+         "then": {"required": ["page", "trigger", "confidence", "coverage", "attempts", "fell_back"]}}
+      ]
+    },
+    "issue_event": {
+      "properties": {
+        "type": {"const": "issue"},
+        "id": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+        "issue": {"$ref": "#/$defs/issue"}
+      },
+      "required": ["id", "issue"]
+    },
+    "password_required": {
+      "properties": {
+        "type": {"const": "password_required"},
+        "id": {"$ref": "#/$defs/id"},
+        "sources_tried": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["id", "sources_tried"]
+    },
+    "password_request": {
+      "properties": {
+        "type": {"const": "password_request"},
+        "id": {"$ref": "#/$defs/id"},
+        "request_id": {"type": "string"},
+        "attempt": {"type": "integer", "minimum": 1, "maximum": 3}
+      },
+      "required": ["id", "request_id", "attempt"]
+    },
+    "conversion_finished": {
+      "allOf": [{"$ref": "#/$defs/conversion_result"}],
+      "properties": {"type": {"const": "conversion_finished"}}
+    },
+    "batch_finished": {
+      "properties": {
+        "type": {"const": "batch_finished"},
+        "tool_version": {"type": "string"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "totals": {
+          "type": "object",
+          "required": ["converted", "skipped", "failed"],
+          "properties": {
+            "converted": {"type": "integer", "minimum": 0},
+            "skipped": {"type": "integer", "minimum": 0},
+            "failed": {"type": "integer", "minimum": 0}
+          }
+        },
+        "interrupted": {"type": "boolean"},
+        "exit_code": {"enum": [0, 1, 130]},
+        "conversions": {"type": "array", "items": {"$ref": "#/$defs/conversion_result"}}
+      },
+      "required": ["tool_version", "started_at", "totals", "interrupted", "exit_code", "conversions"]
+    }
+  }
+}
