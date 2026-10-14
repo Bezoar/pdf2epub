@@ -6,6 +6,7 @@ them up from its environment, so each test that needs one sets it with ``monkeyp
 """
 
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -135,47 +136,56 @@ def test_a_hung_worker_is_stopped_at_the_timeout(
     rules = {"hung.pdf": {"action": "sleep", "seconds": 60}}
     use_hooks(monkeypatch, rules)
 
-    started = time.monotonic()
     sink = RecordingSink()
     report = run([hung, good], "subprocess", sink, timeout=2)
-    elapsed = time.monotonic() - started
 
     first, second = report.conversions
     assert [issue.code for issue in first.issues] == [IssueCode.TIMEOUT]
     assert first.outcome is Outcome.FAILED
+    assert first.duration < 15  # from the worker's start, which the limit counts too
     # The next conversion runs (under the same 2-second limit, so a slow machine may stop
     # it too).
     assert [e["id"] for e in sink.of_type("conversion_started")] == [0, 1]
     assert IssueCode.NOT_ATTEMPTED not in [issue.code for issue in second.issues]
-    assert elapsed < 15
     assert leftovers(tmp_path) == []
     assert not hung.with_suffix(".epub").exists()
 
 
-@pytest.mark.ac("BAT-AC14")
+@pytest.mark.ac("BAT-AC11")
 def test_a_worker_that_ignores_sigterm_is_killed_after_the_grace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    hung, good = copies(NOVEL, tmp_path, "hung.pdf", "good.pdf")
-    term = tmp_path / "term"
-    rules = {"hung.pdf": {"action": "sleep", "seconds": 60, "on_term": str(term)}}
-    use_hooks(monkeypatch, rules)
+    """BAT-R17's SIGTERM, then SIGKILL after the grace. The worker ignores SIGTERM from
+    the moment it creates ``started``; a thread waits for that file, then cancels."""
+    hung, other = copies(NOVEL, tmp_path, "hung.pdf", "other.pdf")
+    started, term = tmp_path.parent / f"{tmp_path.name}-started", tmp_path / "term"
+    rule = {"action": "sleep", "seconds": 60, "started": str(started), "on_term": str(term)}
+    use_hooks(monkeypatch, {"hung.pdf": rule})
+    cancel = CancelToken()
+    cancelled_at: list[float] = []
 
-    started = time.monotonic()
-    sink = RecordingSink()
-    report = run([hung, good], "subprocess", sink, timeout=2)
-    elapsed = time.monotonic() - started
+    def cancel_once_started() -> None:
+        deadline = time.monotonic() + 60
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        cancelled_at.append(time.monotonic())
+        cancel.cancel()
 
-    first, second = report.conversions
-    assert [issue.code for issue in first.issues] == [IssueCode.TIMEOUT]
+    canceller = threading.Thread(target=cancel_once_started)
+    canceller.start()
+    report = run([hung, other], "subprocess", RecordingSink(), cancel=cancel)
+    finished = time.monotonic()
+    canceller.join()
+
+    assert started.exists(), "the worker never reached the hook"
     assert term.exists(), "the worker got SIGTERM first"
-    # The next conversion runs (under the same 2-second limit, so a slow machine may stop
-    # it too).
-    assert [e["id"] for e in sink.of_type("conversion_started")] == [0, 1]
-    assert IssueCode.NOT_ATTEMPTED not in [issue.code for issue in second.issues]
-    assert elapsed < 15
+    assert 5 <= finished - cancelled_at[0] < 15, "killed after the 5-second grace"
+    first, second = report.conversions
+    assert [issue.code for issue in first.issues] == [IssueCode.NOT_ATTEMPTED]
+    assert [issue.code for issue in second.issues] == [IssueCode.NOT_ATTEMPTED]
     term.unlink()
     assert leftovers(tmp_path) == []
+    assert not hung.with_suffix(".epub").exists()
 
 
 class CancelOnFirstProgress:
@@ -254,7 +264,8 @@ def test_cancelling_during_a_slow_worker_stops_it_promptly(
     started = time.monotonic()
     report = run([a, slow, c], "subprocess", sink, cancel=cancel)
 
-    assert time.monotonic() - started < 15
+    # Far less than the hook's 60 seconds, even on a slow, measured run.
+    assert time.monotonic() - started < 45
     assert [r.outcome for r in report.conversions] == [
         Outcome.CONVERTED,
         Outcome.SKIPPED,

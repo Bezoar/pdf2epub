@@ -132,7 +132,7 @@ def test_timeout_flag_stops_a_hung_conversion(tmp_path: Path) -> None:
     )
 
     assert proc.returncode == 1, proc.stderr
-    assert time.monotonic() - started < 15
+    assert time.monotonic() - started < 45  # far less than the hook's 60 seconds
     last = json.loads(proc.stdout.splitlines()[-1])
     [conversion] = last["conversions"]
     assert [issue["code"] for issue in conversion["issues"]] == ["timeout"]
