@@ -9,9 +9,11 @@ Package layout (EPUB-R2, EPUB-R4)::
     OEBPS/nav.xhtml               navigation document (first in the spine, non-linear)
     OEBPS/toc.ncx                 EPUB 2 table of contents (EPUB-R6)
     OEBPS/style.css               default stylesheet (EPUB-R10)
+    OEBPS/cover.xhtml             the cover page, first in the spine (EPUB-R12)
+    OEBPS/images/cover.jpg|png    the cover image (manifest property cover-image)
     OEBPS/chapter-NNN.xhtml       each chapter, in document order; a chapter split for
     OEBPS/chapter-NNN-P.xhtml     size (EPUB-R8) goes on in parts 2, 3, ...
-    OEBPS/images/image-NNN.png    book images
+    OEBPS/images/image-NNN.jpg/png  book images, each stored once
 
 Output is deterministic (EPUB-R15): entries in sorted order after ``mimetype``, fixed
 timestamps, a fixed compression level, and names and ids derived from document order.
@@ -49,7 +51,7 @@ MIMETYPE = b"application/epub+zip"
 CONTAINER = "META-INF/container.xml"
 PACKAGE_DIR = "OEBPS"
 PACKAGE = f"{PACKAGE_DIR}/content.opf"
-NAV, NCX, STYLESHEET = "nav.xhtml", "toc.ncx", "style.css"
+NAV, NCX, STYLESHEET, COVER = "nav.xhtml", "toc.ncx", "style.css", "cover.xhtml"
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 COMPRESS_LEVEL = 9
 
@@ -156,7 +158,15 @@ def write_epub(document: Document) -> bytes:
     counter = iter(range(1, 1_000_000))
     toc = [_toc_entry(entry, counter, chapter_files, where) for entry in document.toc]
     body_start = next((i for i, c in enumerate(document.chapters) if c.title is not None), 0)
+    cover_image = None
+    if document.cover is not None:
+        # EPUB-R12: the cover image, and a cover page showing it, first in the spine.
+        cover_image = f"images/cover{IMAGE_EXTENSIONS[document.cover.media_type]}"
+        contents[cover_image] = document.cover.data
+        markup = f'<div class="cover"><img src="{escape(cover_image)}" alt="Cover"/></div>'
+        contents[COVER] = _chapter(meta, meta.title, markup)
     landmarks = [
+        *([{"type": "cover", "href": COVER, "label": "Cover"}] if cover_image else []),
         {"type": "toc", "href": f"{NAV}#toc", "label": "Contents"},
         {"type": "bodymatter", "href": chapter_files[body_start][0], "label": "Start of content"},
     ]
@@ -201,7 +211,20 @@ def write_epub(document: Document) -> bytes:
             for asset, name in images.items()
         ]
     )
-    spine = [{"idref": "nav", "linear": False}] + [
+    cover_spine = []
+    if cover_image is not None:
+        assert document.cover is not None
+        manifest += [
+            {"id": "cover", "href": COVER, "media_type": XHTML, "properties": None},
+            {
+                "id": "cover-image",
+                "href": cover_image,
+                "media_type": document.cover.media_type,
+                "properties": "cover-image",
+            },
+        ]
+        cover_spine = [{"idref": "cover", "linear": True}]
+    spine = [*cover_spine, {"idref": "nav", "linear": False}] + [
         {"idref": name.removesuffix(".xhtml"), "linear": True} for name in chapters
     ]
     package = _render("content.opf.j2", meta=meta, manifest=manifest, spine=spine, ncx_id="ncx")
@@ -415,7 +438,7 @@ def check_package(entries: dict[str, bytes]) -> None:
         for element in tree.iter():
             tag = etree.QName(element).localname if isinstance(element.tag, str) else ""
             link = element.get("href") if tag == "a" else element.get("src")
-            if tag not in ("a", "content") or link is None:
+            if tag not in ("a", "content", "img") or link is None:
                 continue
             path, fragment = urldefrag(link)
             target = posixpath.normpath(posixpath.join(posixpath.dirname(name), path))

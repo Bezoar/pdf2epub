@@ -1,0 +1,60 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 432 648] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<<  /Length 79 >>
+stream
+BT /F1 12 Tf 54 600 Td (A single line of text, so the book is not empty.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Title (Info Title) /Author (Info Author) /CreationDate (D:20110203040506+02'00') >>
+endobj
+7 0 obj
+<< /Type /Metadata /Subtype /XML /Length 669 >>
+stream
+<?xpacket begin="Ôªø" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <dc:title><rdf:Alt>
+        <rdf:li xml:lang="de">Ein Titel</rdf:li>
+        <rdf:li xml:lang="x-default">XMP Title</rdf:li>
+      </rdf:Alt></dc:title>
+      <dc:creator><rdf:Seq>
+        <rdf:li>Ann Example</rdf:li>
+        <rdf:li>Bob Example</rdf:li>
+      </rdf:Seq></dc:creator>
+      <dc:language><rdf:Bag><rdf:li>de</rdf:li></rdf:Bag></dc:language>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000234 00000 n 
+0000000360 00000 n 
+0000000490 00000 n 
+0000000593 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R /Info 6 0 R >>
+startxref
+1343
+%%EOF

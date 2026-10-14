@@ -1,5 +1,5 @@
-"""Building the document model from a source PDF and its page text (RFL-R25, RFL-R31,
-RFL-R32, RFL-R34).
+"""Building the document model from a source PDF and its page text (RFL-R25, RFL-R34),
+with its metadata (``reflow.metadata``, RFL-R31, RFL-R32).
 
 Every page's lines are grouped into blocks and paragraphs (``reflow.layout``), furniture
 is removed (``reflow.furniture``, RFL-R16), headings are found (``reflow.headings``,
@@ -11,17 +11,14 @@ RFL-R19). Line blocks (verse, code) keep their lines and are never joined
 an inline where a paragraph runs on across the page boundary. The blocks are then split
 into chapters with a table of contents (``reflow.chapters``, RFL-R23, RFL-R24).
 
-Page images and the cover come with later tickets.
+Page images come with a later ticket; the cover is added by the conversion.
 """
 
-import re
-import uuid
 from collections.abc import Collection
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta, timezone
 from itertools import pairwise
 
-from pdf2epub.issues import Issue, IssueCode
+from pdf2epub.issues import Issue
 from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.chapters import Position, make_chapters
 from pdf2epub.reflow.extract import Line, PageText, normalise
@@ -37,6 +34,7 @@ from pdf2epub.reflow.layout import (
     paragraphs,
 )
 from pdf2epub.reflow.lineblocks import is_line_block, line_block
+from pdf2epub.reflow.metadata import book_metadata
 from pdf2epub.reflow.model import (
     Block,
     Document,
@@ -44,7 +42,6 @@ from pdf2epub.reflow.model import (
     Image,
     ImageAsset,
     LineBlock,
-    Metadata,
     PageBreak,
     Paragraph,
     Text,
@@ -53,16 +50,6 @@ from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
 from pdf2epub.reflow.wordlists import wordlist
-
-# Fixed once for pdf2epub: dc:identifier is urn:uuid: plus UUIDv5(this, the PDF's SHA-256).
-IDENTIFIER_NAMESPACE = uuid.UUID("de933f19-549d-40b3-bd7c-840b7f360868")
-DEFAULT_LANGUAGE = "en"
-DEFAULT_MODIFIED = "1980-01-01T00:00:00Z"
-
-_PDF_DATE = re.compile(
-    r"^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?"
-    r"(?:([Zz])|([+-])(\d{2})'?(\d{2})?'?)?"
-)
 
 
 def build_document(
@@ -73,7 +60,7 @@ def build_document(
 ) -> tuple[Document, list[Issue]]:
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
-    metadata, issues = _metadata(source, options)
+    metadata, issues = book_metadata(source, options)
     blocks, positions, furniture = _body(source, pages, images, wordlist(metadata.language))
     gaps = sequence_gaps(furniture.page_numbers)
     if gaps is not None:
@@ -267,58 +254,3 @@ def _runs_on(end: DraftParagraph, start: DraftParagraph) -> bool:
     if end.display or start.display or ends_sentence(end.lines[-1].text):
         return False
     return start.lines[0].text[:1].islower() or not start.indented
-
-
-def _metadata(source: SourcePdf, options: ConversionOptions) -> tuple[Metadata, list[Issue]]:
-    issues: list[Issue] = []
-    info = {key: normalise(value).strip() for key, value in source.info.items()}
-    title = options.title or info.get("Title") or source.path.stem
-    if options.authors is not None:
-        authors = list(options.authors)
-    else:
-        authors = [info["Author"]] if info.get("Author") else []
-    language = options.language or source.language
-    if not language:
-        language = DEFAULT_LANGUAGE
-        issues.append(
-            Issue(
-                IssueCode.LANGUAGE_DEFAULTED,
-                f"No language was given or found; the book was labelled {DEFAULT_LANGUAGE}.",
-            )
-        )
-    identifier = uuid.uuid5(IDENTIFIER_NAMESPACE, source.sha256)
-    modified = (
-        _pdf_date(info.get("ModDate")) or _pdf_date(info.get("CreationDate")) or DEFAULT_MODIFIED
-    )
-    metadata = Metadata(
-        title=title,
-        authors=authors,
-        language=language,
-        identifier=f"urn:uuid:{identifier}",
-        modified=modified,
-    )
-    return metadata, issues
-
-
-def _pdf_date(value: str | None) -> str | None:
-    """A PDF date string (``D:YYYYMMDDHHmmSSOHH'mm'``) as ``CCYY-MM-DDThh:mm:ssZ`` in UTC
-    (EPUB-R14), or None if it isn't one."""
-    match = _PDF_DATE.match(value or "")
-    if match is None:
-        return None
-    year, month, day, hour, minute, second, zulu, sign, tz_hour, tz_minute = match.groups()
-    offset = timedelta(hours=int(tz_hour or 0), minutes=int(tz_minute or 0))
-    zone = timezone(-offset if sign == "-" else offset) if sign and not zulu else UTC
-    try:
-        moment = datetime(
-            int(year),
-            int(month or 1),
-            int(day or 1),
-            int(hour or 0),
-            int(minute or 0),
-            int(second or 0),
-            tzinfo=zone,
-        )
-    except ValueError:
-        return None
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -58,7 +58,8 @@ class NavEntry:
 class Epub:
     archive: zipfile.ZipFile
     spine: list[str]
-    """Content documents in spine order (package-relative), the nav excluded."""
+    """The chapters' documents in spine order (package-relative): the cover page and the
+    nav excluded."""
 
     def xml(self, name: str) -> etree._Element:
         return etree.fromstring(self.archive.read(f"OEBPS/{name}"))
@@ -101,7 +102,8 @@ def open_epub(epub: Path) -> Epub:
     opf = etree.fromstring(archive.read("OEBPS/content.opf"))
     items = {i.get("id"): str(i.get("href")) for i in opf.findall("opf:manifest/opf:item", OPF_NS)}
     spine = [items[r.get("idref")] for r in opf.findall("opf:spine/opf:itemref", OPF_NS)]
-    return Epub(archive, [name for name in spine if name != "nav.xhtml"])
+    # EPUB-R4: the cover page (if any), then the nav, then the chapters.
+    return Epub(archive, spine[spine.index("nav.xhtml") + 1 :])
 
 
 def content_blocks(epub: Epub) -> list[Para]:

@@ -46,6 +46,8 @@ class SourcePdf:
     language: str | None
     """The catalog ``/Lang``, if any."""
     outline: list[OutlineEntry] = field(default_factory=list)
+    xmp: bytes | None = None
+    """The XMP metadata packet, if any, as read by ``ParsedPdf.xmp``."""
 
     @property
     def page_count(self) -> int:

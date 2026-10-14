@@ -80,6 +80,22 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         """True when the cross-reference table had to be rebuilt by scanning the file."""
         return any(isinstance(xref, PDFXRefFallback) for xref in self._document.xrefs)
 
+    def xmp(self) -> bytes | None:
+        """The catalog's XMP metadata packet, decoded within the stream size limit, or
+        None when there is none or it can't be read."""
+        try:
+            stream = resolve1(self._document.catalog.get("Metadata"))
+            if not isinstance(stream, PDFStream):
+                return None
+            _check_stream(stream)
+            data = stream.get_data()
+        except ResourceLimitExceeded:
+            raise
+        except Exception:  # damaged metadata costs the metadata, never the book
+            log.debug("the XMP metadata can't be read; it is ignored", exc_info=True)
+            return None
+        return data if isinstance(data, bytes) else None
+
     def pages(self) -> Iterator[PDFPage]:
         try:
             yield from PDFPage.create_pages(self._document)

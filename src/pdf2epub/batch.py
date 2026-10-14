@@ -24,6 +24,7 @@ from pdf2epub.events import Emitter, EventSink
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity, derive_outcome
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
 from pdf2epub.passwords import PasswordProvider
+from pdf2epub.reflow.cover import check_cover
 from pdf2epub.results import BatchReport, ConversionResult, Totals
 from pdf2epub.version import TOOL_VERSION
 
@@ -272,7 +273,13 @@ def run_batch(
     Events go to ``sink`` from the calling thread only (API-R4). Every conversion runs in
     this process for now, whatever ``batch_options.isolation`` says: worker subprocesses
     (BAT-R19) arrive with worker isolation.
+
+    Raises ``UsageError``, before any event, when ``conversion_options.cover`` names an
+    image file that can't be read or decoded (RFL-R28).
     """
+    # Preflight: a cover file that can't be used is a usage error, before any event
+    # (RFL-R28, BAT-R25).
+    check_cover(conversion_options.cover)
     emitter = Emitter(sink)
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     emitter.emit(

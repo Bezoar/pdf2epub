@@ -180,3 +180,33 @@ def double_deflated_run(value: int, length: int) -> bytes:
     """``length`` copies of byte ``value``, deflated twice: the data of a stream with
     ``/Filter [/FlateDecode /FlateDecode]``. Gigabytes fit in a few tens of kilobytes."""
     return zlib_periodic(zlib_run(value, length))
+
+
+def find_period(data: bytes, period: int) -> Periodic:
+    """``data`` as a ``Periodic`` whose unit is ``period`` bytes long, taken from the
+    longest stretch of ``data`` that repeats with that period."""
+    best_start, best_length, start = 0, 0, None
+    for index in range(len(data) - period + 1):
+        same = index + period < len(data) and data[index] == data[index + period]
+        if same and start is None:
+            start = index
+        elif not same and start is not None:
+            if index - start > best_length:
+                best_start, best_length = start, index - start
+            start = None
+    count = (best_length + period) // period
+    unit = data[best_start : best_start + period]
+    end = best_start + period * count
+    found = Periodic(data[:best_start], unit, count, data[end:])
+    assert found.materialise() == data
+    return found
+
+
+def double_deflated(data: Periodic) -> bytes:
+    """``data`` deflated twice, for ``/Filter [/FlateDecode /FlateDecode]``. A repeated
+    unit becomes a run of identical 258-byte back-references, and those, packed into
+    bits, repeat every few bytes, so the second pass shrinks them again."""
+    once = zlib_periodic(data)
+    # One back-reference is 8 + 5 + extra bits; eight of them end on a byte boundary.
+    code = max(i for i, (base, _) in enumerate(_DISTANCES) if base <= len(data.unit))
+    return zlib_periodic(find_period(once, 8 + 5 + _DISTANCES[code][1]))

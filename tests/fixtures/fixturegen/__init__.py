@@ -37,6 +37,8 @@ def registry() -> list[Fixture]:
         damaged,
         headings,
         hostile,
+        images,
+        metadata,
         not_a_pdf,
         novel,
         oversized,
@@ -94,6 +96,11 @@ def registry() -> list[Fixture]:
         Fixture(verse.PATH, verse.GROUND_TRUTH, verse.build),
         Fixture(cjk.PATH, cjk.GROUND_TRUTH, cjk.build),
         Fixture(twopage.PATH, twopage.GROUND_TRUTH, twopage.build),
+        Fixture(images.PATH, images.GROUND_TRUTH, images.build),
+        Fixture(metadata.JANE_DOE, None, metadata.build_jane_doe),
+        Fixture(metadata.SCAN, None, metadata.build_scan),
+        Fixture(metadata.LANG_FR, None, metadata.build_lang_fr),
+        Fixture(metadata.XMP, None, metadata.build_xmp),
     ]
 
 
