@@ -93,6 +93,20 @@ Order: [v1.1](#v11--footnote-detection-and-linking) first, then [content and lay
 - **AC sketch:** Given a typeset page with a labelled diagram, then the diagram's labels are searchable in the EPUB.
 - **Dependencies:** OCR region support (see [OCR engine extensions](#ocr-engine-extensions)).
 
+### Wordlists for more languages
+- **Motivation:** v1 ships only an English wordlist. Other languages get soft-hyphen-only de-hyphenation (so `Wör-ter` split at a line end keeps its hyphen) and a weaker, letters-only word-plausibility signal in the text-layer quality check.
+- **Behaviour:**
+  - **Triage first (owner decision):** pick the first languages to support, ranked on reader demand, how much hard-hyphenation they use, and whether an MIT-compatible wordlist exists (many Hunspell dictionaries are GPL, LGPL or MPL, which [coding.md §9](../instructions/coding.md#9-dependencies) requires escalating). Contributor research: [Wordlist licences and language triage for more languages (#53)](https://github.com/Bezoar/pdf2epub/issues/53).
+  - Ship one wordlist per chosen language, selected by the book's language (the same language that drives OCR), for both de-hyphenation and word plausibility.
+  - **Contributed lists (shipped):** one file per language, `wordlists/<bcp47>.txt` (UTF-8, NFC, one word per line, sorted, no duplicates) plus `wordlists/<bcp47>.source.toml` (source URL, version, SPDX licence ID, generation script, SHA-256). The English list in v1 already uses this layout.
+  - **CI gatekeeping for contributions:** reject licences outside an MIT-compatible allowlist (MIT, BSD, Apache-2.0, CC0, public domain); check the format and a size cap; rerun the generation script and compare the hash. Reviewers judge only the source's quality.
+  - **Contribution path:** a "Wordlist contribution" issue template, a `CONTRIBUTING.md` section, and one `help wanted` + `good first issue` issue per wanted language.
+  - **User-installed lists (not shipped):** also read wordlists from a user data folder (e.g. `~/.local/share/pdf2epub/wordlists/`), a `--wordlist PATH` option, and the system's Hunspell dictionaries (e.g. `/usr/share/hunspell/de_DE.dic`). Nothing is redistributed, so GPL, LGPL or MPL lists work locally. Precedence: option, user folder, shipped list, system Hunspell.
+  - Recalibrate the text-layer thresholds per language on must-trust and must-reject samples.
+- **Interfaces touched:** reflow (wordlist selection per language and lookup order), ocr (word-plausibility signal per language), cli (`--wordlist`), api (`ConversionOptions` wordlist path), testing (fixtures per language; CI wordlist checks).
+- **AC sketch:** Given a German born-digital fixture with hard-hyphenated line ends, then words in the German wordlist are joined without the hyphen; given a German must-trust text layer, then no page is rejected; given a user-installed Hunspell `de_DE.dic` and no shipped German list, then the same de-hyphenation result.
+- **Dependencies:** none (pairs well with automatic language detection in [Metadata heuristics](#metadata-heuristics)).
+
 ## OCR
 
 ### OCR engine extensions
