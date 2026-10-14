@@ -149,6 +149,18 @@ def test_a_single_conversion_on_a_terminal_prompts_without_echo(tmp_path: Path, 
     assert (tmp_path / "enc.epub").is_file()
 
 
+def test_an_answer_typed_ahead_is_kept_for_the_next_attempt(tmp_path: Path, enc: Path) -> None:
+    with on_terminal(["enc.pdf"], tmp_path) as terminal:
+        terminal.read_until(PROMPT)
+        terminal.type("wrong\n" + PASSWORD + "\n")  # pasted together
+        code, _, output = terminal.finish()
+
+    assert code == 0, output
+    assert "attempt 2 of 3" in output
+    assert PASSWORD not in output
+    assert (tmp_path / "enc.epub").is_file()
+
+
 @pytest.mark.ac("CLI-AC5")
 def test_a_blank_answer_skips_the_file(tmp_path: Path, enc: Path) -> None:
     with on_terminal(["enc.pdf"], tmp_path) as terminal:

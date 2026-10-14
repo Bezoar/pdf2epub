@@ -48,6 +48,8 @@ class TerminalPrompt:
         self._stream = stream
         self._cancel = cancel
         self._before = before
+        self._pending = b""
+        """Input read past the end of the last answer: the start of the next one."""
 
     def __call__(self, path: Path, attempt: int) -> Secret | None:
         if self._cancel.cancelled:
@@ -57,7 +59,9 @@ class TerminalPrompt:
         saved = termios.tcgetattr(self._fd)
         quiet = list(saved)
         quiet[3] &= ~termios.ECHO  # lflags
-        termios.tcsetattr(self._fd, termios.TCSAFLUSH, quiet)
+        # TCSANOW, not TCSAFLUSH: an answer typed ahead (a corrected password pasted
+        # with a wrong one, say) stays queued for the next attempt.
+        termios.tcsetattr(self._fd, termios.TCSANOW, quiet)
         try:
             self._stream.write(
                 f"Password for {path.name} (attempt {attempt} of {PROMPT_ATTEMPTS}; "
@@ -66,7 +70,7 @@ class TerminalPrompt:
             self._stream.flush()
             line = self._read_line()
         finally:
-            termios.tcsetattr(self._fd, termios.TCSAFLUSH, saved)
+            termios.tcsetattr(self._fd, termios.TCSANOW, saved)
             self._stream.write("\n")  # the Enter key was not echoed
             self._stream.flush()
         if not line:
@@ -76,7 +80,7 @@ class TerminalPrompt:
     def _read_line(self) -> bytes | None:
         """One line typed on the terminal, without its line ending; None at end of input
         or once the batch is cancelled."""
-        typed = b""
+        typed, self._pending = self._pending, b""
         while b"\n" not in typed:
             if self._cancel.cancelled:
                 return None
@@ -86,7 +90,8 @@ class TerminalPrompt:
             if not data:
                 return None
             typed += data
-        return typed.split(b"\n", 1)[0].removesuffix(b"\r")
+        line, self._pending = typed.split(b"\n", 1)
+        return line.removesuffix(b"\r")
 
 
 def _read_some(fd: int) -> bytes:
