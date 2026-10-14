@@ -3,11 +3,20 @@
 
 import ctypes
 import hashlib
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfparser import PDFParser
+from pdfminer.psexceptions import PSException
+
+
+class CorruptPdf(Exception):
+    """The PDF can't be parsed at all, even with repair (RFL-R2)."""
 
 
 @dataclass(frozen=True)
@@ -30,8 +39,19 @@ class SourcePdf:
 
 
 def open_source(path: Path) -> SourcePdf:
+    """Open ``path`` with pdfium, which repairs what it can. Raises ``CorruptPdf`` when
+    even that fails. A PDF with no pages comes back with ``page_count`` 0."""
     data = path.read_bytes()
-    document = pdfium.PdfDocument(data)
+    try:
+        document = pdfium.PdfDocument(data)
+    except pdfium.PdfiumError as error:
+        if _has_no_pages(data):
+            # pdfium declines a document whose page tree is empty without setting an
+            # error code of its own, so err_code is whatever the last failure left.
+            return SourcePdf(path, hashlib.sha256(data).hexdigest(), [], {}, None)
+        if error.err_code in _CORRUPT:
+            raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
+        raise
     try:
         labels = [document.get_page_label(i) or str(i + 1) for i in range(len(document))]
         info = {key: value for key, value in document.get_metadata_dict(skip_empty=True).items()}
@@ -45,6 +65,26 @@ def open_source(path: Path) -> SourcePdf:
         info=info,
         language=language,
     )
+
+
+# pdfium's load errors that mean the file itself is broken: all but the password and
+# security-handler failures, which are about access, not damage.
+_CORRUPT = (
+    pdfium_c.FPDF_ERR_SUCCESS,
+    pdfium_c.FPDF_ERR_UNKNOWN,
+    pdfium_c.FPDF_ERR_FILE,
+    pdfium_c.FPDF_ERR_FORMAT,
+    pdfium_c.FPDF_ERR_PAGE,
+)
+
+
+def _has_no_pages(data: bytes) -> bool:
+    """True when pdfminer reads the document and finds an empty page tree."""
+    try:
+        document = PDFDocument(PDFParser(io.BytesIO(data)))
+        return next(PDFPage.create_pages(document), None) is None
+    except PSException:
+        return False
 
 
 def _catalog_language(document: pdfium.PdfDocument) -> str | None:
