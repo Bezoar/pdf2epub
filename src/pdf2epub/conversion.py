@@ -102,7 +102,7 @@ def convert(
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
         # so empty_document is the only one. Until book images join the model, a page's
         # content is its text.
-        if not any(page.blocks for page in pages):
+        if not any(page.lines for page in pages):
             raise _Empty("No page of the PDF has any text or image.")
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
