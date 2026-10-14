@@ -10,7 +10,9 @@ calls ``wrap`` itself.
 The rules are keyed by the source PDF's file name; a conversion of any other file runs
 normally. Each rule is a dict:
 
-- ``{"action": "abort"}``: the process aborts (SIGABRT), as a crashing library would.
+- ``{"action": "kill"}``: the process is killed by SIGKILL, as a crashing library or the
+  operating system's out-of-memory killer would end it. Not SIGABRT (``os.abort()``):
+  macOS's crash reporter would show a "Python quit unexpectedly" dialog for each one.
 - ``{"action": "raise"}``: an unexpected ``RuntimeError`` is raised.
 - ``{"action": "sleep", "seconds": S}``: the conversion sleeps for ``S`` seconds, then goes
   on normally. With ``"started": PATH`` it first creates the file ``PATH``, so a test can
@@ -72,8 +74,8 @@ def install_from_environment() -> None:
 
 def _apply(rule: Mapping[str, Any]) -> None:
     action = rule["action"]
-    if action == "abort":
-        os.abort()
+    if action == "kill":
+        os.kill(os.getpid(), signal.SIGKILL)
     if action == "raise":
         raise RuntimeError("test hook: unexpected failure")
     if action == "sleep":

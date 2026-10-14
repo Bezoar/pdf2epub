@@ -95,7 +95,7 @@ def test_a_crashing_worker_fails_its_conversion_and_the_batch_goes_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     crash, good = copies(NOVEL, tmp_path, "crash.pdf", "good.pdf")
-    use_hooks(monkeypatch, {"crash.pdf": {"action": "abort"}})
+    use_hooks(monkeypatch, {"crash.pdf": {"action": "kill"}})
     sink = RecordingSink()
 
     report = run([crash, good], "subprocess", sink)
@@ -103,6 +103,7 @@ def test_a_crashing_worker_fails_its_conversion_and_the_batch_goes_on(
     first, second = report.conversions
     assert first.outcome is Outcome.FAILED
     assert [issue.code for issue in first.issues] == [IssueCode.INTERNAL_ERROR]
+    assert "was killed by SIGKILL" in first.issues[0].message
     assert first.issues[0].message.endswith("please report this bug")
     assert second.outcome is Outcome.CONVERTED
     assert good.with_suffix(".epub").is_file()
@@ -149,6 +150,27 @@ def test_a_hung_worker_is_stopped_at_the_timeout(
     assert IssueCode.NOT_ATTEMPTED not in [issue.code for issue in second.issues]
     assert leftovers(tmp_path) == []
     assert not hung.with_suffix(".epub").exists()
+
+
+def test_workers_shut_down_cleanly_after_a_result_and_after_sigterm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Local AC of #79: a worker's interpreter shuts down with no thread still using one
+    of its standard streams, both when it ends after sending its result and when SIGTERM
+    stops it at the time limit. Otherwise Python aborts with "Fatal Python error:
+    _enter_buffered_busy" and macOS shows a crash dialog. Workers share this process's
+    stderr, so capfd sees what they write."""
+    hung, good = copies(NOVEL, tmp_path, "hung.pdf", "good.pdf")
+    use_hooks(monkeypatch, {"hung.pdf": {"action": "sleep", "seconds": 60}})
+
+    [converted] = run([good], "subprocess", RecordingSink()).conversions
+    [stopped] = run([hung], "subprocess", RecordingSink(), timeout=2).conversions
+
+    assert converted.outcome is Outcome.CONVERTED
+    assert [issue.code for issue in stopped.issues] == [IssueCode.TIMEOUT]
+    stderr = capfd.readouterr().err
+    assert "Fatal Python error" not in stderr
+    assert "Traceback" not in stderr
 
 
 @pytest.mark.ac("BAT-AC11")
