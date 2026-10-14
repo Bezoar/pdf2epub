@@ -6,7 +6,8 @@
 - Tests marked ``tesseract`` skip when Tesseract is missing, except where
   ``PDF2EPUB_REQUIRE_TESSERACT=1`` (the CI coverage job), where they fail instead.
 - Every EPUB a test writes under its ``tmp_path`` is checked with epubcheck when the test
-  ends, and any epubcheck error fails it (TST-R19).
+  ends, and any epubcheck error fails it (TST-R19). Each pytest process (each xdist
+  worker) keeps one epubcheck JVM running for all its checks.
 
 - Every event a ``RecordingSink`` receives, and every event or report a test passes to
   ``validate_event``, is checked against the JSON Schema shipped in the package; an
@@ -16,6 +17,8 @@ It also holds what the seams share: copies of the committed fixtures, a recordin
 sink, the schema check, the epubcheck step, and an in-process conversion helper.
 """
 
+import atexit
+import base64
 import ipaddress
 import json
 import os
@@ -264,8 +267,72 @@ def _epubcheck_command() -> list[str] | None:
     return None
 
 
-# EPUBs that already passed, by (path, size, modification time): each JVM start costs
-# seconds, so a file checked by its test isn't checked again at teardown.
+# Runs epubcheck on many EPUBs in one JVM (one per pytest process, so one per xdist
+# worker), since a JVM start costs seconds of CPU per EPUB.
+EPUBCHECK_SERVER = Path(__file__).resolve().parent / "epubcheck" / "EpubcheckServer.java"
+
+
+class _EpubcheckServer:
+    """A long-lived ``EpubcheckServer.java`` process: one EPUB path in, one result out."""
+
+    def __init__(self, jar: str) -> None:
+        self._lock = threading.Lock()
+        self._proc = subprocess.Popen(
+            # The quick JIT tier and a single-threaded GC: a fifth of the default CPU time
+            # for the few dozen EPUBs one process checks, in the same wall time.
+            [
+                "java",
+                "-XX:TieredStopAtLevel=1",
+                "-XX:+UseSerialGC",
+                "-cp",
+                jar,
+                str(EPUBCHECK_SERVER),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+
+    def check(self, epub: Path) -> tuple[int, str]:
+        """epubcheck's exit code for ``epub``, and everything it printed."""
+        assert self._proc.stdin is not None and self._proc.stdout is not None
+        if "\n" in str(epub) or "\r" in str(epub):  # the protocol is one path per line
+            pytest.fail(f"can't send a path with a line break to epubcheck: {epub!r}")
+        with self._lock:
+            self._proc.stdin.write(f"{epub}\n")
+            self._proc.stdin.flush()
+            reply = self._proc.stdout.readline()
+        if not reply:
+            pytest.fail(f"the epubcheck server exited with {self._proc.wait()}", pytrace=False)
+        code, _, output = reply.partition(" ")
+        return int(code), base64.b64decode(output).decode("utf-8", "replace")
+
+    def close(self) -> None:
+        if self._proc.stdin is not None:
+            self._proc.stdin.close()
+        self._proc.wait()
+
+
+_SERVER: _EpubcheckServer | None = None
+
+
+def _epubcheck(command: list[str], epub: Path) -> tuple[int, str]:
+    global _SERVER
+    jar = os.environ.get(EPUBCHECK_JAR)
+    if not jar:  # an `epubcheck` program on PATH: one process per EPUB
+        proc = subprocess.run(
+            [*command, "--quiet", str(epub)], capture_output=True, text=True, check=False
+        )
+        return proc.returncode, proc.stdout + proc.stderr
+    if _SERVER is None:
+        _SERVER = _EpubcheckServer(jar)
+        atexit.register(_SERVER.close)
+    return _SERVER.check(epub)
+
+
+# EPUBs that already passed, by (path, size, modification time), so a file checked by its
+# test isn't checked again at teardown.
 _PASSED: set[tuple[str, int, int]] = set()
 
 
@@ -279,11 +346,9 @@ def run_epubcheck(epub: Path) -> None:
     key = (str(epub.resolve()), stat.st_size, stat.st_mtime_ns)
     if key in _PASSED:
         return
-    proc = subprocess.run(
-        [*command, "--quiet", str(epub)], capture_output=True, text=True, check=False
-    )
-    if proc.returncode != 0:
-        pytest.fail(f"epubcheck rejected {epub}:\n{proc.stdout}{proc.stderr}", pytrace=False)
+    code, output = _epubcheck(command, epub.resolve())
+    if code != 0:
+        pytest.fail(f"epubcheck rejected {epub}:\n{output}", pytrace=False)
     _PASSED.add(key)
 
 
