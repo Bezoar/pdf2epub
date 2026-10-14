@@ -25,6 +25,7 @@ from itertools import pairwise
 import numpy as np
 from pdfminer.layout import (
     LAParams,
+    LTAnno,
     LTChar,
     LTComponent,
     LTContainer,
@@ -35,7 +36,6 @@ from pdfminer.layout import (
     LTLine,
     LTPage,
     LTRect,
-    LTText,
     LTTextContainer,
     LTTextLine,
 )
@@ -73,8 +73,10 @@ _MATH_FONT = re.compile(r"cmmi|cmsy|cmex|msam|msbm|symbol|math|stix|euler", re.I
 _RULE_THICKNESS = 2.0
 # An image covering this share of the page is a scan, not an illustration on the page.
 _SCAN_SHARE = 0.9
-# The resolution, in points, of the mask that measures the area under shapes.
-_MASK_STEP = 2.0
+# The resolution, in points, of the mask that measures the area under shapes, made
+# coarser for a page so large (a hostile one can be) that the mask would pass this
+# many cells along an edge.
+_MASK_STEP, _MAX_MASK_EDGE = 2.0, 2_000
 
 
 @dataclass(frozen=True)
@@ -253,14 +255,14 @@ def _in_columns(
 def _line(children: Sequence[LTItem], page_height: float) -> Line | None:
     """The line of text made of ``children``: a text line's glyphs, and the spaces
     pdfminer adds between words. None if it holds no text."""
-    whole = "".join(c.get_text() for c in children if isinstance(c, LTText))
+    whole = "".join(c.get_text() for c in children if isinstance(c, LTChar | LTAnno))
     soft = " ".join(whole.split()).endswith(SOFT_HYPHEN)
     pieces: list[Text] = []
     style = (False, False)
     for child in children:
         if isinstance(child, LTChar):
             style = getattr(child, STYLE, (False, False))
-        if isinstance(child, LTText):
+        if isinstance(child, LTChar | LTAnno):  # glyphs, and the spaces between words
             pieces.append(Text(child.get_text(), *style))
     runs = styled_runs(pieces)
     text = "".join(run.text for run in runs)
@@ -341,9 +343,9 @@ def _graphics(layout: LTPage, lines: list[Line]) -> Graphics:
     em = sizes.most_common(1)[0][0] if sizes else 10.0
     rules: list[Rule] = []
     # The area under shapes, as a coarse mask, so overlapping shapes count once.
+    step = max(_MASK_STEP, max(layout.width, layout.height) / _MAX_MASK_EDGE)
     mask = np.zeros(
-        (math.ceil(layout.height / _MASK_STEP) + 1, math.ceil(layout.width / _MASK_STEP) + 1),
-        dtype=bool,
+        (math.ceil(layout.height / step) + 1, math.ceil(layout.width / step) + 1), dtype=bool
     )
     for shape in _shapes(layout):
         x0, y0, x1, y1 = shape.bbox
@@ -353,11 +355,11 @@ def _graphics(layout: LTPage, lines: list[Line]) -> Graphics:
                 rules.append(Rule(x0, x1, layout.height - y1, layout.height - y0))
         elif isinstance(shape, LTImage):
             if width * height < _SCAN_SHARE * page_area:
-                _cover(mask, shape.bbox)
+                _cover(mask, shape.bbox, step)
         elif (
             isinstance(shape, LTCurve) and shape.fill
         ):  # an outline alone (a frame round a box) covers nothing
-            _cover(mask, shape.bbox)
+            _cover(mask, shape.bbox, step)
     covered = float(mask.mean())
     glyphs = maths = 0
     for item in _text_lines(layout):
@@ -369,8 +371,8 @@ def _graphics(layout: LTPage, lines: list[Line]) -> Graphics:
     return Graphics(rules, covered, glyphs, maths)
 
 
-def _cover(mask: np.ndarray, bbox: tuple[float, float, float, float]) -> None:
-    x0, y0, x1, y1 = (max(0.0, value) / _MASK_STEP for value in bbox)
+def _cover(mask: np.ndarray, bbox: tuple[float, float, float, float], step: float) -> None:
+    x0, y0, x1, y1 = (max(0.0, value) / step for value in bbox)
     mask[int(y0) : math.ceil(y1), int(x0) : math.ceil(x1)] = True
 
 

@@ -17,8 +17,9 @@ from statistics import median
 
 import numpy as np
 
-# The projection's resolution, in points.
-_STEP = 0.5
+# The projection's resolution, in points, made coarser when the text spans so wide
+# a stretch (a hostile page can be enormous) that it would need more bins than this.
+_STEP, _MAX_BINS = 0.5, 20_000
 # A gutter is at least this many ems wide, and crossed by no more than this share of the
 # page's pieces.
 _GUTTER_EM, _CROSSING_SHARE = 0.8, 0.1
@@ -75,14 +76,17 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
         return []
     size = median(piece.size for piece in pieces)
     left = min(piece.x0 for piece in pieces)
-    bins = math.ceil((max(piece.x1 for piece in pieces) - left) / _STEP) + 1
+    span = max(piece.x1 for piece in pieces) - left
+    step = max(_STEP, span / _MAX_BINS)
+    bins = math.ceil(span / step) + 1
     coverage = np.zeros(bins, dtype=np.int32)
     for piece in pieces:
         covered = np.zeros(bins, dtype=bool)
         for x0, x1 in piece.glyphs:
-            covered[int((x0 - left) / _STEP) : math.ceil((x1 - left) / _STEP)] = True
+            covered[int((x0 - left) / step) : math.ceil((x1 - left) / step)] = True
         coverage += covered
-    candidates = _gaps(coverage <= _CROSSING_SHARE * len(pieces), left, _GUTTER_EM * size)
+    nearly_empty = coverage <= _CROSSING_SHARE * len(pieces)
+    candidates = _gaps(nearly_empty, left, step, _GUTTER_EM * size)
     if not candidates:
         return []
     if _columns_hold(pieces, candidates, size):
@@ -94,7 +98,7 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
     return []
 
 
-def _gaps(empty: np.ndarray, left: float, min_width: float) -> list[Gutter]:
+def _gaps(empty: np.ndarray, left: float, step: float, min_width: float) -> list[Gutter]:
     """Runs of nearly empty bins at least ``min_width`` wide, not touching either edge."""
     gaps: list[Gutter] = []
     start: int | None = None
@@ -102,8 +106,8 @@ def _gaps(empty: np.ndarray, left: float, min_width: float) -> list[Gutter]:
         if is_empty and start is None:
             start = index
         elif not is_empty and start is not None:
-            if start > 0 and (index - start) * _STEP >= min_width:
-                gaps.append(Gutter(left + start * _STEP, left + index * _STEP))
+            if start > 0 and (index - start) * step >= min_width:
+                gaps.append(Gutter(left + start * step, left + index * step))
             start = None
     return gaps
 
