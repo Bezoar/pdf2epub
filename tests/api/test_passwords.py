@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import worker_hooks
 from conftest import FIXTURES, RecordingSink
 
 from pdf2epub import (
@@ -542,3 +543,107 @@ def test_each_access_issue_carries_its_hint(tmp_path: Path) -> None:
         "ebx-handler.pdf": [("drm_protected", DRM_HINT)],
         "unknown-crypt-filter.pdf": [("unsupported_encryption", UNSUPPORTED_HINT)],
     }
+
+
+@pytest.mark.ac("PWD-AC10")
+def test_candidates_follow_the_trial_order_exact_map_key_before_globs(tmp_path: Path) -> None:
+    password_map = tmp_path / "passwords.toml"
+    password_map.write_text('"*.pdf" = "g"\n"a.pdf" = "x"\n', encoding="utf-8")
+    calls: list[tuple[Path, int]] = []
+
+    def prompt(path: Path, attempt: int) -> Secret | None:
+        calls.append((path, attempt))
+        return None
+
+    provider = SourcePasswordProvider(
+        PasswordSources(
+            map_file=password_map,
+            values=[Secret("v")],
+            env_value=Secret("e"),
+            password_file=password_file(tmp_path, "f1", "f2"),
+            prompt=prompt,
+        )
+    )
+
+    candidates = provider.candidates(tmp_path / "a.pdf")
+
+    assert [c.source for c in candidates] == [
+        'map:"a.pdf"',
+        'map:"*.pdf"',
+        "cli #1",
+        "env",
+        "file:line 1",
+        "file:line 2",
+    ]
+    assert [c.secret for c in candidates] == [Secret(v) for v in ("x", "g", "v", "e", "f1", "f2")]
+    # The prompt comes after every candidate: listing them never prompts.
+    assert provider.prompt is prompt
+    assert calls == []
+
+
+def use_hooks(monkeypatch: pytest.MonkeyPatch, rules: worker_hooks.Rules) -> None:
+    """Install ``rules`` in every worker this test starts."""
+    for name, value in worker_hooks.environment(rules).items():
+        monkeypatch.setenv(name, value)
+
+
+def run_in_workers(sources: list[Path], passwords: PasswordProvider) -> BatchReport:
+    plan = plan_batch([InputSpec(source) for source in sources], DiscoveryOptions())
+    return run_batch(
+        plan,
+        BatchOptions(isolation="subprocess"),
+        ConversionOptions(),
+        RecordingSink(),
+        passwords=passwords,
+    )
+
+
+@pytest.mark.ac("BAT-AC15")
+def test_the_password_reaches_the_worker_over_its_pipe_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = copy(AES256, tmp_path)
+    record = tmp_path / "worker.json"
+    use_hooks(monkeypatch, {pdf.name: {"action": "record", "path": str(record)}})
+    monkeypatch.setenv("PDF2EPUB_PASSWORD", "hunter2")
+    provider = SourcePasswordProvider(PasswordSources(env_value=Secret("hunter2")))
+
+    report = run_in_workers([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert result.password_source == "env"
+    started = json.loads(record.read_text(encoding="utf-8"))
+    assert started["argv"], "the hook recorded no argv"
+    assert not any("hunter2" in arg for arg in started["argv"])
+    assert "PDF2EPUB_PASSWORD" not in started["env"]
+    assert not any("hunter2" in value for value in started["env"].values())
+
+
+@pytest.mark.ac("PWD-AC20")
+@pytest.mark.parametrize("action", ["abort", "raise"])
+def test_a_worker_crash_holding_the_password_leaks_it_nowhere(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    action: str,
+) -> None:
+    pdf = copy(AES256, tmp_path)
+    use_hooks(monkeypatch, {pdf.name: {"action": action}})
+    caplog.set_level(logging.DEBUG)
+
+    report = run_in_workers([pdf], ScriptedProvider(("hunter2", "cli #1")))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [i.code for i in result.issues] == ["internal_error"]
+    captured = capfd.readouterr()
+    for text in (
+        result.issues[0].message,
+        captured.out,
+        captured.err,
+        caplog.text,
+        json.dumps(report.to_dict()),
+    ):
+        assert "hunter2" not in text
