@@ -70,8 +70,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 class HumanReport:
-    """An event sink that prints the human report to stderr when the batch finishes
-    (CLI-R15, CLI-R16)."""
+    """An event sink that prints the human report to stderr when the batch finishes:
+    one result line for a single conversion (CLI-R16); for a batch, the totals, the
+    failures and the condensed warnings (CLI-R15)."""
 
     def __init__(self, stream: TextIO, single: bool) -> None:
         self._stream = stream
@@ -102,6 +103,10 @@ class HumanReport:
                 if conversion["outcome"] == "failed":
                     lines.append(f"✗ {conversion['source']}")
                     lines.extend(_issue_lines(conversion))
+            for conversion in conversions:
+                warning = _warnings_line(conversion)
+                if conversion["outcome"] == "converted" and warning:
+                    lines.append(warning)
         for line in lines:
             print(line, file=self._stream)
 
@@ -129,6 +134,20 @@ def _issue_lines(conversion: dict[str, Any]) -> list[str]:
             line += f" — {issue['hint']}"
         lines.append(line)
     return lines
+
+
+def _warnings_line(conversion: dict[str, Any]) -> str | None:
+    """The condensed warnings of one conversion, e.g.
+    ``! book.pdf: page_fallback(complex) pages 3, 7–9; language_defaulted``."""  # noqa: RUF002
+    parts = []
+    for issue in conversion["issues"]:
+        if issue["severity"] != "warning":
+            continue
+        part = issue["code"] + (f"({issue['reason']})" if issue["reason"] else "")
+        if issue["pages"]:
+            part += f" pages {page_ranges(issue['pages'])}"
+        parts.append(part)
+    return f"! {conversion['source']}: {'; '.join(parts)}" if parts else None
 
 
 def page_ranges(pages: list[int]) -> str:

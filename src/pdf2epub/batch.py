@@ -44,7 +44,9 @@ class BatchPlan:
 
 def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchPlan:
     """Plan the conversions for ``inputs`` without converting anything (API-R2)."""
-    single = len(inputs) == 1 and not inputs[0].from_list and Path(inputs[0].path).is_file()
+    # A path named on its own is a file to convert, even one that turns out not to exist;
+    # only a folder or a files-from list makes a one-input run a batch (BAT-R7).
+    single = len(inputs) == 1 and not inputs[0].from_list and not Path(inputs[0].path).is_dir()
     conversions: list[PlannedConversion] = []
     for index, spec in enumerate(inputs):
         source = Path(os.path.abspath(spec.path))

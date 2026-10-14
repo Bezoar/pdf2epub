@@ -37,6 +37,7 @@ def test_python_dash_m_with_overwrite_gives_the_same_result(
     first = run([str(PDF2EPUB), "sample.pdf"], cwd=tmp_path)
     assert first.returncode == 0, first.stderr
     epub = tmp_path / "sample.epub"
+    expected = epub.read_bytes()
     epub.write_bytes(b"stale")
 
     proc = run([sys.executable, "-m", "pdf2epub", "sample.pdf", "--overwrite"], cwd=tmp_path)
@@ -44,7 +45,7 @@ def test_python_dash_m_with_overwrite_gives_the_same_result(
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == ""
     assert RESULT_LINE.search(proc.stderr), proc.stderr
-    assert epub.read_bytes().startswith(b"PK")
+    assert epub.read_bytes() == expected
 
 
 @pytest.mark.ac("CLI-AC15")
