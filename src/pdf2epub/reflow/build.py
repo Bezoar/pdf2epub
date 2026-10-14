@@ -186,7 +186,8 @@ def _body(
     typography = measure(p for p in pages if p.page not in page_images)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
-    levels = heading_levels(laid_out, furniture.removed, typography)
+    ocr_widths = {p.page: p.width for p in pages if p.ocr}
+    levels = heading_levels(laid_out, furniture.removed, typography, ocr_widths)
     stream: list[tuple[_Item, Position]] = []
     open_paragraph: _Open | None = None
     for page in laid_out:

@@ -19,6 +19,7 @@ from pdf2epub.access import AccessDenied, unlock
 from pdf2epub.cancel import CancelToken
 from pdf2epub.epub import write_epub
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
+from pdf2epub.ocr.pages import ocr_pages
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Candidate
 from pdf2epub.reflow.build import build_document
@@ -27,7 +28,7 @@ from pdf2epub.reflow.images import read_images
 from pdf2epub.reflow.limits import ResourceLimitExceeded
 from pdf2epub.reflow.parse import ParsedPdf
 from pdf2epub.reflow.source import CorruptPdf, open_source
-from pdf2epub.results import ConversionResult
+from pdf2epub.results import ConversionResult, OcrSummary
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ def convert(
     output: str | None = None
     page_count: int | None = None
     password_source: str | None = None
+    ocr: OcrSummary | None = None
 
     def add(issue: Issue) -> None:
         issues.append(issue)
@@ -132,6 +134,9 @@ def convert(
             )
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
+
+        recognised = ocr_pages(source_path, access.password, pages, images, options.ocr, reporter)
+        pages, images, ocr = recognised.pages, recognised.images, recognised.summary
 
         document, found = build_document(source, pages, images, options, access.password)
         for issue in found:
@@ -176,7 +181,7 @@ def convert(
         password_source=password_source,
         pages=page_count,
         duration=round(time.monotonic() - started, 3),
-        ocr=None,
+        ocr=ocr,
     )
 
 
