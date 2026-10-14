@@ -26,6 +26,24 @@ p.code {
   white-space: pre-wrap;
 }
 
+/* Figures and the cover page (EPUB-R12) fit the screen. */
+figure {
+  margin: 1em 0;
+  text-align: center;
+}
+
+img {
+  max-width: 100%;
+}
+
+div.cover {
+  text-align: center;
+}
+
+div.cover img {
+  max-height: 100%;
+}
+
 /* Page images (EPUB-R9): a whole page as a full-width figure. */
 figure.page-image {
   margin: 1em 0;

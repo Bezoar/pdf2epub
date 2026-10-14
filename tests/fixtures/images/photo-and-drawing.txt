@@ -1,0 +1,5 @@
+The first page shows the photograph.
+
+The second page shows the same photograph again.
+
+The third page shows a line drawing.
