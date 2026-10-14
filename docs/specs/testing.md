@@ -35,7 +35,7 @@ This spec covers the product's test **assets** and **measurements**: synthetic f
 
 ## 3. Real-world smoke set
 
-<a id="tst-r9"></a>**TST-R9**: The smoke set shall be described by a committed manifest (`tests/corpus/smoke.toml`). Each entry has `id`, `url`, `sha256`, `license`, `password` (or none) and `expect` (the expected outcome and key issue codes under the current specs).
+<a id="tst-r9"></a>**TST-R9**: The smoke set shall be described by a committed manifest (`tests/corpus/smoke.toml`). Each entry has `id`, `url`, `sha256`, `license`, `password` (or none) and `expect`. The `password` values are the test passwords that the upstream test suites (qpdf, py-pdf) publish alongside those public files. They are not user secrets, and committing them doesn't conflict with [PWD-R26](passwords.md#pwd-r26), which governs what pdf2epub itself writes when it runs. The same applies to the fixed passwords of the synthetic encrypted fixtures (the expected outcome and key issue codes under the current specs).
 
 <a id="tst-r10"></a>**TST-R10**: `scripts/smoke.py` shall download each manifest entry into a cache outside git (default `~/.cache/pdf2epub-corpus/`), verify its SHA-256, reuse cached files whose hash matches, derive generated entries (S15) locally, run pdf2epub over the whole set as **one batch**, and compare each conversion against its `expect`. A hash mismatch shall be reported as "upstream file changed" for that entry, which is skipped until someone reviews and re-pins it. A network failure skips the entry with a message; it is not a test failure.
 

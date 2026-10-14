@@ -40,7 +40,7 @@ Fixed-layout output and an accessibility audit are [roadmap](../worksheets/roadm
 
 ## 3. Content documents
 
-<a id="epub-r7"></a>**EPUB-R7**: Each chapter of the document model shall be one XHTML5 file. Its markup is semantic:
+<a id="epub-r7"></a>**EPUB-R7**: Each chapter of the document model shall be one or more consecutive XHTML5 files: one file, unless [EPUB-R8](#epub-r8) splits it. Its markup is semantic:
 
 | Model | Markup |
 |---|---|

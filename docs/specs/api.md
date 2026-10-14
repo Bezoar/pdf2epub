@@ -73,7 +73,7 @@ class PasswordProvider(Protocol):
 
 ## 5. Options
 
-<a id="api-r9"></a>**API-R9**: Options shall be **frozen dataclasses** of plain data. Defaults shall be defined only in the core; front ends (the CLI included) pass a field only when the user set it and never restate a default.
+<a id="api-r9"></a>**API-R9**: Options (`DiscoveryOptions`, `BatchOptions`, `ConversionOptions`, `OcrOptions`) shall be **frozen dataclasses** of plain data. `PasswordSources` is not an options class: it is the input to the password provider, and its `prompt` field holds a function or `None`. Defaults shall be defined only in the core; front ends (the CLI included) pass a field only when the user set it and never restate a default.
 
 | Class | Fields | Owner of meaning and defaults |
 |---|---|---|
@@ -244,6 +244,13 @@ Parallel conversions (`-j`) are on the [roadmap](../worksheets/roadmap.md). v1 m
 <a id="api-r27"></a>**API-R27**: No event, result or sink contract shall assume a single "current conversion": every conversion-scoped event carries `id` ([API-R16](#api-r16)), sinks are called from one thread ([API-R4](#api-r4)), and the report is in plan order ([API-R14](#api-r14)). `batch_started.jobs` shall be `1` in v1.
 
 <a id="api-r28"></a>**API-R28**: Free-text diagnostics shall go through Python `logging` to stderr only (shown with `-v` or `--debug`), and shall never be events. Anything a user must act on shall be an issue.
+
+<a id="api-r29"></a>**API-R29**: `run_batch` shall start with a **preflight**, before it emits `batch_started`. The preflight has every option and the password provider, so it:
+1. validates `OcrOptions.engine_options` ([OCR-R25](ocr.md#ocr-r25));
+2. checks the password-candidate cap for every planned file ([PWD-R13](passwords.md#pwd-r13));
+3. probes the OCR engine and its installed languages once ([OCR-R24](ocr.md#ocr-r24)).
+
+A usage error found by steps 1 or 2 shall raise `UsageError` with the reason, with no event emitted and nothing converted (the CLI exits 2, [batch](batch.md#bat-r25)). Step 3 never fails the run: it only records what is available. Planning ([API-R2](#api-r2)) needs no options beyond `DiscoveryOptions`.
 
 ## 13. JSON Schema (draft)
 
@@ -447,6 +454,8 @@ Fixture names refer to the fixtures in [testing](testing.md).
 <a id="api-ac15"></a>**API-AC15** (covers [API-R27](#api-r27)): **Given** any batch, **when** it runs, **then** `batch_started.jobs` is 1 and every event of type `conversion_started`, `progress`, `password_required`, `password_request` and `conversion_finished` has an integer `id` that appears in `batch_started.planned`.
 
 <a id="api-ac16"></a>**API-AC16** (covers [API-R1](#api-r1)): **Given** the installed package, **when** `pdf2epub --json` converts the novel fixture, **then** every stdout line validates against the schema shipped in the package, whose `v` is the constant `1`; **and** the `pdf2epub` package docstring and the API reference page both state that the Python API is provisional and may change in any 0.x release, while the `--json` protocol is the stable contract.
+
+<a id="api-ac17"></a>**API-AC17** (covers [API-R29](#api-r29)): **Given** a plan of two files and a sink that records events, **when** `run_batch` is called with `engine_options = {"tesseract.no_such_key": "1"}`, **then** it raises `UsageError` naming the key, and the sink received no event; **when** it is instead called with a provider giving 26 candidates for one file, **then** it raises `UsageError` naming that file, and the sink received no event; **and when** it is called with a missing `tesseract_path`, **then** the batch runs, and the engine was probed exactly once.
 
 ## Open points
 

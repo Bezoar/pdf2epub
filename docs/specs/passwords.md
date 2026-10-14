@@ -89,7 +89,7 @@ The issue is emitted only when the owner password lifted a restriction. If the f
 
 A value that repeats an earlier candidate for the same file is tried once. It keeps the earlier candidate's source label.
 
-<a id="pwd-r13"></a>**PWD-R13**: At most **25** candidates from sources 1–4 may apply to any one file. This cap stops pdf2epub from ever acting as a password guesser (see [Legal scope](main.md#legal-scope)). The core shall check the cap while planning the batch. If any file would exceed it, the run is a usage error: exit code 2 ([batch](batch.md)), and no conversion starts. Prompt attempts ([PWD-R19](#pwd-r19)) don't count towards the cap.
+<a id="pwd-r13"></a>**PWD-R13**: At most **25** candidates from sources 1–4 may apply to any one file. This cap stops pdf2epub from ever acting as a password guesser (see [Legal scope](main.md#legal-scope)). The core shall check the cap in the run's **preflight** ([API-R29](api.md#api-r29)), before any event is emitted. If any file would exceed it, the run is a usage error: exit code 2 ([batch](batch.md)), and no conversion starts. Prompt attempts ([PWD-R19](#pwd-r19)) don't count towards the cap.
 
 <a id="pwd-r14"></a>**PWD-R14**: The password map is a TOML file. Each key is a path or glob, resolved relative to the folder that holds the map file. Each value is one password string or a list of them, for example:
 
@@ -159,7 +159,7 @@ Candidate values are carried only as [`Secret`](api.md), which is enforced by ty
 
 <a id="pwd-r25"></a>**PWD-R25**: Password environment variables (`PDF2EPUB_PASSWORD`) shall be removed from the environment of every child process, including conversion workers and the OCR engine. Passwords reach a worker only over its pipe ([batch](batch.md)).
 
-<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no secret material to disk (no password value, password hash, decryption key or password cache) and shall cache nothing between runs. Source labels are not secret material: they appear in reports and events as [PWD-R24](#pwd-r24) requires. The decrypted book content written into the EPUB is the requested output and is not secret material.
+<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no secret material to disk (no password value, password hash, decryption key or password cache) and shall cache nothing between runs. Source labels are not secret material: they appear in reports and events as [PWD-R24](#pwd-r24) requires. This rule governs what pdf2epub writes when it runs. Published test passwords of public test fixtures are not user secrets ([testing](testing.md#tst-r9)). The decrypted book content written into the EPUB is the requested output and is not secret material.
 
 ## 8. Output
 
