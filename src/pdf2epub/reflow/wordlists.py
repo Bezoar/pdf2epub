@@ -7,7 +7,7 @@ import functools
 import re
 from importlib import resources
 
-_PRIMARY = re.compile(r"^([a-z]{2,3})(?:-|$)")
+_PRIMARY = re.compile(r"^([a-z]{2,8})(?:-|$)")
 
 
 @functools.cache

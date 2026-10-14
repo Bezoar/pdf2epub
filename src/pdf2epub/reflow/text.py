@@ -45,10 +45,9 @@ def paragraph_inlines(items: list[Line | Join], words: Collection[str] | None) -
         if not text:
             breaks.extend((0, marker) for marker in pending)
         else:
-            text, glued = _join(text, soft, item.text, words)
-            # A marker sits at the join, or after the word the join completed.
-            word = item.text.split(" ", 1)[0]
-            at = len(text) - len(item.text) + (len(word) if glued else 0)
+            text = _join(text, soft, item.text, words)
+            # A marker sits right before the text of the page it starts.
+            at = len(text) - len(item.text)
             breaks.extend((at, marker) for marker in pending)
         if not text:
             text = item.text
@@ -58,18 +57,18 @@ def paragraph_inlines(items: list[Line | Join], words: Collection[str] | None) -
     return _split(text, breaks)
 
 
-def _join(text: str, soft: bool, line: str, words: Collection[str] | None) -> tuple[str, bool]:
-    """Append ``line`` to ``text``; also say whether they were glued without a space."""
+def _join(text: str, soft: bool, line: str, words: Collection[str] | None) -> str:
+    """Append ``line`` to ``text``, de-hyphenating a word broken at the line end."""
     if soft:
-        return text + line, True
+        return text + line
     if _HYPHEN_END.search(text):
         head, tail = _LAST_WORD.search(text), _FIRST_WORD.match(line)
         if head and tail and words is not None and _known(head.group(1) + tail.group(0), words):
-            return text[:-1] + line, True
-        return text + line, True
+            return text[:-1] + line
+        return text + line
     if _CJK.match(text[-1]) and _CJK.match(line[0]):
-        return text + line, False
-    return f"{text} {line}", False
+        return text + line
+    return f"{text} {line}"
 
 
 def _known(word: str, words: Collection[str]) -> bool:

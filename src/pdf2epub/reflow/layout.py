@@ -19,6 +19,8 @@ _GAP_FACTOR, _GAP_MIN_EM = 1.5, 0.6
 _SIZE_TOLERANCE = 0.15
 # A line is indented when it starts at least this many ems right of the left margin.
 _INDENT_EM = 0.8
+# A line ending at least this many ems left of its block's right edge ends short.
+_SHORT_EM = 2.0
 # Text this much larger than body text is display type (a title or heading).
 _DISPLAY = 1.15
 
@@ -112,16 +114,24 @@ def _continues(above: Line, below: Line, typography: Typography) -> bool:
 
 
 def paragraphs(block: TextBlock, typography: Typography) -> list[DraftParagraph]:
-    """Split a block into paragraphs where an indented line follows an unindented one."""
+    """Split a block into paragraphs at indented lines. An indented line starts a paragraph
+    when the line before it is not indented, or ends short of the block's right edge (so
+    two one-line indented paragraphs stay apart, but an indented block quote stays whole).
+    """
     left = min(typography.left, min(line.x0 for line in block.lines))
+    right = max(line.x1 for line in block.lines)
     display = typography.is_display(block.size)
 
     def indented(line: Line) -> bool:
         return line.x0 - left >= _INDENT_EM * line.size
 
+    def ends_short(line: Line) -> bool:
+        return right - line.x1 >= _SHORT_EM * line.size
+
     groups: list[list[Line]] = []
     for i, line in enumerate(block.lines):
-        if i == 0 or (indented(line) and not indented(block.lines[i - 1])):
+        above = block.lines[i - 1]
+        if i == 0 or (indented(line) and (not indented(above) or ends_short(above))):
             groups.append([line])
         else:
             groups[-1].append(line)
