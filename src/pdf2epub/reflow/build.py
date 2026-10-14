@@ -91,6 +91,7 @@ def build_document(
 MULTI_COLUMN, COMPLEX = "multi_column", "complex"
 OCR_TIMEOUT, OCR_FAILED = "ocr_timeout", "ocr_failed"
 OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+BAD_TEXT_LAYER = "bad_text_layer"
 OCR_UNAVAILABLE = "ocr_unavailable"
 # In the order their page_fallback issues are reported.
 _FALLBACK_MESSAGES = {
@@ -100,6 +101,8 @@ _FALLBACK_MESSAGES = {
     "with their text kept searchable column by column.",
     OCR_LOW_CONFIDENCE: "OCR could not read these pages with enough confidence, so they "
     "were embedded as page images.",
+    BAD_TEXT_LAYER: "The text layer of these pages failed the quality check and OCR is off, "
+    "so they were embedded as page images.",
     OCR_TIMEOUT: "OCR ran out of time on these pages, so they were embedded as page images.",
     OCR_FAILED: "The OCR engine failed on these pages, so they were embedded as page images.",
     OCR_UNAVAILABLE: "These pages needed OCR, which is unavailable, so they were embedded as "

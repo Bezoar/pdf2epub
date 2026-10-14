@@ -76,6 +76,18 @@ def test_coverage_is_the_share_of_ink_inside_word_boxes() -> None:
     assert recognition.reason == "ocr_low_confidence"
 
 
+def test_a_word_box_off_the_image_covers_no_ink() -> None:
+    # A box wholly above and left of the image must not wrap round to cover its far side.
+    def half_and_off(call: int, request: OcrRequest) -> OcrPageResult:
+        result = boxes(request, 0.5, 0.95)
+        off = Word("off", -50, -50, -10, -10, 0.95, 95)
+        return OcrPageResult(lines=(*result.lines, OcrLine((off,), 40)))
+
+    recognition = run(FakeEngine(half_and_off), quality="fast")
+
+    assert recognition.result.coverage == pytest.approx(0.5, abs=0.02)
+
+
 def low_coverage_then_block(call: int, request: OcrRequest) -> OcrPageResult:
     """Low coverage unless asked for a ``BLOCK`` layout; later attempts slightly better
     still, so ``best`` has a clear winner."""

@@ -49,7 +49,7 @@ v1 has exactly one adapter, for Tesseract. There is no engine registry and no en
 <a id="ocr-r12"></a>**OCR-R12**: `OcrRequest` shall carry `image` (the cleaned page image), `dpi`, `languages` (Tesseract language codes, e.g. `eng+deu`), `layout_hint` (one of `PAGE`, `BLOCK`, `LINE`, `SPARSE`, which the adapter maps to a Tesseract page segmentation mode), `deadline` (an absolute time by which the attempt must finish) and `engine_options` (a string-to-string map passed through to the engine).
 
 <a id="ocr-r13"></a>**OCR-R13**: `OcrPageResult` shall contain:
-- lines, each made of words; each word has a bounding box in page coordinates (origin top-left), a confidence normalised to [0, 1] and the engine's raw confidence; each line has its line height (used for heading inference in [reflow](reflow.md));
+- lines, each made of words; each word has a bounding box in the cleaned (deskewed, cropped) page image's coordinates (origin top-left), a confidence normalised to [0, 1] and the engine's raw confidence; each line has its line height (used for heading inference in [reflow](reflow.md));
 - `page_confidence`: the mean word confidence weighted by word length;
 - `coverage`: see [OCR-R16](#ocr-r16);
 - `warnings`: engine diagnostics as text;

@@ -58,6 +58,30 @@ def render_pages(
         document.close()
 
 
+def render_grey(document: pdfium.PdfDocument, number: int, dpi: float) -> Image.Image:
+    """Page ``number`` (1-based) of an open document as a greyscale image at ``dpi``, for
+    OCR and the text-layer check. Raises ``ResourceLimitExceeded`` naming the page if
+    the render would be too big."""
+    page = document[number - 1]
+    try:
+        width, height = page.get_size()
+        scale = dpi / _PDF_DPI
+        size = (round(width * scale), round(height * scale))
+        try:
+            check_image(*size)
+        except ResourceLimitExceeded as error:
+            raise error.on_page(number) from None
+        bitmap = page.render(scale=scale, grayscale=True)
+        try:
+            # PDFium rounds the bitmap up; the page is this many pixels at ``dpi``.
+            image: Image.Image = bitmap.to_pil().convert("L").crop((0, 0, *size))
+            return image
+        finally:
+            bitmap.close()
+    finally:
+        page.close()
+
+
 def _render(page: pdfium.PdfPage) -> ImageAsset:
     width, height = page.get_size()
     scale = min(MAX_EDGE / max(width, height, 1.0), MAX_DPI / _PDF_DPI)

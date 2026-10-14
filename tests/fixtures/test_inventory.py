@@ -4,12 +4,6 @@ committed, and the encrypted fixtures carry the encryption TST-AC2 names.
 Each TST-R3 fixture is mapped to its file here by hand, from the spec's wording and the
 fixture generators' docstrings (``fixturegen/``). The encryption is read with pypdf
 straight from each file's ``/Encrypt`` dictionary.
-
-TST-AC2 stays on the pending-AC list, and these tests carry no ``ac`` marker, until the
-text-layer fixtures (``TEXT_LAYERS``) exist: #44 creates them. When they land, the
-strict xfail below fails as an unexpected pass. Then merge ``TEXT_LAYERS`` into
-``INVENTORY``, delete the xfail test, mark the tests here ``ac("TST-AC2")`` and remove
-TST-AC2 from ``tests/ac_pending.txt``.
 """
 
 from pathlib import Path
@@ -40,6 +34,7 @@ INVENTORY: dict[str, dict[str, str]] = {
         "with 90 degree rotation": "scanned/novel-rotated.pdf",
         "at 150 DPI": "scanned/novel-150dpi.pdf",
         "image-only scan with no text layer": "scanned/image-only.pdf",
+        "scan with a good invisible OCR layer": "scanned/ocr-layer.pdf",
     },
     "Encrypted": {
         "AES-256 (R6) user password": "encrypted/aes256-user.pdf",
@@ -48,6 +43,11 @@ INVENTORY: dict[str, dict[str, str]] = {
         "owner password only, copy/extract forbidden": "encrypted/owner-only-restricted.pdf",
         "owner password only, all permissions": "encrypted/owner-only-all-permissions.pdf",
         "non-Standard security handler": "encrypted/fopn-foweb.pdf",
+    },
+    "Must reject (text layer)": {
+        "font with no ToUnicode map": "must-reject/no-tounicode.pdf",
+        "garbled invisible OCR layer": "must-reject/garbled-layer.pdf",
+        "invisible OCR layer covering half of each page": "must-reject/half-layer.pdf",
     },
     "Damaged": {
         "truncated file": "damaged/truncated.pdf",
@@ -66,18 +66,6 @@ INVENTORY: dict[str, dict[str, str]] = {
 }
 
 
-TEXT_LAYERS: dict[str, dict[str, str]] = {
-    "Scanned": {"scan with a good invisible OCR layer": "scanned/ocr-layer.pdf"},
-    "Must reject (text layer)": {
-        "font with no ToUnicode map": "must-reject/no-tounicode.pdf",
-        "garbled invisible OCR layer": "must-reject/garbled-layer.pdf",
-        "invisible OCR layer covering half of each page": "must-reject/half-layer.pdf",
-    },
-}
-"""The text-layer fixtures, which #44 (the text-layer quality check) creates (see the
-module docstring for what to do when they land)."""
-
-
 def missing(inventory: dict[str, dict[str, str]]) -> list[str]:
     return [
         f"{group}: {name} ({path})"
@@ -87,13 +75,9 @@ def missing(inventory: dict[str, dict[str, str]]) -> list[str]:
     ]
 
 
+@pytest.mark.ac("TST-AC2")
 def test_every_tst_r3_fixture_is_committed() -> None:
     assert missing(INVENTORY) == []
-
-
-@pytest.mark.xfail(strict=True, reason="#44 creates the text-layer fixtures")
-def test_every_tst_r3_text_layer_fixture_is_committed() -> None:
-    assert missing(TEXT_LAYERS) == []
 
 
 class _Unopened(PdfReader):
@@ -119,6 +103,7 @@ def encrypt_dictionary(path: str) -> dict[str, Any]:
 EXTRACT = int(UserAccessPermissions.EXTRACT)
 
 
+@pytest.mark.ac("TST-AC2")
 @pytest.mark.parametrize(
     ("path", "revision", "version", "length", "method"),
     [
@@ -142,6 +127,7 @@ def test_standard_fixtures_have_the_expected_revision_and_algorithm(
     assert encrypt.get("/CFM") == method
 
 
+@pytest.mark.ac("TST-AC2")
 @pytest.mark.parametrize(
     ("path", "opens_with_empty_password", "extract_allowed"),
     [
@@ -165,6 +151,7 @@ def test_user_and_owner_passwords_and_permissions(
         assert permissions & int(UserAccessPermissions.all()) == int(UserAccessPermissions.all())
 
 
+@pytest.mark.ac("TST-AC2")
 def test_the_non_standard_handler_fixture_names_a_vendor_filter() -> None:
     encrypt = encrypt_dictionary("encrypted/fopn-foweb.pdf")
     assert encrypt["/Filter"] not in ("/Standard", None)
