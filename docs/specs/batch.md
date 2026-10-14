@@ -141,3 +141,5 @@ Fixture names refer to the fixtures in [testing](testing.md). Unless stated, run
 - `timeout` is not enforced in `inprocess` isolation (there is no worker to kill).
 - A second SIGINT may leave a hidden temporary file in a destination folder; it is never at a destination path.
 - A usage error emits no events at all, so `exit_code` 2 never appears in a `batch_finished` event.
+- `plan_batch` records `output_exists` (planning needs only `DiscoveryOptions`, [API-R29](api.md#api-r29)); `run_batch` drops it when `BatchOptions.overwrite` is set, so that conversion runs.
+- Only a conversion that would run claims its destination for [BAT-R11](#bat-r11): a `not_a_pdf` file never makes a later PDF an `output_collision`.
