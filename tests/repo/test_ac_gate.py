@@ -132,6 +132,59 @@ def test_passes_when_every_ac_is_marked(tmp_path: Path) -> None:
     assert result.returncode == 0, result.output
 
 
+@pytest.mark.ac("TST-AC11")
+def test_only_markers_on_tests_count(tmp_path: Path) -> None:
+    spec = "".join(ac(f"xyz-ac{n}", f"XYZ-AC{n}") for n in range(1, 10))
+    specs, tests, pending = make_repo(tmp_path, spec, marked=[], pending=[])
+    (tests / "test_forms.py").write_text(
+        """
+import pytest
+
+pytestmark = [pytest.mark.ac("XYZ-AC1")]
+
+
+@pytest.mark.parametrize("x", [pytest.param(1, marks=pytest.mark.ac("XYZ-AC2"))])
+def test_param(x: int) -> None:
+    assert x
+
+
+@pytest.mark.ac("XYZ-AC3")
+class TestGroup:
+    pytestmark = pytest.mark.ac("XYZ-AC4")
+
+    @pytest.mark.ac("XYZ-AC5")
+    async def test_method(self) -> None:
+        assert True
+
+
+# None of these mark a collected test:
+MARK = pytest.mark.ac("XYZ-AC6")
+
+
+def helper() -> None:
+    pytest.mark.ac("XYZ-AC7")
+
+
+@pytest.mark.ac("XYZ-AC8")
+def not_a_test() -> None:
+    pass
+
+
+class Helper:
+    @pytest.mark.ac("XYZ-AC9")
+    def test_in_non_test_class(self) -> None:
+        pass
+""",
+        encoding="utf-8",
+    )
+    result = run_gate(specs, tests, pending)
+    assert result.returncode == 1
+    for counted in ["XYZ-AC1", "XYZ-AC2", "XYZ-AC3", "XYZ-AC4", "XYZ-AC5"]:
+        assert f"unmarked and not pending: {counted}" not in result.output
+    for ignored in ["XYZ-AC6", "XYZ-AC7", "XYZ-AC8", "XYZ-AC9"]:
+        assert f"unmarked and not pending: {ignored}" in result.output
+
+
 # --- TST-AC14 -------------------------------------------------------------------------
 
 AC14_SPEC = (

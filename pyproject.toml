@@ -45,9 +45,8 @@ mypy_path = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Outbound network is blocked for the whole suite (MAIN-AC1); loopback stays open for
-# servers a test starts itself (coding.md section 6).
-addopts = ["--strict-markers", "--allow-hosts=127.0.0.1,::1"]
+# tests/conftest.py blocks outbound network for the whole suite (MAIN-AC1).
+addopts = ["--strict-markers"]
 markers = [
     "ac(id, ...): the acceptance criteria (spec AC IDs) this test verifies",
     "tesseract: needs the real Tesseract binary",
@@ -70,7 +69,6 @@ dev = [
     "packaging>=26.3",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
-    "pytest-socket>=0.8.1",
     "pyyaml>=6.0.3",
     "ruff>=0.17.0",
     "types-pyyaml>=6.0.12.20260906",
