@@ -10,6 +10,7 @@ more as fit in the gap.
 """
 
 import re
+import unicodedata
 
 from pdf2epub.reflow.extract import MONO_SPREAD
 from pdf2epub.reflow.layout import TextBlock, Typography
@@ -22,7 +23,9 @@ _MIN_LINES = 3
 _SHORT_SHARE, _RAGGED_SHARE = 0.2, 0.6
 # A block whose glyphs all share one advance is monospace, whatever its font is called,
 # when it has at least this many glyphs, of at least this many distinct characters: no
-# proportional face sets that many different letters all the same width.
+# proportional face sets that many different letters all the same width. Wide and
+# full-width characters (Han, kana, Hangul) don't count: every CJK text face sets them on
+# one advance, so they say nothing about the font being monospace.
 _MONO_GLYPHS, _MONO_DISTINCT = 10, 5
 # A line ending in a hyphen after a letter breaks a word, as wrapped prose does.
 _WORD_BREAK = re.compile(r"[^\W\d_][-\u2010]$")
@@ -38,7 +41,12 @@ def is_monospace(block: TextBlock) -> bool:
     advance = lines[0].advance
     if advance <= 0 or any(abs(line.advance - advance) > MONO_SPREAD * advance for line in lines):
         return False
-    glyphs = "".join(line.text for line in lines).replace(" ", "")
+    glyphs = [
+        c
+        for line in lines
+        for c in line.text
+        if c != " " and unicodedata.east_asian_width(c) not in {"W", "F"}
+    ]
     return len(glyphs) >= _MONO_GLYPHS and len(set(glyphs)) >= _MONO_DISTINCT
 
 
