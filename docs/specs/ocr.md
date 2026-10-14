@@ -1,6 +1,6 @@
 # OCR
 
-**Status:** draft · **Depends on:** [main](main.md), [api](api.md), [reflow](reflow.md), [batch](batch.md), [passwords](passwords.md) · **Decisions:** [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [OCR engine tuning surface](https://github.com/Bezoar/pdf2epub/issues/12), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
+**Status:** accepted · **Depends on:** [main](main.md), [api](api.md), [reflow](reflow.md), [batch](batch.md), [passwords](passwords.md) · **Decisions:** [v1 scope cut and roadmap contents](https://github.com/Bezoar/pdf2epub/issues/6), [OCR engine tuning surface](https://github.com/Bezoar/pdf2epub/issues/12), [OCR engine interface design](https://github.com/Bezoar/pdf2epub/issues/13), [Text-layer quality check](https://github.com/Bezoar/pdf2epub/issues/15), [ADR 0001](../adr/0001-python-core.md)
 
 This spec covers how text is obtained from pages: deciding which pages need OCR, the text-layer quality check that decides whether an existing text layer is trusted, the `OcrEngine` protocol and its Tesseract adapter, image cleanup before OCR, the acceptance test and retry ladder, OCR options, and the OCR issues. It does not cover what happens to the recognised text afterwards (furniture, page joins, de-hyphenation, headings: see [reflow](reflow.md)), how a fallback page is marked up (see [epub](epub.md)), or the issue registry and event shapes (see [api](api.md)). Flag names are mapped in [cli](cli.md).
 
@@ -177,9 +177,11 @@ All page images below are synthetic fixtures from [testing](testing.md) unless n
 
 ## Open points
 
-- The exact fraction for "almost no text" and "an image covering a large share of the page" in [OCR-R1](#ocr-r1) is left as an internal constant, set while building the routing slice.
-- [OCR-R9](#ocr-r9): when several signals fail on one page, the reason reported is the first in the order garbled → implausible_words → low_coverage (assumed; one reason per page keeps grouping simple).
-- [OCR-R20](#ocr-r20): the ladder's step 3 runs whenever confidence is below `p_min` after step 2 (or after step 1 if step 2 was skipped). The decision text listed "Sauvola, then denoise"; read here as Sauvola alone, then Sauvola plus denoise.
-- [OCR-R22](#ocr-r22)/[OCR-R23](#ocr-r23): a timed-out or failed page is listed both in `page_fallback` (reason `ocr_timeout`/`ocr_failed`) and in the `ocr_timeout`/`ocr_failed` diagnostic issue, per the shared grouping rule in [api](api.md).
-- [OCR-R26](#ocr-r26): the mapping from BCP 47 tags (e.g. `de`) to Tesseract codes (e.g. `deu`) is a built-in table; an unmappable language falls back to `eng`.
-- [OCR-AC10](#ocr-ac10) counts 4 attempts, assuming the fake engine's failures trigger every ladder step.
+The owner accepted points OP35–OP40 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review).
+
+- **OP35** The exact fraction for "almost no text" and "an image covering a large share of the page" in [OCR-R1](#ocr-r1) is left as an internal constant, set while building the routing slice.
+- **OP36** [OCR-R9](#ocr-r9): when several signals fail on one page, the reason reported is the first in the order garbled → implausible_words → low_coverage (assumed; one reason per page keeps grouping simple).
+- **OP37** [OCR-R20](#ocr-r20): the ladder's step 3 runs whenever confidence is below `p_min` after step 2 (or after step 1 if step 2 was skipped). The decision text listed "Sauvola, then denoise"; read here as Sauvola alone, then Sauvola plus denoise.
+- **OP38** [OCR-R22](#ocr-r22)/[OCR-R23](#ocr-r23): a timed-out or failed page is listed both in `page_fallback` (reason `ocr_timeout`/`ocr_failed`) and in the `ocr_timeout`/`ocr_failed` diagnostic issue, per the shared grouping rule in [api](api.md).
+- **OP39** [OCR-R26](#ocr-r26): the mapping from BCP 47 tags (e.g. `de`) to Tesseract codes (e.g. `deu`) is a built-in table; an unmappable language falls back to `eng`.
+- **OP40** [OCR-AC10](#ocr-ac10) counts 4 attempts, assuming the fake engine's failures trigger every ladder step.
