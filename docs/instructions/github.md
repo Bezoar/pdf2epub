@@ -65,7 +65,13 @@ Run these steps in order. A **round** is one Copilot review request. There are a
 6. **Act on findings.**
    - **High and Medium:** you must fix every one.
    - **Low:** fix it if the fix is small. Otherwise reply in the thread with a one-line reason.
-   - Reply in each thread you fixed or answered, then resolve it (GraphQL `resolveReviewThread`).
+   - **Reply inline, one thread at a time.** Answer each finding by replying in its own review thread, stating its disposition:
+     - `Fixed in <short-sha>: <what changed>`;
+     - `Won't fix (Low): <one-line reason>`;
+     - `Disputed: <reasoning>`.
+
+     Use `gh api repos/$R/pulls/N/comments/<comment-id>/replies -f body='…'`, where `<comment-id>` is the thread's first comment. You must not post a separate PR comment listing the changes instead.
+   - Resolve each thread you fixed or answered (GraphQL `resolveReviewThread`). Leave disputed threads open.
    - **Disputed High or Medium:** if you believe one is wrong, reply with your reasoning and leave the thread **unresolved**. You must not dismiss it yourself; escalate after this round.
 7. **Next round, or stop.**
    - If you pushed fixes, wait for green CI on the new head (step 2) and start the next round (step 3).
