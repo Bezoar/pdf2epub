@@ -152,6 +152,27 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     pytest.skip("Tesseract is not on PATH")
 
 
+OCR_ACCURACY = "ocr_accuracy"
+"""The ``record_property`` name of a scan's accuracy figures (TST-R16)."""
+
+
+def pytest_terminal_summary(terminalreporter: Any) -> None:
+    """Print each scan's OCR accuracy figures (tests/fixtures/test_ocr_accuracy.py) in the
+    test output, also when the tests ran in xdist workers (TST-R16)."""
+    figures = sorted(
+        str(value)
+        for reports in terminalreporter.stats.values()
+        for report in reports
+        if getattr(report, "when", None) == "call"
+        for name, value in getattr(report, "user_properties", ())
+        if name == OCR_ACCURACY
+    )
+    if figures:
+        terminalreporter.write_sep("-", "OCR character accuracy (TST-R16)")
+        for line in figures:
+            terminalreporter.write_line(line)
+
+
 # --- Fixtures shared by the seams ------------------------------------------------------
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
