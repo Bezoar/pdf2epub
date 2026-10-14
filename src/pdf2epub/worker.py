@@ -89,10 +89,11 @@ def _terminate(signum: int, frame: FrameType | None) -> None:
     raise SystemExit(TERMINATED)
 
 
-def _exit_when_parent_goes(stdin: BinaryIO) -> None:
+def _exit_when_parent_goes(fd: int) -> None:
     """Wait for end of stdin, which comes only when the parent closes it or exits, then
-    end this process at once."""
-    while stdin.read(65536):
+    end this process at once. It reads the file descriptor, not ``sys.stdin``, so it holds
+    no lock that would stop the interpreter from shutting down while it waits."""
+    while os.read(fd, 65536):
         pass
     os._exit(1)
 
@@ -106,7 +107,10 @@ def main() -> int:
 
     stdin = sys.stdin.buffer
     request: dict[str, Any] = pickle.load(stdin)
-    threading.Thread(target=_exit_when_parent_goes, args=(stdin,), daemon=True).start()
+    # The parent writes nothing after the request, so the buffer holds nothing more.
+    watcher = threading.Thread(target=_exit_when_parent_goes, args=(stdin.fileno(),))
+    watcher.daemon = True
+    watcher.start()
 
     root = logging.getLogger()
     root.handlers[:] = [_PipeHandler(channel)]
