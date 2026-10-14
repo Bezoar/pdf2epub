@@ -213,5 +213,6 @@ def ink_coverage(image: Image.Image, boxes: Iterable[tuple[float, float, float, 
     for left, top, right, bottom in boxes:
         y0, y1 = max(int(top), 0), min(int(np.ceil(bottom)), rows)
         x0, x1 = max(int(left), 0), min(int(np.ceil(right)), columns)
-        inside[y0:y1, x0:x1] = True
+        if y1 > y0 and x1 > x0:  # a box off the image covers nothing (no wrap-around)
+            inside[y0:y1, x0:x1] = True
     return int((ink & inside).sum()) / total

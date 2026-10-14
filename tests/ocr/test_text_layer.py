@@ -61,12 +61,15 @@ def convert(
     folder: Path,
     mode: str = "auto",
     language: str | None = None,
+    ocr_languages: str | None = None,
 ) -> tuple[BatchReport, RecordingSink]:
-    """Convert a copy of ``source`` in OCR ``mode`` (and book ``language``, if given)."""
+    """Convert a copy of ``source`` in OCR ``mode`` (and book ``language`` and OCR
+    ``ocr_languages``, if given)."""
     shutil.copyfile(source, folder / source.name)
     sink = RecordingSink()
     plan = plan_batch([InputSpec(folder / source.name)], DiscoveryOptions())
-    options = ConversionOptions(language=language, ocr=OcrOptions(mode=mode))  # type: ignore[arg-type]
+    ocr = OcrOptions(mode=mode, languages=ocr_languages)  # type: ignore[arg-type]
+    options = ConversionOptions(language=language, ocr=ocr)
     report = run_batch(plan, BatchOptions(isolation="inprocess"), options, sink)
     return report, sink
 
@@ -174,6 +177,16 @@ def test_letters_of_a_script_the_ocr_language_does_not_use_are_garbage(
     assert rejections(report) == {"garbled": [1]}
 
 
+def test_a_tesseract_script_model_names_the_script_of_the_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install(monkeypatch, FakeEngine(one_line))
+
+    report, _ = convert(BORN_DIGITAL / "cjk-lines.pdf", tmp_path, ocr_languages="script/Latin")
+
+    assert rejections(report) == {"garbled": [1]}
+
+
 # --- Languages with no wordlist --------------------------------------------------------
 
 
@@ -252,6 +265,8 @@ def test_an_empty_ocr_result_on_a_rejected_layer_leaves_a_page_image_with_no_tex
     report, _ = convert(GARBLED_LAYER, tmp_path, "always")
 
     [result] = report.conversions
+    # The check runs and reports under ``always`` too (OCR-R9).
+    assert rejections(report) == {"implausible_words": ALL_PAGES}
     assert fallbacks(report) == {"ocr_low_confidence": ALL_PAGES}
     assert result.output is not None
     pages = page_contents(Path(result.output))

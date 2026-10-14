@@ -102,7 +102,15 @@ _LANGUAGE_SCRIPTS = {
     "syr": "SYRIAC",
     "div": "THAANA",
 }
-# Tesseract's script data (``script/Latin``) and other codes that are no language.
+# Tesseract script models whose name is not one of the scripts above.
+_SCRIPT_MODELS = {
+    "HANS": CJK,
+    "HANT": CJK,
+    "JAPANESE": CJK,
+    "FRAKTUR": "LATIN",
+    "VIETNAMESE": "LATIN",
+}
+# Codes that are no language.
 _NOT_LANGUAGES = frozenset({"osd", "equ"})
 MAX_WORD_LENGTH = 30
 """With no wordlist, a token of more letters than this (outside scripts written without
@@ -130,7 +138,14 @@ def language_scripts(languages: str) -> frozenset[str] | None:
     for code in languages.split("+"):
         if code in _NOT_LANGUAGES:
             continue
-        if code in _LANGUAGE_SCRIPTS:
+        if code.startswith("script/"):
+            # A Tesseract script model, e.g. ``script/Latin`` or ``script/HanS_vert``.
+            name = code.removeprefix("script/").removesuffix("_vert").upper()
+            found = _SCRIPT_MODELS.get(name, name if name in _SCRIPTS.values() else None)
+            if found is None:
+                return None
+            scripts.add(found)
+        elif code in _LANGUAGE_SCRIPTS:
             scripts.add(_LANGUAGE_SCRIPTS[code])
         elif code in known_codes():
             scripts.add("LATIN")

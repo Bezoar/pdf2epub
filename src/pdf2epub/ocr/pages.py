@@ -167,14 +167,16 @@ def ocr_pages(
     languages = ocr_languages(conversion, declared_language)
     scripts = language_scripts(languages)
     words = wordlist(conversion.language or declared_language or DEFAULT_LANGUAGE)
-    # The text-layer quality check (OCR-R5 to OCR-R9), on every page with a text layer
-    # that isn't OCR'd directly.
-    layered = [p for p in pages if p.lines and not ocr_directly(p, images.get(p.page, []))]
+    # The text-layer quality check (OCR-R5 to OCR-R9), on every page with a text layer;
+    # under ``auto``, pages OCR'd directly are not checked (OCR-R1).
+    layered = [
+        p
+        for p in pages
+        if p.lines and (options.mode != "auto" or not ocr_directly(p, images.get(p.page, [])))
+    ]
     checks = check_layers(path, password, layered, images, scripts, words)
     rejected = {number: check.reason for number, check in checks.items() if check.reason}
-    # Under ``always`` the layer's verdict only decides what an empty or failed OCR
-    # result leaves (OCR-R10, OCR-R31): it routes nothing, so nothing is reported.
-    issues = [] if options.mode == "always" else _rejections(rejected)
+    issues = _rejections(rejected)
     if options.mode == "never":
         # OCR-R3: a rejected page, and a page that would be OCR'd directly, falls back.
         bad = {
@@ -346,6 +348,9 @@ def _hidden_text(
         return replace(page, lines=[])
 
     def score(candidate: PageText) -> tuple[float, float]:
+        if candidate is page and check is not None:
+            # The layer as the check scored it (Unicode-map errors included).
+            return check.garbage, -check.plausibility
         text = " ".join(line.text for line in candidate.lines)
         return garbage_ratio(text, scripts), -plausibility(text, words)[0]
 
