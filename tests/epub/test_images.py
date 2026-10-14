@@ -128,3 +128,19 @@ def test_a_cover_image_file_is_downscaled_and_used(tmp_path: Path) -> None:
     with picture(epub, str(item.get("href"))) as image:
         assert image.size == (1600, 500)
         assert image.convert("RGB").getcolors() == [(1600 * 500, (200, 30, 30))]
+
+
+def test_a_cover_with_a_transparent_colour_key_stays_transparent(tmp_path: Path) -> None:
+    # RFL-R27: transparency keeps an image PNG, with its transparency.
+    given = tmp_path / "cover.png"
+    keyed = Image.new("RGB", (40, 20), (0, 0, 0))
+    keyed.paste((250, 250, 250), (0, 0, 20, 20))
+    keyed.save(given, transparency=(0, 0, 0))
+    _, path = convert(NOVEL, tmp_path, ConversionOptions(cover=given))
+    epub = open_epub(path)
+
+    [item] = cover_items(epub)
+    assert item.get("media-type") == "image/png"
+    with picture(epub, str(item.get("href"))) as image:
+        alpha = image.convert("RGBA").getchannel("A")
+        assert (alpha.getpixel((0, 0)), alpha.getpixel((39, 0))) == (255, 0)

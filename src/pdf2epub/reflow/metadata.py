@@ -144,11 +144,13 @@ def book_metadata(source: SourcePdf, options: ConversionOptions) -> tuple[Metada
 
 def _pdf_date(value: str | None) -> str | None:
     """A PDF date string (``D:YYYYMMDDHHmmSSOHH'mm'``) as ``CCYY-MM-DDThh:mm:ssZ`` in UTC
-    (EPUB-R14), or None if it isn't one."""
-    match = _PDF_DATE.match(value or "")
+    (EPUB-R14), or None if it isn't one, wholly and validly."""
+    match = _PDF_DATE.fullmatch((value or "").strip())
     if match is None:
         return None
     year, month, day, hour, minute, second, zulu, sign, tz_hour, tz_minute = match.groups()
+    if int(tz_minute or 0) > 59:
+        return None
     try:
         offset = timedelta(hours=int(tz_hour or 0), minutes=int(tz_minute or 0))
         zone = timezone(-offset if sign == "-" else offset) if sign and not zulu else UTC

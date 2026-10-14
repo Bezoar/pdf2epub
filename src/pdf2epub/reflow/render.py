@@ -105,11 +105,12 @@ def canonical(image: Image.Image) -> Image.Image:
 def _plain(image: Image.Image) -> Image.Image:
     """``image`` as grey (``L``), colour (``RGB``) or, only when something in it is
     transparent, colour with alpha (``RGBA``)."""
-    if image.mode == "1":
+    transparent = image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info
+    if not transparent and image.mode == "1":
         return image.convert("L")
-    if image.mode in ("L", "RGB"):
+    if not transparent and image.mode in ("L", "RGB"):
         return image
-    if image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info:
+    if transparent:
         image = image.convert("RGBA")
         lowest_alpha = image.getchannel("A").getextrema()[0]
         if isinstance(lowest_alpha, (int, float)) and lowest_alpha < 255:

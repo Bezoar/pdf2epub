@@ -6,6 +6,7 @@ every other image in the book (RFL-R27), and its declared size is held to the pi
 limit (RFL-R6) before it is decoded.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -22,9 +23,9 @@ Cover = Literal["page1"] | Path | None
 
 def check_cover(cover: Cover) -> None:
     """Raise ``UsageError`` when ``cover`` names an image file that can't be read or
-    decoded."""
+    decoded. Only decoded here: each conversion encodes it in its own worker."""
     if cover is not None and cover != "page1":
-        load_cover(Path(cover))
+        _open_cover(Path(cover), lambda _: None)
 
 
 def book_cover(cover: Cover, source: Path, password: Secret | None = None) -> ImageAsset | None:
@@ -41,11 +42,17 @@ def book_cover(cover: Cover, source: Path, password: Secret | None = None) -> Im
 def load_cover(path: Path) -> ImageAsset:
     """The image file at ``path``, encoded for the book. Raises ``UsageError`` when it
     can't be read or decoded."""
+    return _open_cover(path, encode)
+
+
+def _open_cover[T](path: Path, use: Callable[[Image.Image], T]) -> T:
+    """``use`` applied to the decoded image file at ``path``, whose declared size is held
+    to the pixel limit first. Raises ``UsageError`` when it can't be read or decoded."""
     try:
         with Image.open(path) as picture:
             check_image(*picture.size)
             picture.load()
-            return encode(picture)
+            return use(picture)
     except ResourceLimitExceeded as error:
         raise UsageError(f"the cover image {path} is too large: {error}") from error
     except (OSError, ValueError, Image.DecompressionBombError) as error:
