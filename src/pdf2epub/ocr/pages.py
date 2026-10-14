@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import median
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import cv2
 import numpy as np
@@ -56,8 +56,10 @@ _SAME_HEIGHT = 0.2
 _PDF_DPI = 72.0
 
 
-class Reporter(Protocol):
-    def progress(self, stage: str, done: int, of: int, **fields: object) -> None: ...
+class Progress(Protocol):
+    """Reports a page done in a stage; a page boundary, where a cancelled batch stops."""
+
+    def __call__(self, stage: str, done: int, of: int, **fields: Any) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -97,7 +99,7 @@ def ocr_pages(
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
     options: OcrOptions,
-    reporter: Reporter,
+    progress: Progress,
 ) -> OcrOutcome:
     """OCR the pages that need it, reporting each as it finishes (OCR-R29)."""
     routed = [
@@ -135,7 +137,7 @@ def ocr_pages(
                     for placed in images.get(page.page, [])
                     if _share(placed, page) < LARGE_IMAGE
                 ]
-            reporter.progress(
+            progress(
                 "ocr",
                 done,
                 len(routed),

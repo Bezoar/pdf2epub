@@ -153,7 +153,7 @@ def convert(
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
-        recognised = ocr_pages(source_path, access.password, pages, images, options.ocr, reporter)
+        recognised = ocr_pages(source_path, access.password, pages, images, options.ocr, progress)
         pages, images, ocr = recognised.pages, recognised.images, recognised.summary
 
         document, found = build_document(source, pages, images, options, access.password)
