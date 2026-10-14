@@ -24,6 +24,7 @@ import unicodedata
 from collections.abc import Collection
 
 from pdf2epub.ocr.languages import known_codes
+from pdf2epub.reflow.extract import normalise
 
 _REPLACEMENT = "�"
 CJK = "CJK"
@@ -187,7 +188,8 @@ def plausibility(text: str, words: Collection[str] | None) -> tuple[float, int]:
     there are (share 0 for none). With a wordlist, a token is plausible when it is in the
     list, as written, in lower case or capitalised (each part of a hyphenated token);
     without one, when it is letters only and of a sensible length."""
-    found = tokens(text)
+    # Ligatures expanded and soft hyphens removed, as the text layer is read (RFL-R8).
+    found = tokens(normalise(text))
     if not found:
         return 0.0, 0
     check = _known if words is not None else _word_like
