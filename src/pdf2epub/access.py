@@ -11,6 +11,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 import pypdf
 from pypdf import PasswordType
@@ -23,6 +24,10 @@ log = logging.getLogger(__name__)
 
 MISSING_PASSWORD_HINT = "supply the password for this file"
 DRM_PROTECTED_HINT = "open it in the vendor's reader; pdf2epub will not bypass DRM"
+RESTRICTED_HINT = "supply the owner password"
+
+# /P bit 5 (value 16): copy or otherwise extract text and graphics.
+_EXTRACT = 16
 
 
 @dataclass(frozen=True)
@@ -32,7 +37,10 @@ class Access:
     password: Secret | None
     """The password to open it with; None when it needs none beyond the empty one."""
     source: SourceLabel | None
-    """The label of the candidate that opened it, or None (PWD-R24)."""
+    """The label of the candidate that opened it, or that lifted its restrictions as the
+    owner password; None when no password was needed (PWD-R24)."""
+    owner_password_used: bool = False
+    """True when an owner password lifted a copy/extract restriction (PWD-R11)."""
 
 
 OPEN = Access(None, None)
@@ -63,7 +71,8 @@ def needs_password(path: Path) -> bool:
 def unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
     """Find how to open ``path``: as it is, with the empty password, or with the first of
     ``candidates`` (already in trial order) that opens it (PWD-R6). Raises
-    ``AccessDenied`` when none does (PWD-R7)."""
+    ``AccessDenied`` when none does (PWD-R7), or when the file forbids copying and
+    extracting its content and no candidate is its owner password (PWD-R10, PWD-R11)."""
     with _quiet_pypdf():
         return _unlock(path, candidates)
 
@@ -87,11 +96,40 @@ def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
                 hint=DRM_PROTECTED_HINT,
             )
         )
-    if reader.decrypt("") is not PasswordType.NOT_DECRYPTED:
-        return OPEN
-    for candidate in distinct(candidates):
-        if reader.decrypt(candidate.secret.reveal()) is not PasswordType.NOT_DECRYPTED:
-            return Access(candidate.secret, candidate.source)
+    candidates = distinct(candidates)
+    matched = reader.decrypt("")
+    access, remaining = OPEN, candidates
+    if matched is PasswordType.NOT_DECRYPTED:
+        for index, candidate in enumerate(candidates):
+            matched = reader.decrypt(candidate.secret.reveal())
+            if matched is not PasswordType.NOT_DECRYPTED:
+                access, remaining = (
+                    Access(candidate.secret, candidate.source),
+                    candidates[index + 1 :],
+                )
+                break
+    if matched is PasswordType.NOT_DECRYPTED:
+        _refuse_unopened(candidates)
+    if matched is PasswordType.OWNER_PASSWORD or _extraction_permitted(reader):
+        return access
+    # MAIN-R6, PWD-R11: opened with a user password (or the empty one), but copying is
+    # forbidden. Only the owner password lifts that; the remaining candidates are tried
+    # as the owner password.
+    for candidate in remaining:
+        if reader.decrypt(candidate.secret.reveal()) is PasswordType.OWNER_PASSWORD:
+            return Access(candidate.secret, candidate.source, owner_password_used=True)
+    raise AccessDenied(
+        Issue(
+            IssueCode.RESTRICTED,
+            "The PDF forbids copying or extracting its content, and no owner password "
+            "was supplied for it.",
+            hint=RESTRICTED_HINT,
+        )
+    )
+
+
+def _refuse_unopened(candidates: Sequence[Candidate]) -> NoReturn:
+    """Raise the issue for a file no candidate opened (PWD-R7, PWD-R8)."""
     if not candidates:
         raise AccessDenied(
             Issue(
@@ -100,7 +138,7 @@ def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
                 hint=MISSING_PASSWORD_HINT,
             )
         )
-    labels = ", ".join(candidate.source for candidate in distinct(candidates))
+    labels = ", ".join(candidate.source for candidate in candidates)
     raise AccessDenied(
         Issue(
             IssueCode.WRONG_PASSWORD,
@@ -108,6 +146,14 @@ def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
             hint=f"check the password; sources tried: {labels}",
         )
     )
+
+
+def _extraction_permitted(reader: pypdf.PdfReader) -> bool:
+    """True unless the ``/P`` permissions forbid copying or extracting content. A ``/P``
+    that can't be read counts as forbidding it (fail closed, PWD-R9)."""
+    encrypt = reader.trailer["/Encrypt"].get_object()
+    permissions = encrypt.get("/P") if isinstance(encrypt, DictionaryObject) else None
+    return isinstance(permissions, int) and bool(int(permissions) & _EXTRACT)
 
 
 def _filter(reader: pypdf.PdfReader) -> object:

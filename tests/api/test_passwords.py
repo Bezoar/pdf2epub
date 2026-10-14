@@ -271,3 +271,53 @@ def test_unreadable_password_sources_are_usage_errors(tmp_path: Path) -> None:
         SourcePasswordProvider(PasswordSources(map_file=bad_map))
     with pytest.raises(UsageError, match=r"passwords\.txt"):
         SourcePasswordProvider(PasswordSources(password_file=bad_file))
+
+
+def restricted_copy(target: Path, user: str, owner: str) -> Path:
+    """The two-page book encrypted with copy/extract forbidden (``/P`` bit 5 clear).
+    #32 brings the committed restricted fixtures; this stand-in is built per test."""
+    from pypdf import PdfWriter
+    from pypdf.constants import UserAccessPermissions
+
+    writer = PdfWriter(clone_from=FIXTURES / "born-digital" / "two-pages.pdf")
+    permissions = UserAccessPermissions.all() & ~UserAccessPermissions.EXTRACT
+    writer.encrypt(user, owner, permissions_flag=permissions, algorithm="AES-256")
+    with target.open("wb") as file:
+        writer.write(file)
+    return target
+
+
+@pytest.mark.parametrize(
+    ("user", "values"),
+    [("u", ["u"]), ("", []), ("", ["wrong"])],
+    ids=["user-password", "owner-only", "owner-only-wrong"],
+)
+def test_copy_restricted_file_without_its_owner_password_fails_restricted(
+    tmp_path: Path, user: str, values: list[str]
+) -> None:
+    pdf = restricted_copy(tmp_path / "locked.pdf", user, "o")
+
+    report, _ = run(
+        [pdf], SourcePasswordProvider(PasswordSources(values=[Secret(v) for v in values]))
+    )
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.hint) for i in result.issues] == [
+        ("restricted", "supply the owner password")
+    ]
+    assert not (tmp_path / "locked.epub").exists()
+
+
+def test_owner_password_lifts_the_restriction(tmp_path: Path) -> None:
+    pdf = restricted_copy(tmp_path / "locked.pdf", "u", "o")
+    provider = SourcePasswordProvider(PasswordSources(values=[Secret("u"), Secret("o")]))
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert [(i.code, i.severity) for i in result.issues] == [("owner_password_used", "info")]
+    assert result.issues[0].message == "converted using owner password from cli #2"
+    assert result.password_source == "cli #2"
+    assert (tmp_path / "locked.epub").is_file()

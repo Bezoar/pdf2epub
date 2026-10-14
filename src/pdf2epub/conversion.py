@@ -123,6 +123,13 @@ def convert(
         # images.
         if not any(page.lines for page in pages) and not images:
             raise _Empty("No page of the PDF has any text or image.")
+        if access.owner_password_used:
+            add(
+                Issue(
+                    IssueCode.OWNER_PASSWORD_USED,
+                    f"converted using owner password from {access.source}",
+                )
+            )
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
