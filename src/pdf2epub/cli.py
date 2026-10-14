@@ -11,9 +11,11 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, TextIO
 
-from pdf2epub.batch import InputSpec, plan_batch, run_batch
+from pdf2epub.batch import InputSpec, plan_batch, read_files_from, run_batch
+from pdf2epub.errors import UsageError
 from pdf2epub.events import Event
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
 from pdf2epub.version import TOOL_VERSION
@@ -41,7 +43,29 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("inputs", nargs="+", metavar="INPUT", help="a PDF file to convert")
+    parser.add_argument(
+        "inputs", nargs="*", metavar="INPUT", help="a PDF file, or a folder of PDF files"
+    )
+    parser.add_argument(
+        "-r",
+        "--recursive",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="scan folder inputs through all subfolders",
+    )
+    parser.add_argument(
+        "--files-from",
+        metavar="FILE",
+        help="read more inputs from FILE (or stdin for -), one path per line",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="the EPUB file (one input) or the output folder (a batch)",
+    )
     parser.add_argument(
         "--overwrite",
         action="store_true",
@@ -53,7 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.WARNING, stream=sys.stderr, format="%(levelname)s: %(message)s"
     )
@@ -62,7 +87,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if "overwrite" in args:
         batch_fields["overwrite"] = args.overwrite
 
-    plan = plan_batch([InputSpec(path) for path in args.inputs], DiscoveryOptions())
+    discovery_fields: dict[str, Any] = {
+        name: getattr(args, name) for name in ("recursive", "output") if name in args
+    }
+
+    try:
+        inputs = [InputSpec(path) for path in args.inputs]
+        if args.files_from is not None:
+            inputs.extend(read_files_from(args.files_from))
+        if not inputs:
+            raise UsageError("no inputs: name a PDF file or folder, or use --files-from")
+        plan = plan_batch(inputs, DiscoveryOptions(**discovery_fields))
+    except UsageError as error:
+        parser.error(str(error))  # exits 2 with the reason on stderr (BAT-R25)
     reporter = HumanReport(sys.stderr, single=plan.single)
     report = run_batch(plan, BatchOptions(**batch_fields), ConversionOptions(), reporter)
     reporter.render()

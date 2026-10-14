@@ -30,10 +30,11 @@ class Fixture:
 
 def registry() -> list[Fixture]:
     """Every fixture generator, in a fixed order."""
-    from fixturegen import novel
+    from fixturegen import not_a_pdf, novel
 
     return [
         Fixture(novel.PATH, novel.GROUND_TRUTH, novel.build),
+        Fixture(not_a_pdf.PATH, None, not_a_pdf.build),
     ]
 
 
