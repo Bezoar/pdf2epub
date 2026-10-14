@@ -124,7 +124,8 @@ def test_the_engine_gets_degraded_pages_upright_level_and_at_300_dpi(variant: st
     engine = Recording(tesseract)
     page = render(SCANNED / f"{variant}.pdf", 2)
 
-    recognition = recognise(engine, page, DPI, OcrOptions(), "eng", {}, time.monotonic() + 170)
+    deadline = time.monotonic() + 170
+    recognition = recognise(engine, page, DPI, OcrOptions(), "eng", {}, deadline, osd=True)
 
     assert recognition.reason is None
     for request in engine.requests:

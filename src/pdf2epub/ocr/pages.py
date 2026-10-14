@@ -140,13 +140,14 @@ def ocr_pages(
     failed: dict[str, list[int]] = {}
     # Asked once, before any page's budget starts.
     capabilities = engine.capabilities()
+    osd = capabilities.osd
     document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
     try:
         for done, (page, trigger) in enumerate(routed, start=1):
             image = _render(document, page.page)
             deadline = time.monotonic() + options.page_timeout
             recognition = ladder.recognise(
-                engine, image, OCR_DPI, options, languages, engine_options, deadline
+                engine, image, OCR_DPI, options, languages, engine_options, deadline, osd=osd
             )
             result = recognition.result
             read = page_text(page, result, OCR_DPI, recognition.frame)

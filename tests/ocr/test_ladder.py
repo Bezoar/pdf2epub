@@ -59,6 +59,7 @@ def run(engine: FakeEngine, **options: object) -> Recognition:
         "eng",
         {},
         time.monotonic() + 60,
+        osd=False,
     )
 
 

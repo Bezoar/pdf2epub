@@ -102,15 +102,18 @@ def recognise(
     languages: str,
     engine_options: Mapping[str, str],
     deadline: float,
+    osd: bool,
 ) -> Recognition:
-    """Clean the page render ``image`` and run the ladder on it, by ``deadline``."""
+    """Clean the page render ``image`` and run the ladder on it, by ``deadline``. ``osd``
+    is the engine's ``Capabilities.osd``, asked once per conversion: whether its
+    orientation detection may upright the page."""
     p_min = threshold(options)
     attempts: list[Attempt] = []
     completed: list[OcrPageResult] = []
     layouts: dict[int, LayoutHint] = {}
     timed_out = False
     rotation = 0
-    if engine.capabilities().osd and isinstance(engine, DetectsOrientation):
+    if osd and isinstance(engine, DetectsOrientation):
         try:
             rotation = engine.orientation(image, dpi, deadline)
         except EngineTimeout:
