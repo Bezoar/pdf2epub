@@ -3,6 +3,7 @@ OCR engine details (EPUB-R3). The EPUBs come from the CLI, run as a subprocess, 
 read back from disk."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,7 @@ ENCRYPTED = FIXTURES / "encrypted"
 # Published fixture passwords (tests/fixtures/fixturegen/encrypted.py).
 AES256, AES256_PASSWORD = ENCRYPTED / "aes256-user.pdf", "hunter2"
 RESTRICTED, OWNER_PASSWORD = ENCRYPTED / "owner-only-restricted.pdf", "restricted-owner"
-Convert = Callable[[Path], tuple[Path, list[str]]]
+Convert = Callable[[Path], tuple[Path, list[str], list[str]]]
 
 
 def run_cli(args: list[str], cwd: Path, env_password: str | None = None) -> None:
@@ -34,11 +35,20 @@ def run_cli(args: list[str], cwd: Path, env_password: str | None = None) -> None
     assert done.returncode == 0, done.stderr
 
 
-def permissions(pdf: Path) -> str:
-    """The PDF's ``/P`` value, as written in the file."""
+def permissions(pdf: Path) -> list[str]:
+    """The PDF's ``/P`` value in both 32-bit forms: signed, as the PDF specification
+    writes it, and unsigned, as some writers (pypdf among them) store it."""
     encrypt = PdfReader(pdf).trailer["/Encrypt"].get_object()
     assert isinstance(encrypt, DictionaryObject)
-    return str(encrypt["/P"])
+    unsigned = int(str(encrypt["/P"])) & 0xFFFFFFFF
+    signed = unsigned - (1 << 32) if unsigned & 0x80000000 else unsigned
+    return [str(signed), str(unsigned)]
+
+
+def mentions(text: str, number: str) -> bool:
+    """True when ``number`` appears in ``text`` as a whole number, not as part of a
+    longer one."""
+    return re.search(rf"(?<![\w.-]){re.escape(number)}(?![\w.])", text) is not None
 
 
 def generated_text(archive: zipfile.ZipFile) -> dict[str, str]:
@@ -60,18 +70,18 @@ def generated_text(archive: zipfile.ZipFile) -> dict[str, str]:
     return found
 
 
-def convert_aes256(folder: Path) -> tuple[Path, list[str]]:
+def convert_aes256(folder: Path) -> tuple[Path, list[str], list[str]]:
     shutil.copyfile(AES256, folder / "book.pdf")
     run_cli(["book.pdf"], folder, env_password=AES256_PASSWORD)
-    return folder / "book.epub", [AES256_PASSWORD, "env", permissions(AES256)]
+    return folder / "book.epub", [AES256_PASSWORD, "env"], permissions(AES256)
 
 
-def convert_restricted(folder: Path) -> tuple[Path, list[str]]:
+def convert_restricted(folder: Path) -> tuple[Path, list[str], list[str]]:
     shutil.copyfile(RESTRICTED, folder / "book.pdf")
     (folder / "passwords.toml").write_text(f'"book.pdf" = "{OWNER_PASSWORD}"\n')
     (folder / "passwords.toml").chmod(0o600)
     run_cli(["--password-map", "passwords.toml", "book.pdf"], folder)
-    return folder / "book.epub", [OWNER_PASSWORD, 'map:"book.pdf"', permissions(RESTRICTED)]
+    return folder / "book.epub", [OWNER_PASSWORD, 'map:"book.pdf"'], permissions(RESTRICTED)
 
 
 @pytest.mark.ac("EPUB-AC3")
@@ -81,7 +91,7 @@ def convert_restricted(folder: Path) -> tuple[Path, list[str]]:
 def test_the_epub_records_no_password_source_or_permissions(
     tmp_path: Path, convert: Convert
 ) -> None:
-    epub, secrets = convert(tmp_path)
+    epub, secrets, flags = convert(tmp_path)
 
     with zipfile.ZipFile(epub) as archive:
         names = archive.namelist()
@@ -93,5 +103,7 @@ def test_the_epub_records_no_password_source_or_permissions(
     for name, text in generated.items():
         for secret in secrets:
             assert secret not in text, f"{secret!r} in {name}"
+        for flag in flags:
+            assert not mentions(text, flag), f"/P {flag} in {name}"
     [opf] = [text for name, text in generated.items() if name.endswith(".opf")]
     assert "tesseract" not in opf.lower()
