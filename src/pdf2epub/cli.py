@@ -11,6 +11,7 @@ object per line; the human report, warnings and logging go to stderr (CLI-R2).
 import argparse
 import logging
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, BinaryIO, TextIO
@@ -73,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="replace EPUBs that already exist",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="exit with code 1 when any conversion has a warning (EPUBs are still written)",
+    )
     reporting = parser.add_argument_group("reporting and machine output")
     reporting.add_argument(
         "--report",
@@ -89,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="list each success in the report; log at INFO level",
     )
     reporting.add_argument("--debug", action="store_true", help="log at DEBUG level (to stderr)")
+    reporting.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="report only the totals and the failures; no progress line",
+    )
     parser.add_argument("--version", action="version", version=f"pdf2epub {TOOL_VERSION}")
     return parser
 
@@ -96,11 +109,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.quiet and (args.verbose or args.debug):
+        parser.error("-q/--quiet cannot be combined with -v/--verbose or --debug")  # CLI-R7
     configure_logging(args.verbose, args.debug)
 
-    batch_fields: dict[str, Any] = {}
-    if "overwrite" in args:
-        batch_fields["overwrite"] = args.overwrite
+    batch_fields: dict[str, Any] = {
+        name: getattr(args, name) for name in ("overwrite", "strict") if name in args
+    }
 
     discovery_fields: dict[str, Any] = {
         name: getattr(args, name) for name in ("recursive", "output") if name in args
@@ -122,7 +137,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(writer, final)
         )
     else:
-        reporter = HumanReport(sys.stderr, single=plan.single, verbose=args.verbose)
+        reporter = HumanReport(
+            sys.stderr,
+            single=plan.single,
+            verbose=args.verbose,
+            quiet=args.quiet,
+            progress=not args.quiet and sys.stderr.isatty(),
+        )
         report = run_batch(
             plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
         )
@@ -187,22 +208,65 @@ def write_report(event: Event, path: Path) -> None:
         )
 
 
+# CLI-R14: at most about 10 progress redraws a second.
+REDRAW_INTERVAL = 0.1
+
+
 class HumanReport:
     """An event sink that prints the human report to stderr when the batch finishes:
     one result line for a single conversion (CLI-R16); for a batch, the totals, the
-    failures and the condensed warnings, plus, with ``verbose``, each success (CLI-R15)."""
+    failures and the condensed warnings, plus, with ``verbose``, each success, or, with
+    ``quiet``, only the totals and failures (CLI-R15).
 
-    def __init__(self, stream: TextIO, single: bool, verbose: bool = False) -> None:
+    With ``progress`` (stderr is a terminal), it also redraws one progress line, such as
+    ``[3/17] book.pdf · ocr 45/312``, at most every ``REDRAW_INTERVAL`` seconds (CLI-R14).
+    """
+
+    def __init__(
+        self,
+        stream: TextIO,
+        single: bool,
+        verbose: bool = False,
+        quiet: bool = False,
+        progress: bool = False,
+    ) -> None:
         self._stream = stream
         self._single = single
         self._verbose = verbose
+        self._quiet = quiet
+        self._progress = progress
         self._finished: Event | None = None
+        self._total = 0
+        self._names: dict[int, str] = {}
+        self._last_draw: float | None = None
+        self._drawn = False
 
     def __call__(self, event: Event) -> None:
         if event["type"] == "batch_finished":
             self._finished = event
+        elif self._progress and event["type"] == "batch_started":
+            self._total = event["total"]
+            self._names = {p["id"]: Path(p["source"]).name for p in event["planned"]}
+        elif self._progress and event["type"] == "progress":
+            self._draw(event)
+
+    def _draw(self, event: Event) -> None:
+        now = time.monotonic()
+        if self._last_draw is not None and now - self._last_draw < REDRAW_INTERVAL:
+            return
+        self._last_draw = now
+        line = (
+            f"[{event['id'] + 1}/{self._total}] {self._names.get(event['id'], '')} · "
+            f"{event['stage']} {event['done']}/{event['of']}"
+        )
+        self._stream.write(f"\r{line}\x1b[K")  # back to the line start; clear its rest
+        self._stream.flush()
+        self._drawn = True
 
     def render(self) -> None:
+        if self._drawn:
+            self._stream.write("\r\x1b[K")
+            self._drawn = False
         if self._finished is None:
             return
         conversions: list[dict[str, Any]] = self._finished["conversions"]
@@ -224,7 +288,7 @@ class HumanReport:
                     lines.extend(_issue_lines(conversion))
             for conversion in conversions:
                 warning = _warnings_line(conversion)
-                if conversion["outcome"] == "converted" and warning:
+                if conversion["outcome"] == "converted" and warning and not self._quiet:
                     lines.append(warning)
             if self._verbose:
                 for conversion in conversions:
