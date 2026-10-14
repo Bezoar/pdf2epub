@@ -13,7 +13,8 @@ Born-digital, with visible text and PDF page labels:
 - ``born-digital/odd-page-labels.pdf``: 4 pages, no folios, labelled ``i``, ``i``,
   ``A&B 1`` and ``<2>``.
 
-Scanned (the page-numbers scan): every page is a 75 DPI bitonal image of its text, under
+Scanned (the page-numbers scan): every page is a 75 DPI bitonal image of its text (each
+word a bar of ink), under
 an invisible text layer (render mode 3) like a scan with a good OCR layer, and no page
 labels:
 
@@ -25,19 +26,24 @@ labels:
   ``1``-``40``, with an unnumbered chapter opener where 13 would be and an unnumbered
   plate between 30 and 31 (51 pages).
 
+Born-digital, with visible text and no page labels:
+
+- ``born-digital/page-numbers-tripled.pdf``: 21 pages with folios 1-9, 9, 9, 10-19, so
+  printed page 9 appears three times in a row (PDF pages 9 to 11).
+
 Each ground truth (the ``.txt`` beside the PDF) is the book's text without folios: titles,
 paragraphs and plate captions, one per line, separated by blank lines.
 
 The files are written by ``rawpdf``: content streams uncompressed, page images
-run-length encoded by the pure-Python encoder below, and the images drawn with Pillow's
-built-in bitmap font, so the bytes don't depend on zlib or FreeType.
+run-length encoded by the pure-Python encoder below, and the images drawn without fonts,
+so the bytes don't depend on zlib, FreeType or Pillow's fonts.
 """
 
 import random
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from fixturegen import prose, rawpdf
@@ -50,6 +56,8 @@ MISSING = "scanned/page-numbers-missing.pdf"
 MISSING_TRUTH = "scanned/page-numbers-missing.txt"
 REPEATED = "scanned/page-numbers-repeated.pdf"
 REPEATED_TRUTH = "scanned/page-numbers-repeated.txt"
+TRIPLED = "born-digital/page-numbers-tripled.pdf"
+TRIPLED_TRUTH = "born-digital/page-numbers-tripled.txt"
 FRONT_MATTER = "scanned/page-numbers-front-matter.pdf"
 FRONT_MATTER_TRUTH = "scanned/page-numbers-front-matter.txt"
 
@@ -146,11 +154,12 @@ def _text_stream(runs: list[_Run], invisible: bool) -> bytes:
 
 
 def _scan(runs: list[_Run], plate: bool) -> Image.Image:
-    """A bitonal page image of ``runs``, drawn with Pillow's built-in bitmap font."""
+    """A bitonal page image of ``runs``: each word is a solid bar of ink at the place and
+    width the text layer gives it, as in a low-resolution scan. No font is drawn, so the
+    image doesn't change with Pillow's fonts or FreeType."""
     size = (round(PAGE_WIDTH * SCALE), round(PAGE_HEIGHT * SCALE))
     image = Image.new("1", size, 1)
     draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default_imagefont()
     if plate:
         draw.rectangle(
             [MARGIN_X * SCALE, 120 * SCALE, (PAGE_WIDTH - MARGIN_X) * SCALE, 420 * SCALE],
@@ -158,15 +167,15 @@ def _scan(runs: list[_Run], plate: bool) -> Image.Image:
             width=2,
         )
     for run in runs:
-        # The bitmap font has one size and its own widths: each line is drawn on its own
-        # and stretched to the box the text layer gives it.
-        *_, right, bottom = font.getbbox(run.text)
-        line = Image.new("1", (right, bottom), 1)
-        ImageDraw.Draw(line).text((0, 0), run.text, font=font, fill=0)
-        width = round(stringWidth(run.text, _FONTS[run.font], run.size) * SCALE)
-        height = round(run.size * 0.7 * SCALE)
-        line = line.resize((width, height), Image.Resampling.NEAREST)
-        image.paste(line, (round(run.x * SCALE), round((PAGE_HEIGHT - run.y) * SCALE) - height))
+        font = _FONTS[run.font]
+        space = stringWidth(" ", font, run.size)
+        bottom = round((PAGE_HEIGHT - run.y) * SCALE)
+        top = bottom - max(1, round(run.size * 0.5 * SCALE))
+        x = run.x
+        for word in run.text.split():
+            width = stringWidth(word, font, run.size)
+            draw.rectangle([round(x * SCALE), top, round((x + width) * SCALE) - 1, bottom], fill=0)
+            x += width + space
     return image
 
 
@@ -290,3 +299,9 @@ def build_front_matter(out_dir: Path) -> None:
         if n == 30:
             pages.append(Page(None, plate="Plate 1. The harbour at dawn."))
     _write(out_dir, FRONT_MATTER, FRONT_MATTER_TRUTH, _pdf(pages, True, None, "Front Matter"))
+
+
+def build_tripled(out_dir: Path) -> None:
+    folios = [*range(1, 10), 9, *range(9, 20)]
+    pages = [Page(str(n)) for n in folios]
+    _write(out_dir, TRIPLED, TRIPLED_TRUTH, _pdf(pages, False, None, "Tripled Page"))

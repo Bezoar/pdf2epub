@@ -27,6 +27,7 @@ from pdf2epub import (
 SCANNED = FIXTURES / "scanned"
 MISSING = SCANNED / "page-numbers-missing.pdf"
 REPEATED = SCANNED / "page-numbers-repeated.pdf"
+TRIPLED = FIXTURES / "born-digital" / "page-numbers-tripled.pdf"
 FRONT_MATTER = SCANNED / "page-numbers-front-matter.pdf"
 PAGE_LABELS = FIXTURES / "born-digital" / "page-labels.pdf"
 
@@ -67,6 +68,17 @@ def test_a_repeated_printed_page_is_a_warning_naming_the_number(tmp_path: Path) 
     [gap] = gap_issues(sink)
     assert gap["severity"] == "warning"
     assert gap["pages"] == [9, 10]
+    assert "printed page 9 is repeated" in gap["message"]
+
+
+@pytest.mark.ac("RFL-AC20")
+def test_a_page_repeated_three_times_is_reported(tmp_path: Path) -> None:
+    # Folios 1-9, 9, 9, 10-19: the stretch between the two repeats is one page long.
+    result, sink = convert(TRIPLED, tmp_path)
+
+    assert result.outcome is Outcome.CONVERTED
+    [gap] = gap_issues(sink)
+    assert gap["pages"] == [9, 10, 11]
     assert "printed page 9 is repeated" in gap["message"]
 
 

@@ -6,9 +6,10 @@ numbered pages with ``k`` unnumbered pages in between (chapter openers, plates, 
 pages), the number may go up by 1 to ``k + 1``. A number that goes up by more is a gap
 (pages missing); the same number again is a repeat. A roman number, or a number that goes
 down, starts a new run without a break: front matter and restarted numbering are not
-gaps. Each break splits a run into in-sequence stretches; a break is reported only when
-the stretches on both sides of it hold at least 5 numbered pages, so a stray or misread
-number never causes one.
+gaps. Each break splits a run into in-sequence stretches. A break is reported only when
+the stretches on both sides of it hold at least 5 numbered pages; breaks with only shorter
+stretches between them (a page scanned three times) count as one group, reported when
+long stretches surround the group. A stray or misread number never causes one.
 """
 
 from dataclasses import dataclass
@@ -35,35 +36,49 @@ def sequence_gaps(page_numbers: dict[int, str]) -> Issue | None:
     page), or None when the sequence has no clear break."""
     breaks: list[_Break] = []
     stretch: list[tuple[int, int]] = []  # (PDF page, number) in sequence
-    pending: _Break | None = None  # a break waiting for the stretch after it to grow
-    before = 0  # length of the stretch before ``pending``
+    pending: list[_Break] = []  # adjacent breaks, waiting for the stretch after them
+    before = 0  # length of the stretch before the first pending break
 
-    def close(new_break: _Break | None) -> None:
-        nonlocal stretch, pending, before
-        if pending is not None and before >= MIN_RUN and len(stretch) >= MIN_RUN:
-            breaks.append(pending)
-        pending, before, stretch = new_break, len(stretch), []
+    def settle() -> None:
+        """Report the pending breaks if long stretches surround them, then drop them."""
+        if pending and before >= MIN_RUN and len(stretch) >= MIN_RUN:
+            breaks.extend(pending)
+        pending.clear()
+
+    def split(new_break: _Break | None) -> None:
+        """End the current stretch at a break, or at a reset (``None``)."""
+        nonlocal stretch, before
+        if new_break is not None and pending and len(stretch) < MIN_RUN:
+            # Too short to settle anything: this break joins the pending ones, as in
+            # 8, 9, 9, 9, 10 (the same page scanned three times).
+            pending.append(new_break)
+        else:
+            settle()
+            if new_break is not None:
+                pending.append(new_break)
+                before = len(stretch)
+        stretch = []
 
     for page in sorted(page_numbers):
         text = page_numbers[page]
         if not text.isdigit():
-            close(None)  # roman: front matter, or the switch to arabic
+            split(None)  # roman: front matter, or the switch to arabic
             continue
         number = int(text)
         if stretch:
             last_page, last = stretch[-1]
             unnumbered = page - last_page - 1
             if number == last:
-                close(_Break(last_page, page, f"printed page {last} is repeated"))
+                split(_Break(last_page, page, f"printed page {last} is repeated"))
             elif number > last + 1 + unnumbered:
                 missing = _numbers(last + 1, number - 1)
                 verb = "is" if number - last == 2 else "are"
                 state = " missing or unnumbered" if unnumbered else " missing"
-                close(_Break(last_page, page, f"printed {missing} {verb}{state}"))
+                split(_Break(last_page, page, f"printed {missing} {verb}{state}"))
             elif number <= last:
-                close(None)  # numbering restarts
+                split(None)  # numbering restarts
         stretch.append((page, number))
-    close(None)
+    settle()
 
     if not breaks:
         return None

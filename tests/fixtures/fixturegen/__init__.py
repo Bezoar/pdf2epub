@@ -52,6 +52,7 @@ def registry() -> list[Fixture]:
         Fixture(pagenumbers.ODD_LABELS, pagenumbers.ODD_LABELS_TRUTH, pagenumbers.build_odd_labels),
         Fixture(pagenumbers.MISSING, pagenumbers.MISSING_TRUTH, pagenumbers.build_missing),
         Fixture(pagenumbers.REPEATED, pagenumbers.REPEATED_TRUTH, pagenumbers.build_repeated),
+        Fixture(pagenumbers.TRIPLED, pagenumbers.TRIPLED_TRUTH, pagenumbers.build_tripled),
         Fixture(
             pagenumbers.FRONT_MATTER,
             pagenumbers.FRONT_MATTER_TRUTH,
