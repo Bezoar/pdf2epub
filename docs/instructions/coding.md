@@ -22,8 +22,8 @@ These rules apply to every change in this repository. They are instructions, not
 | Check formatting | `uv run ruff format --check .` |
 | Apply formatting | `uv run ruff format .` |
 | Type-check | `uv run mypy` |
-| Run all tests | `uv run pytest` |
-| Run one test | `uv run pytest tests/api/test_passwords.py::test_wrong_password` |
+| Run all tests (in parallel, one pytest-xdist worker per CPU) | `uv run pytest` |
+| Run one test (`-n 0`: in one process, without starting workers) | `uv run pytest -n 0 tests/api/test_passwords.py::test_wrong_password` |
 | Tests with branch coverage | `uv run coverage run -m pytest && uv run coverage report` |
 | Run the CLI from the checkout | `uv run pdf2epub --help` |
 | Fetch the real-world smoke set | `uv run python scripts/smoke.py fetch` |
@@ -63,6 +63,7 @@ Expected values come from the spec (exact issue codes, exit codes, event fields)
 
 - Branch coverage is measured over **all** of `src/pdf2epub`, with nothing listed under `omit`.
 - The measured CI job runs on Linux with Python 3.12 and has Tesseract installed, so the OCR paths count.
+- Coverage follows subprocesses: the xdist workers, the CLI and pdf2epub's own workers. Under Python 3.12 each measured process spends about 10 s importing pypdf's glyph table, so the CI job imports it before coverage starts (see `.github/workflows/pr.yml`); a local coverage run on 3.12 is slower for the same reason.
 - The bar is a floor: `fail_under = 75`, with no ratchet. A PR may lower coverage as long as it stays at or above 75%.
 - `# pragma: no cover` is allowed **only** on:
   - `if TYPE_CHECKING:` blocks;

@@ -74,9 +74,21 @@ jobs:
           sudo apt-get install -y tesseract-ocr
           tesseract --version
       - run: uv sync --locked
+      # pyproject.toml runs pytest in parallel (pytest-xdist, `-n auto`) in every job.
       - name: Tests
         if: env.COVERAGE_JOB != 'true'
         run: uv run pytest
+      # Under Python 3.12's sys.settrace, importing a module with a huge literal table
+      # costs seconds (pypdf's glyph list alone takes about 10 s), and coverage pays it in
+      # every Python process it measures: each xdist worker, CLI run and pdf2epub worker.
+      # This .pth file sorts before coverage's own (a1_coverage.pth), so each process
+      # imports those tables before coverage starts tracing.
+      - name: Import large tables before coverage starts
+        if: env.COVERAGE_JOB == 'true'
+        run: |
+          site=$(uv run python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
+          echo "import pypdf._codecs.adobe_glyphs, pypdf._codecs.core_font_metrics, pdfminer.glyphlist, pdfminer.fontmetrics" \
+            > "$site/a0_preimport_tables.pth"
       - name: Tests with branch coverage
         if: env.COVERAGE_JOB == 'true'
         env:
