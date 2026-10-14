@@ -16,7 +16,7 @@ The agent can't do these steps; the owner (@Bezoar) does them once, in the web U
 
   The repo is user-owned, so there are no organisation or enterprise levels to set.
 - [ ] The `needs-owner` label exists (`gh label create needs-owner --color B60205` if not).
-- [ ] `.github/CODEOWNERS` (`* @Bezoar`) lands in ticket 0. Until then, the code-owner rule has nothing to resolve.
+- [ ] `.github/CODEOWNERS` contains `* @Bezoar`, so the ruleset's code-owner review always has an owner to resolve. Keep it that way.
 
 Already applied (for reference): squash merges only, delete branch on merge, auto-merge allowed; rulesets `main-protection` (1 approval, code-owner review, no force-push or deletion; Admin bypass) and `restrict-branch-pushes`; fork-PR Actions need approval; secret scanning, push protection and Dependabot alerts on.
 

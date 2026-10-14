@@ -69,7 +69,7 @@ S10–S12 run in the batch with their passwords supplied through a password map.
 
 <a id="tst-r14"></a>**TST-R14**: **Character accuracy** shall be `1 − CER`. CER is the Levenshtein edit distance between the recognised text and the ground truth, divided by the ground truth's length, after both are normalised the same way: Unicode NFC, ligatures expanded, every run of whitespace collapsed to one space, and furniture (headers, footers, page numbers) removed from the ground truth.
 
-<a id="tst-r15"></a>**TST-R15**: Accuracy shall be measured on the synthetic scanned fixtures, page by page, comparing the text pdf2epub puts in the EPUB for that page with the page's ground truth. Pages that fell back to a page image are scored on their hidden searchable text and also counted separately. The bar is ≥ 98% on the clean set and ≥ 95% on the degraded set ([main](main.md) AC (g)); the thresholds may be tuned once the fixtures exist, by a spec change.
+<a id="tst-r15"></a>**TST-R15**: Accuracy shall be measured on the synthetic scanned fixtures, page by page, comparing the text pdf2epub puts in the EPUB for that page with the page's ground truth. Pages that fell back to a page image with hidden searchable text are scored on that text and also counted separately. Fallback pages with no hidden text ([OCR-R31](ocr.md#ocr-r31)) are not scored; they are counted and reported as a third figure. The bar is ≥ 98% on the clean set and ≥ 95% on the degraded set ([main](main.md) AC (g)); the thresholds may be tuned once the fixtures exist, by a spec change.
 
 <a id="tst-r16"></a>**TST-R16**: The accuracy measurement shall be a test marked `tesseract`, so it runs in the CI coverage job, and its per-fixture scores shall be printed in the test output.
 
@@ -93,7 +93,7 @@ S10–S12 run in the batch with their passwords supplied through a password map.
 
 <a id="tst-ac5"></a>**TST-AC5** (covers [TST-R9](#tst-r9), [TST-R12](#tst-r12)): **Given** `tests/corpus/smoke.toml`, **when** it is parsed, **then** it has exactly the 15 entries S1–S15, each with `id`, `url` (or `derived`), `sha256` (or `derived`), `license` and `expect`, and the hashes match the table in TST-R12.
 
-<a id="tst-ac6"></a>**TST-AC6** (covers [TST-R10](#tst-r10)): **Given** a local HTTP server serving two manifest files, one of which has changed since it was pinned, and a third URL that refuses connections, **when** `scripts/smoke.py` runs, **then** the matching file is cached and converted, the changed file is reported as "upstream file changed" and skipped, the unreachable file is reported and skipped, and a second run downloads nothing.
+<a id="tst-ac6"></a>**TST-AC6** (covers [TST-R10](#tst-r10)): **Given** a loopback HTTP server (bound to 127.0.0.1 and started by the test itself) serving two manifest files, one of which has changed since it was pinned, and a third URL that refuses connections, **when** `scripts/smoke.py` runs, **then** the matching file is cached and converted, the changed file is reported as "upstream file changed" and skipped, the unreachable file is reported and skipped, and a second run downloads nothing.
 
 <a id="tst-ac7"></a>**TST-AC7** (covers [TST-R11](#tst-r11)): **Given** the CI workflow definitions, **when** they are inspected, **then** the smoke workflow is triggered only by `workflow_dispatch`, and it is not listed among the checks the PR workflow runs.
 

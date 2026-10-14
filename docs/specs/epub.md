@@ -56,7 +56,7 @@ The `<html>` element carries `lang` and `xml:lang` set to the book language.
 
 <a id="epub-r9"></a>**EPUB-R9**: A `PageImage` block shall be rendered as a full-width `<figure>` holding:
 - the page image, with `alt` text `Page <label>`;
-- a visually hidden element containing the page's searchable text, so the text can still be searched and read aloud while only the image shows.
+- when the `PageImage` has searchable text, a visually hidden element containing it, so the text can still be searched and read aloud while only the image shows. When it has none ([ocr](ocr.md#ocr-r31)), the element is omitted.
 
 <a id="epub-r10"></a>**EPUB-R10**: One default stylesheet shall be linked from every content document. It uses only relative units (`em`, `%`), sets no font families and no text or background colours, and so leaves reader settings (font, size, night mode) in control. It also styles full-width figures and visually hidden text.
 
@@ -87,7 +87,7 @@ With no cover, neither is present.
 
 ## 6. Deterministic output
 
-<a id="epub-r15"></a>**EPUB-R15**: Converting the same source PDF bytes, under the same file name (it can supply title and author, [reflow](reflow.md)), with the same options and the same pdf2epub version shall produce a byte-identical EPUB. To achieve this:
+<a id="epub-r15"></a>**EPUB-R15**: Within one environment (the same platform, the same versions of pdf2epub and its dependencies, and the same Tesseract and language data), converting the same source PDF bytes, under the same file name (it can supply title and author, [reflow](reflow.md)), with the same options, shall produce a byte-identical EPUB. To achieve this:
 - zip entries are in a fixed, sorted order (with `mimetype` first);
 - every entry has the timestamp `1980-01-01 00:00:00`;
 - the compression level is fixed;
@@ -118,7 +118,7 @@ A failed check is a bug: the conversion fails with [`internal_error`](api.md#cod
 
 <a id="epub-ac3"></a>**EPUB-AC3** (covers [EPUB-R3](#epub-r3)): **Given** the AES-256 user-password fixture, converted with the correct password from `PDF2EPUB_PASSWORD`, and the owner-restricted fixture, converted with its owner password, **when** each EPUB is read back, **then**:
 - neither has `META-INF/encryption.xml` or `rights.xml`;
-- no entry contains the password string, the words `env` or `owner password`, or the PDF's `/P` value;
+- no file that pdf2epub generates (the OPF, `nav.xhtml`, `toc.ncx`, `META-INF/container.xml` and every element and attribute it adds to chapter files) contains the password string, the password source label, or the PDF's `/P` value. Book text copied from the PDF is not checked;
 - the OPF contains no OCR engine name.
 
 <a id="epub-ac4"></a>**EPUB-AC4** (covers [EPUB-R5](#epub-r5), [EPUB-R6](#epub-r6)): **Given** the novel fixture with a 10-chapter outline and page labels `1`–`40`, **when** it is converted, **then**:

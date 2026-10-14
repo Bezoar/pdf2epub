@@ -85,7 +85,7 @@ Expected values come from the spec (exact issue codes, exit codes, event fields)
 
   `PasswordProvider` tests live with the API tests that drive them.
 - Tests that need the real Tesseract binary must be marked `@pytest.mark.tesseract`. Locally they skip with a visible reason when Tesseract is missing. In the CI coverage job a skipped `tesseract` test fails the job.
-- Tests must not use the network. Real-world smoke-set files are never used by the regular suite; they run only in the manual smoke workflow ([testing spec](../specs/testing.md)).
+- Tests must not reach any external network. A loopback server bound to 127.0.0.1 and started by the test itself is allowed (for example, to exercise the smoke-set downloader). Real-world smoke-set files are never used by the regular suite; they run only in the manual smoke workflow ([testing spec](../specs/testing.md)).
 - Fixtures are generated deterministically. The first ticket that needs a fixture creates it; later tickets reuse it without changing what it means (see the plan's fixture table).
 
 ## 7. Writing code

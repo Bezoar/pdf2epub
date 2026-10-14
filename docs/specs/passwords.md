@@ -42,7 +42,7 @@ The `/Encrypt` dictionary is never itself encrypted, so detection needs no passw
 2. Non-Standard handler or DRM wrapper → [`drm_protected`](api.md#code-drm_protected) (PWD-R2, PWD-R3).
 3. Unsupported Standard configuration → [`unsupported_encryption`](api.md#code-unsupported_encryption) (PWD-R4).
 4. Try the **empty password**. This is always tried first and doesn't count towards the cap in [PWD-R13](#pwd-r13).
-5. If the empty password doesn't open the file, try the candidate passwords in the trial order of [PWD-R12](#pwd-r12), stopping at the first that opens it.
+5. If the empty password doesn't open the file, try the candidate passwords in the trial order of [PWD-R12](#pwd-r12), stopping at the first that opens it. If the file opens with copy/extract forbidden (by the empty password or a candidate), don't stop there: the remaining candidates are tried as the owner password, as [PWD-R11](#pwd-r11) says.
 6. If the file is now open, apply the restriction rules in [§4](#4-permission-restrictions).
 
 <a id="pwd-r7"></a>**PWD-R7**: If no candidate opens the file, the conversion fails with an error issue:
@@ -163,7 +163,7 @@ Candidate values are carried only as [`Secret`](api.md), which is enforced by ty
 
 ## 8. Output
 
-<a id="pwd-r27"></a>**PWD-R27**: The EPUB shall always be written unencrypted. It shall contain no password, no password source and no PDF permission flags, in its metadata or anywhere else. Protecting the output is the user's responsibility, and the README says so ([main](main.md)).
+<a id="pwd-r27"></a>**PWD-R27**: The EPUB shall always be written unencrypted. Nothing pdf2epub adds to it (package metadata, navigation, container files, and the elements and attributes it generates) shall contain a password, a password source or the PDF's permission flags. Book text copied from the PDF is reproduced as it is, even if it happens to contain such strings. Protecting the output is the user's responsibility, and the README says so ([main](main.md)).
 
 ## 9. Issue messages
 

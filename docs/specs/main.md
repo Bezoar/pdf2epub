@@ -32,7 +32,7 @@ The hard problem is not writing EPUB files. It is recovering structure (paragrap
 
 <a id="main-r7"></a>**MAIN-R7**: pdf2epub shall never act as a password guesser. At most 25 candidate passwords are tried per file, and every candidate comes from a source the user named. Exceeding the cap is a usage error ([passwords](passwords.md)).
 
-<a id="main-r8"></a>**MAIN-R8**: The phrase "DRM removal" shall not be used anywhere in the code, documentation, help text or issue messages, except in the negative ("does not remove DRM"). The `--help` text ([cli](cli.md)) and the README shall each state plainly: "Opens password-protected PDFs only with a password you supply. Honours permission restrictions. Does not remove DRM."
+<a id="main-r8"></a>**MAIN-R8**: The phrase "DRM removal" shall not be used in the code, help text, issue messages, README or user documentation, except in the negative ("does not remove DRM"). The only places that may quote it are the rules that forbid it (this requirement and its AC) and archived history under `docs/archive/`. The `--help` text ([cli](cli.md)) and the README shall each state plainly: "Opens password-protected PDFs only with a password you supply. Honours permission restrictions. Does not remove DRM."
 
 <a id="main-r9"></a>**MAIN-R9**: The README shall contain a **Legal scope** section stating MAIN-R3 to MAIN-R7 in plain language. It shall also note that the EPUB is written unencrypted, and that protecting it is the user's responsibility.
 
@@ -55,7 +55,7 @@ Carried over from the archived spec, whose use-case table remains correct.
 - **G1 Easy:** sensible defaults; zero configuration for typical books.
 - **G2 Reflowable output:** headings, paragraphs, bold and italic (born-digital only), images, and a working table of contents. Text reflows on any screen.
 - **G3 Valid output:** every EPUB passes epubcheck with zero errors ([MAIN-R1](#main-r1)).
-- **G4 Graceful degradation:** a page that can't be reflowed faithfully (tables, math, heavy graphics, multi-column, OCR that isn't good enough) becomes a **page-image fallback**, never garbage. Columns are never interleaved.
+- **G4 Graceful degradation:** a page that can't be reflowed faithfully (tables, math, heavy graphics, multi-column, OCR that isn't good enough) becomes a **page-image fallback**, never garbage. Columns are never interleaved. The one user-chosen exception is `mode = "reflow"`, which keeps complex pages as reflowed text ([RFL-R14](reflow.md#rfl-r14)); it never affects multi-column or OCR fallbacks.
 - **G5 Scanned books:** OCR is a core feature, using Tesseract behind an OCR-engine interface ([ocr](ocr.md)).
 - **G6 Batch-friendly:** a batch never stops because one conversion fails. It ends with a batch report and meaningful exit codes ([batch](batch.md)).
 - **G7 Local and private:** [MAIN-R2](#main-r2).
@@ -174,7 +174,7 @@ Requirements MAIN-R1 to MAIN-R19 are covered by these ACs or by the satellite AC
 | MAIN-R1 | (a), [epub](epub.md) ACs |
 | MAIN-R2 | <a id="main-ac1"></a>**MAIN-AC1**: **Given** the test suite runs with outbound network blocked (pytest-socket or equivalent), **when** every AC test runs, **then** none fails because of a blocked connection. |
 | MAIN-R3–R7 | (c), (d), [passwords](passwords.md) ACs |
-| MAIN-R8 | <a id="main-ac2"></a>**MAIN-AC2**: **Given** the repository, **when** CI greps the source tree, help output and README (excluding `docs/` history and this sentence's own spec), **then** the phrase "DRM removal" does not occur, and `pdf2epub --help` contains the three-sentence legal statement verbatim. |
+| MAIN-R8 | <a id="main-ac2"></a>**MAIN-AC2**: **Given** the repository, **when** CI greps the source tree, `docs/` (except `docs/archive/` and the MAIN-R8 and MAIN-AC2 sentences themselves), the help output and the README, **then** the phrase "DRM removal" does not occur, and `pdf2epub --help` contains the three-sentence legal statement verbatim. |
 | MAIN-R9 | <a id="main-ac6"></a>**MAIN-AC6**: **Given** the README, **when** it is inspected, **then** it has a section titled "Legal scope" that states: pdf2epub never circumvents DRM or copy controls; it opens only Standard-handler PDFs with a password the user supplies; DRM-protected files are refused; permission restrictions are honoured, with `restricted` lifted only by the owner password; at most 25 candidate passwords are tried per file; and the EPUB is written unencrypted, so protecting it is the user's responsibility. |
 | MAIN-R10, R11 | <a id="main-ac4"></a>**MAIN-AC4**: **Given** the PR workflow definition, **when** it is inspected, **then** its test matrix includes Python 3.12, 3.13 and 3.14 on macOS (Apple Silicon) and on Linux x86-64 and arm64, it runs on every pull request, and the package metadata declares `requires-python = ">=3.12"`. |
 | MAIN-R12–R14 | <a id="main-ac3"></a>**MAIN-AC3**: **Given** the built wheel and sdist, **when** their metadata is inspected, **then** the licence is `MIT`, `LICENSE` is included, and no runtime dependency has a licence outside MAIN-R13's list; **and** the pdf2epub wheel contains no PDFium binary, while the installed pypdfium2 distribution (which does bundle PDFium) contains PDFium's third-party notice files, so MAIN-R14 is met for v1. |
@@ -184,5 +184,4 @@ Requirements MAIN-R1 to MAIN-R19 are covered by these ACs or by the satellite AC
 
 ## Open points
 
-- MAIN-AC2's grep excludes this spec and other `docs/` files, which must mention the phrase to forbid it. The exact exclusion list is fixed in ticket 0.
 - The pages-per-second and memory targets in §6.5 come from the archived spec. They stay informative until a metrics corpus exists (roadmap).
