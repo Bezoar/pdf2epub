@@ -89,18 +89,24 @@ def build_document(
 
 
 MULTI_COLUMN, COMPLEX = "multi_column", "complex"
+OCR_TIMEOUT, OCR_FAILED = "ocr_timeout", "ocr_failed"
+# In the order their page_fallback issues are reported.
 _FALLBACK_MESSAGES = {
-    MULTI_COLUMN: "Pages set in more than one column were embedded as page images, "
-    "with their text kept searchable column by column.",
     COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
     "images, with their text kept searchable.",
+    MULTI_COLUMN: "Pages set in more than one column were embedded as page images, "
+    "with their text kept searchable column by column.",
+    OCR_TIMEOUT: "OCR ran out of time on these pages, so they were embedded as page images.",
+    OCR_FAILED: "The OCR engine failed on these pages, so they were embedded as page images.",
 }
 
 
 def fallback_reason(page: PageText, options: ConversionOptions) -> str | None:
     """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
     interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
-    (RFL-R14)."""
+    (RFL-R14). A page OCR gave up on keeps the reason OCR gave (OCR-R22, OCR-R23)."""
+    if page.fallback is not None:
+        return page.fallback
     if page.columns > 1:
         return MULTI_COLUMN
     if options.mode == "auto" and is_complex(page):
@@ -117,7 +123,7 @@ def _fallback_issues(reasons: dict[int, str]) -> list[Issue]:
             pages=sorted(page for page, why in reasons.items() if why == reason),
             reason=reason,
         )
-        for reason in (COMPLEX, MULTI_COLUMN)
+        for reason in _FALLBACK_MESSAGES
         if reason in reasons.values()
     ]
 

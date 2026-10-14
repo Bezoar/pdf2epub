@@ -24,7 +24,7 @@ from pdf2epub.batch import EXIT_INTERRUPTED, InputSpec, plan_batch, read_files_f
 from pdf2epub.cancel import CancelToken
 from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, encode_event
-from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
+from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions, OcrOptions
 from pdf2epub.passwords import PasswordSources, Secret, SourcePasswordProvider
 from pdf2epub.version import TOOL_VERSION
 
@@ -97,6 +97,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=argparse.SUPPRESS,
         help="exit with code 1 when any conversion has a warning (EPUBs are still written)",
+    )
+    ocr = parser.add_argument_group("OCR")
+    ocr.add_argument(
+        "--tesseract",
+        metavar="PATH",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="the tesseract program to OCR scanned pages with (default: tesseract on PATH)",
     )
     passwords = parser.add_argument_group(
         "passwords",
@@ -172,6 +180,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         name: getattr(args, name) for name in ("overwrite", "timeout", "strict") if name in args
     }
 
+    ocr_fields: dict[str, Any] = {"tesseract_path": args.tesseract} if "tesseract" in args else {}
+    conversion = ConversionOptions(ocr=OcrOptions(**ocr_fields))
+
     discovery_fields: dict[str, Any] = {
         name: getattr(args, name) for name in ("recursive", "output") if name in args
     }
@@ -195,7 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 report = run_batch(
                     plan,
                     BatchOptions(**batch_fields),
-                    ConversionOptions(),
+                    conversion,
                     Tee(writer, final),
                     cancel=cancel,
                     passwords=provider,
@@ -216,7 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     report = run_batch(
                         plan,
                         BatchOptions(**batch_fields),
-                        ConversionOptions(),
+                        conversion,
                         Tee(reporter, final),
                         cancel=cancel,
                         passwords=provider,

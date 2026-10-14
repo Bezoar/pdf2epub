@@ -162,6 +162,8 @@ class PageText:
     graphics: Graphics = field(default_factory=Graphics)
     ocr: bool = False
     """The lines were recognised by OCR, not read from the text layer."""
+    fallback: str | None = None
+    """Why OCR made the page a page image (``ocr_timeout``, ``ocr_failed``), or None."""
 
 
 def normalise(text: str) -> str:

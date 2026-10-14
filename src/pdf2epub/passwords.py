@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 SourceLabel = str
 
+PASSWORD_VARIABLES = ("PDF2EPUB_PASSWORD",)
+"""The password environment variables, removed from every child process's environment:
+conversion workers and the OCR engine (PWD-R25)."""
+
 
 class Secret:
     """Wraps one password value. It is reachable only through ``reveal()``; ``str`` and

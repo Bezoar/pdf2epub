@@ -11,13 +11,16 @@ with a later ticket). Recognised lines replace the page's text layer, and the sc
 were read from stops being a book image. OCR'd text is one column for OCR, but a page whose
 words fall in several columns is still found and kept in column order (RFL-R11, RFL-R15).
 A result with no words leaves the page as it was: its text layer, if any, is kept
-(OCR-R31), and a page without one contributes no text (OCR-R17).
+(OCR-R31), and a page without one contributes no text (OCR-R17). An attempt stopped at the
+page's budget, or one the engine failed, makes the page a page image with reason
+``ocr_timeout`` or ``ocr_failed``, and lists it in an issue of that code (OCR-R22,
+OCR-R23).
 """
 
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from statistics import median
 from typing import Any, Literal, Protocol
@@ -27,11 +30,20 @@ import numpy as np
 import pypdfium2 as pdfium
 from PIL import Image
 
+from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.ocr import engine as ocr_engine
-from pdf2epub.ocr.engine import Attempt, OcrEngine, OcrLine, OcrPageResult, OcrRequest
+from pdf2epub.ocr.engine import (
+    Attempt,
+    EngineFailed,
+    EngineTimeout,
+    OcrEngine,
+    OcrLine,
+    OcrPageResult,
+    OcrRequest,
+)
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Secret
-from pdf2epub.reflow.build import fallback_reason
+from pdf2epub.reflow.build import OCR_FAILED, OCR_TIMEOUT, fallback_reason
 from pdf2epub.reflow.columns import Gutter, Piece, column_of, find_gutters, split
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.images import PlacedImage
@@ -57,6 +69,12 @@ DEFAULT_LANGUAGES = "eng"
 # are body lines, of one size; only lines clearly taller stand out (RFL-R21).
 _SAME_HEIGHT = 0.2
 _PDF_DPI = 72.0
+_FAILURE_MESSAGES = {
+    OCR_TIMEOUT: "OCR on these pages ran past the per-page time budget; they fell back to "
+    "page images.",
+    OCR_FAILED: "The OCR engine crashed or exited with an error on these pages; they fell "
+    "back to page images.",
+}
 
 
 class Progress(Protocol):
@@ -67,11 +85,13 @@ class Progress(Protocol):
 
 @dataclass(frozen=True)
 class OcrOutcome:
-    """The pages after OCR: their text, their book images and the OCR summary."""
+    """The pages after OCR: their text, their book images, the OCR summary and the
+    issues OCR raised."""
 
     pages: list[PageText]
     images: dict[int, list[PlacedImage]]
     summary: OcrSummary | None
+    issues: list[Issue] = field(default_factory=list)
 
 
 def route(page: PageText, images: Sequence[PlacedImage], mode: str) -> Trigger | None:
@@ -121,6 +141,7 @@ def ocr_pages(
     }
     replaced: dict[int, PageText] = {}
     kept_images = dict(images)
+    failed: dict[str, list[int]] = {}
     document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
     try:
         for done, (page, trigger) in enumerate(routed, start=1):
@@ -133,16 +154,29 @@ def ocr_pages(
                 deadline=time.monotonic() + options.page_timeout,
                 engine_options=engine_options,
             )
-            result = _recognise(engine, request)
-            text = page_text(page, result, OCR_DPI)
-            if text is not None:
-                replaced[page.page] = text
-                # Only the scan the text was read from stops being a book image: the
-                # large image that routed the page, or one covering the whole page.
-                scan = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
-                kept_images[page.page] = [
-                    placed for placed in images.get(page.page, []) if _share(placed, page) < scan
-                ]
+            started = time.monotonic()
+            text: PageText | None
+            try:
+                result = attempt(engine, request)
+            except (EngineTimeout, EngineFailed) as error:
+                log.warning("OCR on page %d of %s: %s", page.page, path, error)
+                reason = OCR_TIMEOUT if isinstance(error, EngineTimeout) else OCR_FAILED
+                failed.setdefault(reason, []).append(page.page)
+                duration = round(time.monotonic() - started, 3)
+                result = OcrPageResult(lines=(), attempts=(Attempt("baseline", 0, 0, duration),))
+                text = replaced[page.page] = replace(page, fallback=reason)
+            else:
+                text = page_text(page, result, OCR_DPI)
+                if text is not None:
+                    replaced[page.page] = text
+                    # Only the scan the text was read from stops being a book image: the
+                    # large image that routed the page, or one covering the whole page.
+                    scan = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
+                    kept_images[page.page] = [
+                        placed
+                        for placed in images.get(page.page, [])
+                        if _share(placed, page) < scan
+                    ]
             progress(
                 "ocr",
                 done,
@@ -164,7 +198,12 @@ def ocr_pages(
         quality=options.quality,
     )
     pages = [replaced.get(page.page, page) for page in pages]
-    return OcrOutcome(pages, {k: v for k, v in kept_images.items() if v}, summary)
+    issues = [
+        Issue(IssueCode(reason), _FAILURE_MESSAGES[reason], pages=failed[reason])
+        for reason in (OCR_TIMEOUT, OCR_FAILED)
+        if reason in failed
+    ]
+    return OcrOutcome(pages, {k: v for k, v in kept_images.items() if v}, summary, issues)
 
 
 def _render(document: pdfium.PdfDocument, number: int) -> Image.Image:
@@ -189,8 +228,9 @@ def _render(document: pdfium.PdfDocument, number: int) -> Image.Image:
         page.close()
 
 
-def _recognise(engine: OcrEngine, request: OcrRequest) -> OcrPageResult:
-    """One attempt, scored and recorded."""
+def attempt(engine: OcrEngine, request: OcrRequest) -> OcrPageResult:
+    """One attempt, scored and recorded. ``EngineTimeout`` and ``EngineFailed`` pass
+    through."""
     started = time.monotonic()
     result = engine.recognise(request)
     duration = time.monotonic() - started

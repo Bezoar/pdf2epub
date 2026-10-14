@@ -26,7 +26,7 @@ from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, Reporter
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
-from pdf2epub.passwords import Candidate
+from pdf2epub.passwords import PASSWORD_VARIABLES, Candidate
 from pdf2epub.results import ConversionResult
 
 log = logging.getLogger(__name__)
@@ -35,9 +35,6 @@ log = logging.getLogger(__name__)
 GRACE = 5.0
 # How often the parent looks at the cancel token and the clock while it waits.
 POLL_INTERVAL = 0.05
-
-# BAT-R22: never handed to a worker; candidate passwords travel over its pipe.
-PASSWORD_VARIABLE = "PDF2EPUB_PASSWORD"
 
 
 class _Stopped(Exception):
@@ -58,7 +55,8 @@ def run_in_worker(
     ``candidates`` reach the worker only in its request, over its stdin pipe (BAT-R22)."""
     started = time.monotonic()
     deadline = started + timeout
-    env = {name: value for name, value in os.environ.items() if name != PASSWORD_VARIABLE}
+    # BAT-R22: password variables are never handed to a worker; candidates go over its pipe.
+    env = {name: value for name, value in os.environ.items() if name not in PASSWORD_VARIABLES}
     request = {
         "planned": planned,
         "options": options,
