@@ -1,20 +1,21 @@
 """Which pages are OCR'd (OCR-R1, OCR-R2, OCR-R4), running the engine on them, and turning
-what it recognised into page text (OCR-R13, OCR-R16, OCR-R17, OCR-R28, OCR-R29, OCR-R31).
+what it recognised into page text (OCR-R10, OCR-R13, OCR-R17, OCR-R28, OCR-R29, OCR-R31).
 
 Under ``mode = "auto"`` a page with almost no text layer and a large image (a scan) is
 OCR'd directly; a page with no text and no significant image is blank and left alone;
 every other page keeps its text layer (the text-layer quality check comes with a later
 ticket). Under ``always`` every page that isn't blank is OCR'd; under ``never`` none is.
 
-Each OCR'd page is rendered at ``OCR_DPI`` and recognised once (the retry ladder comes
-with a later ticket). Recognised lines replace the page's text layer, and the scan they
-were read from stops being a book image. OCR'd text is one column for OCR, but a page whose
-words fall in several columns is still found and kept in column order (RFL-R11, RFL-R15).
-A result with no words leaves the page as it was: its text layer, if any, is kept
-(OCR-R31), and a page without one contributes no text (OCR-R17). An attempt stopped at the
-page's budget, or one the engine failed, makes the page a page image with reason
-``ocr_timeout`` or ``ocr_failed``, and lists it in an issue of that code (OCR-R22,
-OCR-R23).
+Each OCR'd page is rendered at ``OCR_DPI``, cleaned and recognised through the retry
+ladder (``ocr.ladder``). The lines of an accepted attempt replace the page's text layer,
+and the scan they were read from stops being a book image. OCR'd text is one column for
+OCR, but a page whose words fall in several columns is still found and kept in column
+order (RFL-R11, RFL-R15). When every attempt read nothing the page is left as it was: its
+text layer, if any, is kept (OCR-R31), and a page without one contributes no text
+(OCR-R17). Otherwise a page with no accepted attempt becomes a page image with reason
+``ocr_low_confidence``, ``ocr_timeout`` or ``ocr_failed`` (OCR-R20, OCR-R22, OCR-R23),
+its hidden text the better of the best attempt and its own text layer (OCR-R10); timed-out
+and failed pages are also listed in an issue of that code.
 """
 
 import logging
@@ -25,25 +26,20 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Literal, Protocol
 
-import cv2
-import numpy as np
 import pypdfium2 as pdfium
 from PIL import Image
 
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.ocr import engine as ocr_engine
-from pdf2epub.ocr.engine import (
-    Attempt,
-    EngineFailed,
-    EngineTimeout,
-    OcrEngine,
-    OcrLine,
-    OcrPageResult,
-    OcrRequest,
-)
+from pdf2epub.ocr import ladder
+from pdf2epub.ocr.cleanup import Frame
+from pdf2epub.ocr.engine import OcrLine, OcrPageResult
+from pdf2epub.ocr.ladder import attempt as attempt
+from pdf2epub.ocr.ladder import coverage as coverage
+from pdf2epub.ocr.signals import garbage_ratio
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Secret
-from pdf2epub.reflow.build import OCR_FAILED, OCR_TIMEOUT, fallback_reason
+from pdf2epub.reflow.build import OCR_FAILED, OCR_LOW_CONFIDENCE, OCR_TIMEOUT, fallback_reason
 from pdf2epub.reflow.columns import Gutter, Piece, column_of, find_gutters, split
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.images import PlacedImage
@@ -142,33 +138,35 @@ def ocr_pages(
     replaced: dict[int, PageText] = {}
     kept_images = dict(images)
     failed: dict[str, list[int]] = {}
+    # Asked once, before any page's budget starts.
+    capabilities = engine.capabilities()
     document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
     try:
         for done, (page, trigger) in enumerate(routed, start=1):
             image = _render(document, page.page)
-            request = OcrRequest(
-                image=image,
-                dpi=OCR_DPI,
-                languages=languages,
-                layout_hint="PAGE",
-                deadline=time.monotonic() + options.page_timeout,
-                engine_options=engine_options,
+            deadline = time.monotonic() + options.page_timeout
+            recognition = ladder.recognise(
+                engine, image, OCR_DPI, options, languages, engine_options, deadline
             )
-            started = time.monotonic()
-            text: PageText | None
-            try:
-                result = attempt(engine, request)
-            except (EngineTimeout, EngineFailed) as error:
-                log.warning("OCR on page %d of %s: %s", page.page, path, error)
-                reason = OCR_TIMEOUT if isinstance(error, EngineTimeout) else OCR_FAILED
-                failed.setdefault(reason, []).append(page.page)
-                duration = round(time.monotonic() - started, 3)
-                result = OcrPageResult(lines=(), attempts=(Attempt("baseline", 0, 0, duration),))
-                text = replaced[page.page] = replace(page, fallback=reason)
+            result = recognition.result
+            read = page_text(page, result, OCR_DPI, recognition.frame)
+            text: PageText | None = None
+            if recognition.reason in (OCR_TIMEOUT, OCR_FAILED):
+                log.warning("OCR on page %d of %s: %s", page.page, path, recognition.reason)
+                failed.setdefault(recognition.reason, []).append(page.page)
+            if recognition.reason is None or (
+                recognition.reason == OCR_LOW_CONFIDENCE and read is None
+            ):
+                # Accepted; or every attempt read nothing, and the page keeps what it had
+                # (OCR-R17, OCR-R31).
+                text = read
             else:
-                text = page_text(page, result, OCR_DPI)
-                if text is not None:
-                    replaced[page.page] = text
+                # The page falls back, its hidden text the better of what OCR read and
+                # its own text layer (OCR-R10).
+                text = replace(_hidden_text(page, read), fallback=recognition.reason)
+            if text is not None:
+                replaced[page.page] = text
+                if text.ocr:
                     # Only the scan the text was read from stops being a book image: the
                     # large image that routed the page, or one covering the whole page.
                     scan = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
@@ -190,7 +188,6 @@ def ocr_pages(
             )
     finally:
         document.close()
-    capabilities = engine.capabilities()
     summary = OcrSummary(
         engine=capabilities.name,
         engine_version=capabilities.version,
@@ -228,38 +225,25 @@ def _render(document: pdfium.PdfDocument, number: int) -> Image.Image:
         page.close()
 
 
-def attempt(engine: OcrEngine, request: OcrRequest) -> OcrPageResult:
-    """One attempt, scored and recorded. ``EngineTimeout`` and ``EngineFailed`` pass
-    through."""
-    started = time.monotonic()
-    result = engine.recognise(request)
-    duration = time.monotonic() - started
-    covered = coverage(request.image, result)
-    attempt = Attempt("baseline", result.page_confidence, covered, round(duration, 3))
-    return replace(result, coverage=covered, attempts=(*result.attempts, attempt))
+def _hidden_text(page: PageText, read: PageText | None) -> PageText:
+    """Whichever of what OCR read and the page's own text layer scores better on the
+    text-layer signals (OCR-R7, OCR-R10); the layer when they score the same."""
+    if read is None:
+        return page
+    layer = " ".join(line.text for line in page.lines)
+    ocr = " ".join(line.text for line in read.lines)
+    if page.lines and garbage_ratio(layer) <= garbage_ratio(ocr):
+        return page
+    return read
 
 
-def coverage(image: Image.Image, result: OcrPageResult) -> float:
-    """The share of the image's ink (dark pixels after Otsu binarisation) inside the boxes
-    of the recognised words (OCR-R16); 1 for an image with no ink."""
-    grey = np.asarray(image.convert("L"), dtype=np.uint8)
-    _, binary = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ink = binary == 0
-    total = int(ink.sum())
-    if total == 0 or ink.all():
-        return 1.0 if total == 0 else 0.0
-    boxes = np.zeros_like(ink)
-    rows, columns = ink.shape
-    for word in result.words:
-        top, bottom = max(int(word.top), 0), min(int(np.ceil(word.bottom)), rows)
-        left, right = max(int(word.x0), 0), min(int(np.ceil(word.x1)), columns)
-        boxes[top:bottom, left:right] = True
-    return int((ink & boxes).sum()) / total
-
-
-def page_text(page: PageText, result: OcrPageResult, dpi: int) -> PageText | None:
+def page_text(
+    page: PageText, result: OcrPageResult, dpi: int, frame: Frame | None = None
+) -> PageText | None:
     """``page`` with the recognised lines as its text, or None if nothing was recognised.
-    Lines are in reading order, in column order on a page set in columns."""
+    Word boxes are in pixels of the cleaned image at ``dpi``, turned upright as ``frame``
+    says (by default, not turned). Lines are in reading order, in column
+    order on a page set in columns."""
     # Words whose text normalisation leaves nothing (control characters, say) count as
     # not recognised, so such a result keeps the page's own text (OCR-R31).
     recognised = [
@@ -270,6 +254,9 @@ def page_text(page: PageText, result: OcrPageResult, dpi: int) -> PageText | Non
     if not recognised:
         return None
     scale = _PDF_DPI / dpi
+    if frame is not None and frame.rotation in (90, 270):
+        # The page was turned a quarter: its lines run across what was its height.
+        page = replace(page, width=page.height, height=page.width)
     heights = [line.height for line in recognised]
     body = median(heights)
     pieces = [_piece(line, scale, _size(line.height, body) * scale) for line in recognised]

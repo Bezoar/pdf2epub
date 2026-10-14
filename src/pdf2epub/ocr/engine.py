@@ -15,7 +15,7 @@ page, never the conversion.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from PIL import Image
 
@@ -91,6 +91,8 @@ class Attempt:
     coverage: float
     duration: float
     """Seconds."""
+    completed: bool = True
+    """False if the engine failed or ran out of time on the attempt."""
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,17 @@ class OcrEngine(Protocol):
         raise NotImplementedError  # pragma: no cover
 
     def recognise(self, request: OcrRequest) -> OcrPageResult:
+        raise NotImplementedError  # pragma: no cover
+
+
+@runtime_checkable
+class DetectsOrientation(Protocol):
+    """An engine that can say which way up a page is (its ``Capabilities.osd``). The
+    pipeline uses it only to detect orientation, never to recognise text (OCR-R18)."""
+
+    def orientation(self, image: Image.Image, dpi: int, deadline: float) -> int:
+        """The clockwise degrees (0, 90, 180 or 270) that turn ``image`` upright; 0 when
+        the engine can't tell. ``EngineTimeout`` at ``deadline``."""
         raise NotImplementedError  # pragma: no cover
 
 

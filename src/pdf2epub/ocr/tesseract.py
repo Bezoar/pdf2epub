@@ -14,6 +14,7 @@ import contextlib
 import io
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -21,6 +22,8 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from PIL import Image
 
 from pdf2epub.ocr.engine import (
     Capabilities,
@@ -89,6 +92,21 @@ class Tesseract:
         for warning in warnings:
             log.debug("tesseract: %s", warning)
         return OcrPageResult(lines=parse_tsv(stdout), warnings=warnings)
+
+    def orientation(self, image: Image.Image, dpi: int, deadline: float) -> int:
+        """The clockwise turn that makes ``image`` upright, by Tesseract's orientation
+        detection (``--psm 0``); 0 when it can't tell (too little text, say)."""
+        data = io.BytesIO()
+        image.save(data, format="PNG", dpi=(dpi, dpi))
+        args = ["stdin", "stdout", "--dpi", str(dpi), "--psm", "0"]
+        try:
+            stdout, _ = self._run(args, data.getvalue(), deadline)
+        except EngineFailed as error:
+            log.debug("tesseract orientation: %s", error)
+            return 0
+        match = re.search(r"^Rotate:\s*(\d+)", stdout, re.MULTILINE)
+        rotate = int(match.group(1)) if match else 0
+        return rotate if rotate in (90, 180, 270) else 0
 
     def _probe(self, args: Sequence[str]) -> str:
         """The program's output for ``args``, or "" if it can't answer."""

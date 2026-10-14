@@ -136,6 +136,11 @@ def registry() -> list[Fixture]:
         Fixture(scans.TWO_COLUMN, scans.TWO_COLUMN_TRUTH, scans.build_two_column),
         Fixture(scans.IMAGE_ONLY, scans.IMAGE_ONLY_TRUTH, scans.build_image_only),
         Fixture(scans.BLANK_PAGE, scans.BLANK_PAGE_TRUTH, scans.build_blank_page),
+        Fixture(scans.NOISE, scans.NOISE_TRUTH, scans.build_noise),
+        Fixture(scans.SKEW, scans.SKEW_TRUTH, scans.build_skew),
+        Fixture(scans.ROTATED, scans.ROTATED_TRUTH, scans.build_rotated),
+        Fixture(scans.LOW_DPI, scans.LOW_DPI_TRUTH, scans.build_low_dpi),
+        Fixture(scans.EMPHASIS, scans.EMPHASIS_TRUTH, scans.build_emphasis),
     ]
 
 

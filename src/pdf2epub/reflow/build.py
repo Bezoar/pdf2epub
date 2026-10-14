@@ -90,12 +90,15 @@ def build_document(
 
 MULTI_COLUMN, COMPLEX = "multi_column", "complex"
 OCR_TIMEOUT, OCR_FAILED = "ocr_timeout", "ocr_failed"
+OCR_LOW_CONFIDENCE = "ocr_low_confidence"
 # In the order their page_fallback issues are reported.
 _FALLBACK_MESSAGES = {
     COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
     "images, with their text kept searchable.",
     MULTI_COLUMN: "Pages set in more than one column were embedded as page images, "
     "with their text kept searchable column by column.",
+    OCR_LOW_CONFIDENCE: "OCR could not read these pages with enough confidence, so they "
+    "were embedded as page images.",
     OCR_TIMEOUT: "OCR ran out of time on these pages, so they were embedded as page images.",
     OCR_FAILED: "The OCR engine failed on these pages, so they were embedded as page images.",
 }
@@ -104,7 +107,8 @@ _FALLBACK_MESSAGES = {
 def fallback_reason(page: PageText, options: ConversionOptions) -> str | None:
     """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
     interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
-    (RFL-R14). A page OCR gave up on keeps the reason OCR gave (OCR-R22, OCR-R23)."""
+    (RFL-R14). A page OCR gave up on keeps the reason OCR gave (OCR-R20, OCR-R22,
+    OCR-R23)."""
     if page.fallback is not None:
         return page.fallback
     if page.columns > 1:
