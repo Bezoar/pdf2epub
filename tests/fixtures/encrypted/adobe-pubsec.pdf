@@ -1,0 +1,37 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 432 648] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<<  /Length 91 >>
+stream
+BT /F1 12 Tf 54 600 Td (This synthetic page is refused before any password is tried.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Filter /Adobe.PubSec /SubFilter /adbe.pkcs7.s5 /V 4 /Length 128 >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000344 00000 n 
+0000000486 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R /Encrypt 6 0 R /ID [<73796e7468657469632d66697874757265> <73796e7468657469632d66697874757265>] >>
+startxref
+572
+%%EOF

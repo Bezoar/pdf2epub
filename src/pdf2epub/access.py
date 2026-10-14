@@ -8,6 +8,8 @@ with pypdf, which needs no password for it; candidates are tried with pypdf's
 
 import dataclasses
 import logging
+import re
+import zipfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -26,6 +28,7 @@ log = logging.getLogger(__name__)
 MISSING_PASSWORD_HINT = "supply the password for this file"
 DRM_PROTECTED_HINT = "open it in the vendor's reader; pdf2epub will not bypass DRM"
 RESTRICTED_HINT = "supply the owner password"
+UNSUPPORTED_ENCRYPTION_HINT = "this PDF's encryption is not supported"
 
 # /P bit 5 (value 16): copy or otherwise extract text and graphics.
 _EXTRACT = 16
@@ -57,46 +60,41 @@ class AccessDenied(Exception):
 
 
 def needs_password(path: Path) -> bool:
-    """True when ``path`` is encrypted with the Standard security handler, so candidate
-    passwords may apply to it. Any other file, an unreadable one included, never gets as
-    far as trying a password."""
-    try:
-        with _quiet_pypdf():
-            reader = pypdf.PdfReader(path)
-            return reader.is_encrypted and _filter(reader) == "/Standard"
-    except Exception:
-        log.debug("could not read the encryption of %s", path, exc_info=True)
-        return False
+    """True when ``path`` is encrypted with the Standard security handler in a
+    configuration pdf2epub can decrypt, so candidate passwords may apply to it. Any other
+    file, an unreadable or refused one included, never gets as far as trying a password
+    (PWD-R6)."""
+    with _quiet_pypdf():
+        try:
+            return _open_encrypted(path) is not None
+        except AccessDenied:
+            return False
+        except Exception:
+            log.debug("could not read the encryption of %s", path, exc_info=True)
+            return False
 
 
 def unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
     """Find how to open ``path``: as it is, with the empty password, or with the first of
     ``candidates`` (already in trial order) that opens it (PWD-R6). Raises
-    ``AccessDenied`` when none does (PWD-R7), or when the file forbids copying and
-    extracting its content and no candidate is its owner password (PWD-R10, PWD-R11)."""
+    ``AccessDenied`` when it is refused before any password is tried (PWD-R2 to PWD-R4),
+    when none opens it (PWD-R7), or when the file forbids copying and extracting its
+    content and no candidate is its owner password (PWD-R10, PWD-R11)."""
     with _quiet_pypdf():
         return _unlock(path, candidates)
 
 
 def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
     try:
-        reader = pypdf.PdfReader(path)
-        encrypted = reader.is_encrypted
+        reader = _open_encrypted(path)
+    except AccessDenied:
+        raise
     except Exception:
         # Not readable by pypdf: the PDF libraries that convert it report the damage.
         log.debug("could not read the encryption of %s", path, exc_info=True)
         return OPEN
-    if not encrypted:
+    if reader is None:
         return OPEN
-    if _filter(reader) != "/Standard":
-        # MAIN-R5, PWD-R2: never try a password against any other security handler.
-        raise AccessDenied(
-            Issue(
-                IssueCode.DRM_PROTECTED,
-                "The PDF is protected by a DRM security handler.",
-                hint=DRM_PROTECTED_HINT,
-            )
-        )
     candidates = distinct(candidates)
     matched = reader.decrypt("")
     access, remaining = OPEN, candidates
@@ -133,6 +131,93 @@ def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
     )
 
 
+def _open_encrypted(path: Path) -> pypdf.PdfReader | None:
+    """Steps 1 to 3 of PWD-R6: None when ``path`` is not encrypted; a reader ready to try
+    passwords on when it uses the Standard handler in a configuration pypdf can decrypt.
+    Raises ``AccessDenied`` with ``drm_protected`` for a DRM wrapper or any other
+    security handler (MAIN-R5, PWD-R2, PWD-R3), and with ``unsupported_encryption`` for a
+    Standard configuration pypdf can't decrypt (PWD-R4). No password, not even the empty
+    one, has been tried when it raises."""
+    if is_drm_wrapper(path):
+        raise AccessDenied(_drm_protected("The file is a DRM wrapper, not a PDF."))
+    encrypt = _encrypt_dictionary(path)
+    if encrypt is None:
+        return None
+    if encrypt.get("/Filter") != "/Standard":
+        # Never try a password against any other security handler.
+        raise AccessDenied(_drm_protected("The PDF is protected by a DRM security handler."))
+    revision = encrypt.get("/R")
+    if not isinstance(revision, int) or not _MIN_REVISION <= revision <= _MAX_REVISION:
+        raise AccessDenied(_unsupported(f"revision {revision}"))
+    try:
+        # pypdf reads the crypt filters as it opens the file, and refuses those it can't
+        # decrypt before it tries the empty password.
+        return pypdf.PdfReader(path)
+    except NotImplementedError as error:
+        raise AccessDenied(_unsupported(str(error))) from error
+
+
+# PWD-R1: the Standard security handler revisions pdf2epub decrypts.
+_MIN_REVISION, _MAX_REVISION = 2, 6
+
+
+class _StructureReader(pypdf.PdfReader):
+    """A pypdf reader that leaves the file's encryption alone. pypdf's own reader refuses
+    every handler but Standard, and tries the empty password, as it opens a file; the
+    handler must be classified before either (PWD-R6). The ``/Encrypt`` dictionary is
+    never itself encrypted, so it reads the same without decrypting anything."""
+
+    def _handle_encryption(self, password: str | bytes | None) -> None:
+        return None
+
+
+def _encrypt_dictionary(path: Path) -> DictionaryObject | None:
+    """The ``/Encrypt`` dictionary of ``path``; None when it is not encrypted. An
+    ``/Encrypt`` entry that isn't a dictionary names no handler, which is not Standard."""
+    reader = _StructureReader(path)
+    if not reader.is_encrypted:
+        return None
+    encrypt = reader.trailer["/Encrypt"].get_object()
+    return encrypt if isinstance(encrypt, DictionaryObject) else DictionaryObject()
+
+
+def _drm_protected(message: str) -> Issue:
+    return Issue(IssueCode.DRM_PROTECTED, message, hint=DRM_PROTECTED_HINT)
+
+
+def _unsupported(detail: str) -> Issue:
+    return Issue(
+        IssueCode.UNSUPPORTED_ENCRYPTION,
+        f"The PDF uses Standard-handler encryption that can't be decrypted ({detail}).",
+        hint=UNSUPPORTED_ENCRYPTION_HINT,
+    )
+
+
+# PWD-R3: a Readium LCP package is a ZIP archive holding this licence document.
+_LCP_LICENSE = "META-INF/license.lcpl"
+# PWD-R3: an Adobe .acsm file is an XML fulfilment token in the ADEPT namespace.
+_ACSM_ROOT = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?fulfillmentToken[\s/>]")
+_ADEPT_NAMESPACE = b"http://ns.adobe.com/adept"
+_ACSM_WINDOW = 4096
+
+
+def is_drm_wrapper(path: Path) -> bool:
+    """True when ``path`` is one of the DRM wrapper formats of PWD-R3: a Readium LCP
+    archive or an Adobe ``.acsm`` fulfilment token. Only the layout is looked at; nothing
+    in the wrapper is read beyond that."""
+    try:
+        with path.open("rb") as file:
+            head = file.read(_ACSM_WINDOW)
+        if head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
+            return bool(_ACSM_ROOT.search(head)) and _ADEPT_NAMESPACE in head
+        if not zipfile.is_zipfile(path):
+            return False
+        with zipfile.ZipFile(path) as archive:
+            return _LCP_LICENSE in archive.namelist()
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return False
+
+
 def _refuse_unopened(candidates: Sequence[Candidate]) -> NoReturn:
     """Raise the issue for a file no candidate opened (PWD-R7, PWD-R8)."""
     if not candidates:
@@ -159,12 +244,6 @@ def _extraction_permitted(reader: pypdf.PdfReader) -> bool:
     encrypt = reader.trailer["/Encrypt"].get_object()
     permissions = encrypt.get("/P") if isinstance(encrypt, DictionaryObject) else None
     return isinstance(permissions, int) and bool(int(permissions) & _EXTRACT)
-
-
-def _filter(reader: pypdf.PdfReader) -> object:
-    """The ``/Filter`` of the ``/Encrypt`` dictionary: the security handler's name."""
-    encrypt = reader.trailer["/Encrypt"].get_object()
-    return encrypt.get("/Filter") if isinstance(encrypt, DictionaryObject) else None
 
 
 @contextmanager

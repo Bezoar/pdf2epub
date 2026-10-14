@@ -35,6 +35,7 @@ def registry() -> list[Fixture]:
         blank,
         cjk,
         damaged,
+        drm,
         encrypted,
         headings,
         hostile,
@@ -98,6 +99,12 @@ def registry() -> list[Fixture]:
         Fixture(encrypted.AES256, encrypted.AES256_TRUTH, encrypted.build_aes256),
         Fixture(encrypted.AES128, encrypted.AES128_TRUTH, encrypted.build_aes128),
         Fixture(encrypted.RC4_128, encrypted.RC4_128_TRUTH, encrypted.build_rc4_128),
+        Fixture(drm.EBX_HANDLER, None, drm.build_ebx_handler),
+        Fixture(drm.ADOBE_PUBSEC, None, drm.build_adobe_pubsec),
+        Fixture(drm.FOPN_FOWEB, None, drm.build_fopn_foweb),
+        Fixture(drm.UNKNOWN_CRYPT_FILTER, None, drm.build_unknown_crypt_filter),
+        Fixture(drm.LCP, None, drm.build_lcp),
+        Fixture(drm.ACSM, None, drm.build_acsm),
     ]
 
 

@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-from pdf2epub.access import needs_password
+from pdf2epub.access import is_drm_wrapper, needs_password
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
 from pdf2epub.errors import UsageError
@@ -105,7 +105,7 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
         if key in seen:
             continue  # BAT-R5: planned once, at its first occurrence
         seen.add(key)
-        issues = _content_issues(source)
+        issues = _content_issues(source, explicit=folder is None)
         destination: Path | None = None
         if not any(issue.code is IssueCode.NOT_FOUND for issue in issues):
             destination = _destination(source, folder, options, single)
@@ -215,9 +215,11 @@ def _natural_key(path: Path, folder: Path) -> list[tuple[int, int | str]]:
     ]
 
 
-def _content_issues(source: Path) -> list[Issue]:
+def _content_issues(source: Path, explicit: bool) -> list[Issue]:
     """The planning-time issues of one file: ``not_found`` when it can't be read,
-    ``not_a_pdf`` when it fails the content check (BAT-R4)."""
+    ``not_a_pdf`` when it fails the content check (BAT-R4). An ``explicit`` file (named,
+    or listed in a files-from list) that is a DRM wrapper passes, so that its conversion
+    refuses it as ``drm_protected`` (PWD-R3)."""
     try:
         with source.open("rb") as file:
             head = file.read(MAGIC_WINDOW)
@@ -226,7 +228,7 @@ def _content_issues(source: Path) -> list[Issue]:
     except OSError as error:
         reason = error.strerror or str(error)
         return [Issue(IssueCode.NOT_FOUND, f"Cannot read {source}: {reason}.")]
-    if PDF_MAGIC not in head:
+    if PDF_MAGIC not in head and not (explicit and is_drm_wrapper(source)):
         return [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
     return []
 
