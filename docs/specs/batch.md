@@ -12,6 +12,8 @@ This spec owns the rules of a batch: how inputs become planned conversions, wher
 
 <a id="bat-r3"></a>**BAT-R3**: A folder input shall be scanned **one level deep** by default and through all subfolders when `DiscoveryOptions.recursive` is set. A scan shall select files whose name ends in `.pdf` in any letter case, skip hidden files and hidden folders (name starting with `.`), and not follow symbolic links to folders.
 
+<a id="bat-r26"></a>**BAT-R26**: A folder input that is itself a symbolic link to a folder shall be scanned as that folder: naming it is a choice to follow it. The no-follow rule of [BAT-R3](#bat-r3) applies to the links met during the scan.
+
 <a id="bat-r4"></a>**BAT-R4**: Every selected file shall be checked by **content**: it is a PDF only if the bytes `%PDF-` occur within its first 1024 bytes. An explicitly named file is checked whatever its extension. A path that does not exist or cannot be read shall get [`not_found`](api.md#code-not_found); a file that fails the content check shall get [`not_a_pdf`](api.md#code-not_a_pdf), except that an explicitly named DRM wrapper (a Readium LCP archive or an Adobe `.acsm` token, as defined in [PWD-R3](passwords.md#pwd-r3)) is passed on so that it is refused as [`drm_protected`](api.md#code-drm_protected). Both are decided at planning time.
 
 <a id="bat-r5"></a>**BAT-R5**: Inputs that resolve to the same file (after resolving symbolic links) shall be converted once, at the position of their first occurrence.
@@ -94,6 +96,8 @@ Fixture names refer to the fixtures in [testing](testing.md). Unless stated, run
 <a id="bat-ac1"></a>**BAT-AC1** (covers [BAT-R1](#bat-r1), [BAT-R2](#bat-r2)): **Given** positional inputs `[c.pdf, a.pdf]` and a files-from list on stdin containing `# comment`, a blank line, `  b.pdf  `, **when** the batch is planned, **then** the plan sources are, in order, `c.pdf`, `a.pdf`, `b.pdf` (absolute), and a literal input `*.pdf` that names no file gets `not_found`.
 
 <a id="bat-ac2"></a>**BAT-AC2** (covers [BAT-R3](#bat-r3)): **Given** a folder holding `one.PDF`, `.hidden.pdf`, `notes.txt`, a subfolder `sub/two.pdf`, and a symbolic link `link → other-folder/` holding `three.pdf`, **when** it is planned without `recursive`, **then** the plan holds only `one.PDF`; **and with** `recursive`, **then** it holds `one.PDF` and `sub/two.pdf`, never `.hidden.pdf` or `three.pdf`.
+
+<a id="bat-ac19"></a>**BAT-AC19** (covers [BAT-R26](#bat-r26)): **Given** a symbolic link `shelf → books/`, where `books/` holds `a.pdf` and a symbolic link `more → other/` holding `b.pdf`, **when** `shelf` is planned with `recursive`, **then** the plan holds only `shelf/a.pdf`.
 
 <a id="bat-ac3"></a>**BAT-AC3** (covers [BAT-R4](#bat-r4)): **Given** an explicitly named `book.dat` that is a valid PDF and an explicitly named `fake.pdf` holding plain text, **when** the batch runs, **then** `book.dat` converts to `book.epub` and `fake.pdf` fails with `not_a_pdf`, reported in a `conversion_finished` event before any `conversion_started`.
 

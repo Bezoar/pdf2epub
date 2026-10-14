@@ -5,9 +5,10 @@ provisional: it may change in any 0.x release. The stable contract for front end
 ``--json`` wire protocol of the ``pdf2epub`` command.
 """
 
-from pdf2epub.batch import BatchPlan, InputSpec, plan_batch, run_batch
+from pdf2epub.batch import BatchPlan, InputSpec, plan_batch, read_files_from, run_batch
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion
+from pdf2epub.errors import UsageError
 from pdf2epub.events import Event, EventSink
 from pdf2epub.issues import Issue, IssueCode, Outcome, Severity
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions, OcrOptions
@@ -39,7 +40,9 @@ __all__ = [
     "Secret",
     "Severity",
     "Totals",
+    "UsageError",
     "__version__",
     "plan_batch",
+    "read_files_from",
     "run_batch",
 ]

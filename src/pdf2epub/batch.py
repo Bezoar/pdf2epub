@@ -1,22 +1,27 @@
 """The batch entry points (API §2): ``plan_batch`` turns inputs into planned conversions,
 and ``run_batch`` runs them, emitting events to a sink and returning the batch report.
 
-So far a plan holds the explicitly named files, each mapped to ``<stem>.epub`` beside it
-or under ``DiscoveryOptions.output`` (BAT-R9, BAT-R10). Folder discovery and the
-planning-time issues (BAT-R1 to BAT-R6, BAT-R11, BAT-R12) arrive with input discovery.
+Planning expands folders, checks every file by content, drops duplicates and keeps input
+order (BAT-R1 to BAT-R6); each file maps to ``<stem>.epub`` beside it or under
+``DiscoveryOptions.output`` (BAT-R9, BAT-R10). A conversion whose fate is settled at
+planning time (``not_found``, ``not_a_pdf``) is reported right after ``batch_started``
+and never runs (API-R18).
 """
 
 import os
-from collections.abc import Sequence
+import re
+import sys
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from pdf2epub.cancel import CancelToken
 from pdf2epub.conversion import PlannedConversion, convert
+from pdf2epub.errors import UsageError
 from pdf2epub.events import Emitter, EventSink
-from pdf2epub.issues import Issue, IssueCode, Outcome, Severity
+from pdf2epub.issues import Issue, IssueCode, Outcome, Severity, derive_outcome
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
 from pdf2epub.passwords import PasswordProvider
 from pdf2epub.results import BatchReport, ConversionResult, Totals
@@ -42,22 +47,123 @@ class BatchPlan:
     named file."""
 
 
+# BAT-R4: a file is a PDF only if these bytes occur within its first 1024 bytes.
+PDF_MAGIC = b"%PDF-"
+MAGIC_WINDOW = 1024
+
+
+def read_files_from(source: str | os.PathLike[str], stdin: TextIO | None = None) -> list[InputSpec]:
+    """Read a files-from list (BAT-R2) from the file ``source``, or from ``stdin`` (default
+    ``sys.stdin``) when ``source`` is ``-``: one path per line, surrounding whitespace
+    trimmed, blank lines and ``#`` comments skipped. Globs are not expanded.
+
+    Raises ``UsageError`` when the list cannot be read (BAT-R25).
+    """
+    try:
+        if os.fspath(source) == "-":
+            text = (stdin or sys.stdin).read()
+        else:
+            text = Path(source).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        reason = getattr(error, "strerror", None) or error
+        raise UsageError(
+            f"cannot read the files-from list {os.fspath(source)}: {reason}"
+        ) from error
+    specs = []
+    for line in text.splitlines():
+        entry = line.strip()
+        if entry and not entry.startswith("#"):
+            specs.append(InputSpec(entry, from_list=True))
+    return specs
+
+
 def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchPlan:
-    """Plan the conversions for ``inputs`` without converting anything (API-R2)."""
+    """Plan the conversions for ``inputs`` without converting anything (API-R2).
+
+    Raises ``UsageError`` for a batch whose ``output`` is an existing regular file
+    (BAT-R25).
+    """
     # A path named on its own is a file to convert, even one that turns out not to exist;
     # only a folder or a files-from list makes a one-input run a batch (BAT-R7).
     single = len(inputs) == 1 and not inputs[0].from_list and not Path(inputs[0].path).is_dir()
+    if not single and options.output is not None and Path(options.output).is_file():
+        raise UsageError(
+            f"the output {os.fspath(options.output)} is an existing file; "
+            "a batch needs an output folder"
+        )
+
     conversions: list[PlannedConversion] = []
-    for index, spec in enumerate(inputs):
-        source = Path(os.path.abspath(spec.path))
+    seen: set[str] = set()
+    for source in _discover(inputs, options.recursive):
+        try:
+            key = os.path.realpath(source)
+        except ValueError:  # e.g. a NUL byte from a files-from list; reported not_found
+            key = str(source)
+        if key in seen:
+            continue  # BAT-R5: planned once, at its first occurrence
+        seen.add(key)
+        issues = _content_issues(source)
         conversions.append(
             PlannedConversion(
-                id=index,
+                id=len(conversions),
                 source=str(source),
-                destination=str(_destination(source, options, single)),
+                destination=(
+                    None
+                    if any(issue.code is IssueCode.NOT_FOUND for issue in issues)
+                    else str(_destination(source, options, single))
+                ),
+                issues=issues,
             )
         )
     return BatchPlan(conversions=conversions, single=single)
+
+
+def _discover(inputs: Sequence[InputSpec], recursive: bool) -> Iterator[Path]:
+    """Every candidate file, absolute, in input order (BAT-R1, BAT-R3, BAT-R6)."""
+    for spec in inputs:
+        path = Path(os.path.abspath(spec.path))
+        if path.is_dir():
+            yield from sorted(_scan(path, recursive), key=lambda p: _natural_key(p, path))
+        else:
+            yield path
+
+
+def _scan(folder: Path, recursive: bool) -> Iterator[Path]:
+    """The ``*.pdf`` files (any case) in ``folder``, skipping hidden names and never
+    following symbolic links to folders (BAT-R3)."""
+    for root, folders, files in os.walk(folder, followlinks=False):
+        folders[:] = [name for name in folders if recursive and not name.startswith(".")]
+        for name in files:
+            path = Path(root) / name
+            if not name.startswith(".") and name.lower().endswith(".pdf") and path.is_file():
+                yield path
+
+
+def _natural_key(path: Path, folder: Path) -> list[tuple[int, int | str]]:
+    """Natural sort order of ``path`` relative to ``folder`` (BAT-R6): case-insensitive,
+    runs of digits compared as numbers."""
+    relative = path.relative_to(folder).as_posix().casefold()
+    return [
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in re.split(r"(\d+)", relative)
+        if part
+    ]
+
+
+def _content_issues(source: Path) -> list[Issue]:
+    """The planning-time issues of one file: ``not_found`` when it can't be read,
+    ``not_a_pdf`` when it fails the content check (BAT-R4)."""
+    try:
+        with source.open("rb") as file:
+            head = file.read(MAGIC_WINDOW)
+    except ValueError:  # a path the OS cannot even name, e.g. one holding a NUL byte
+        return [Issue(IssueCode.NOT_FOUND, f"Cannot read {str(source)!r}: not a valid path.")]
+    except OSError as error:
+        reason = error.strerror or str(error)
+        return [Issue(IssueCode.NOT_FOUND, f"Cannot read {source}: {reason}.")]
+    if PDF_MAGIC not in head:
+        return [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
+    return []
 
 
 def _destination(source: Path, options: DiscoveryOptions, single: bool) -> Path:
@@ -108,8 +214,18 @@ def run_batch(
         ],
     )
 
+    # API-R18: conversions settled at planning time finish first, in plan order.
+    settled = {p.id: _settled(p) for p in plan.conversions if p.issues}
+    for result in settled.values():
+        for issue in result.issues:
+            emitter.emit("issue", id=result.id, issue=issue.to_dict())
+        emitter.emit("conversion_finished", **result.to_dict())
+
     results: list[ConversionResult] = []
     for planned in plan.conversions:
+        if planned.id in settled:
+            results.append(settled[planned.id])
+            continue
         if cancel is not None and cancel.cancelled:
             result = _not_attempted(planned)
         else:
@@ -137,12 +253,21 @@ def run_batch(
 
 def _not_attempted(planned: PlannedConversion) -> ConversionResult:
     issue = Issue(IssueCode.NOT_ATTEMPTED, "The batch was interrupted before this conversion.")
+    return _unrun(planned, [issue])
+
+
+def _settled(planned: PlannedConversion) -> ConversionResult:
+    """The result of a conversion settled by its planning issues; it never runs."""
+    return _unrun(planned, list(planned.issues))
+
+
+def _unrun(planned: PlannedConversion, issues: list[Issue]) -> ConversionResult:
     return ConversionResult(
         id=planned.id,
         source=planned.source,
         destination=planned.destination,
-        outcome=Outcome.SKIPPED,
-        issues=[issue],
+        outcome=derive_outcome(issues),
+        issues=issues,
         output=None,
         password_source=None,
         pages=None,
