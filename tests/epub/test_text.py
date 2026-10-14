@@ -241,7 +241,11 @@ def test_without_a_wordlist_only_the_soft_hyphen_word_is_joined(tmp_path: Path) 
 def test_japanese_lines_join_with_no_space_and_korean_lines_with_one(tmp_path: Path) -> None:
     _, epub = convert(CJK_LINES, tmp_path)
 
-    japanese, korean = read_book(epub).paragraphs
+    book = read_book(epub)
+    # Both are prose paragraphs, not line blocks (verse or code) whose lines stay apart:
+    # full-width CJK glyphs share one advance without the font being monospace.
+    assert 'class="lines' not in book.text
+    japanese, korean = book.paragraphs
     assert [japanese, korean] == ground_truth(CJK_LINES)
     # Line ends in the fixture (checked by hand): Japanese breaks inside words, Korean at
     # the spaces between words.
