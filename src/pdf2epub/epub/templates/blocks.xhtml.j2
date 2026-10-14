@@ -1,0 +1,24 @@
+{%- macro pagebreak(node) -%}
+<span epub:type="pagebreak" role="doc-pagebreak" id="{{ node.id }}" aria-label="{{ node.label }}"></span>
+{%- endmacro -%}
+{%- macro inlines(items) -%}
+{%- for node in items -%}
+{%- if node.kind == "pagebreak" -%}{{ pagebreak(node) }}
+{%- else -%}
+{%- if node.bold %}<b>{% endif %}{% if node.italic %}<i>{% endif -%}
+{{ node.text }}
+{%- if node.italic %}</i>{% endif %}{% if node.bold %}</b>{% endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endmacro -%}
+{%- macro block(node) -%}
+{%- if node.kind == "pagebreak" -%}
+  {{ pagebreak(node) }}
+{%- elif node.kind == "heading" -%}
+  <h{{ node.level }} id="{{ node.id }}">{{ inlines(node.inlines) }}</h{{ node.level }}>
+{%- elif node.kind == "figure" -%}
+  <figure><img src="{{ node.src }}" alt="{{ node.alt }}"/>{% if node.caption %}<figcaption>{{ node.caption }}</figcaption>{% endif %}</figure>
+{%- else -%}
+  <p>{{ inlines(node.inlines) }}</p>
+{%- endif -%}
+{%- endmacro -%}

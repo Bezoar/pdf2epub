@@ -1,7 +1,7 @@
 """The document model (RFL-R34): reflow's output and the EPUB writer's only input.
 
-It holds no PDF objects. Images, page images and the cover join the model with the
-tickets that produce them. ``page`` is always the 1-based PDF page index (unique within a
+It holds no PDF objects. Page images and the cover join the model with the tickets that
+produce them. ``page`` is always the 1-based PDF page index (unique within a
 book); ``label`` is the printed page label, for display only.
 """
 
@@ -41,7 +41,23 @@ class Paragraph:
     inlines: list[Inline]
 
 
-Block = Heading | Paragraph | PageBreak
+@dataclass(frozen=True)
+class ImageAsset:
+    """An image file for the book: its encoded bytes and media type."""
+
+    data: bytes
+    media_type: str
+
+
+@dataclass(frozen=True)
+class Image:
+    """A book image at its place in reading order (RFL-R26), with its caption, if any."""
+
+    asset: ImageAsset
+    caption: str | None = None
+
+
+Block = Heading | Paragraph | Image | PageBreak
 
 
 @dataclass(frozen=True)
@@ -77,3 +93,4 @@ class Document:
     metadata: Metadata
     chapters: list[Chapter]
     toc: list[TocEntry]
+    images: list[ImageAsset] = field(default_factory=list)

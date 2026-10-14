@@ -62,6 +62,10 @@ class TextBlock:
     def text(self) -> str:
         return " ".join(line.text for line in self.lines)
 
+    @property
+    def bold(self) -> bool:
+        return all(line.bold for line in self.lines)
+
 
 @dataclass(frozen=True)
 class DraftParagraph:
@@ -105,14 +109,18 @@ def group_blocks(lines: list[Line], typography: Typography) -> list[TextBlock]:
     return [TextBlock(group) for group in groups]
 
 
+def block_gap(typography: Typography, size: float) -> float:
+    """The widest gap between two lines of ``size`` that are still in one block."""
+    return max(_GAP_FACTOR * typography.line_gap, _GAP_MIN_EM * size)
+
+
 def _continues(above: Line, below: Line, typography: Typography) -> bool:
     size = max(above.size, below.size)
     if abs(above.size - below.size) > _SIZE_TOLERANCE * size:
         return False
     if below.top < above.bottom and (below.x0 > above.x1 or below.x1 < above.x0):
         return False  # side by side on the same row, as in two columns
-    limit = max(_GAP_FACTOR * typography.line_gap, _GAP_MIN_EM * size)
-    return below.top - above.bottom <= limit
+    return below.top - above.bottom <= block_gap(typography, size)
 
 
 def paragraphs(block: TextBlock, typography: Typography) -> list[DraftParagraph]:

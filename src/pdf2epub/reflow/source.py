@@ -1,10 +1,10 @@
 """Opening a source PDF: what the rest of the conversion needs from the file as a whole
-(RFL-R1: pypdfium2 for page labels and metadata, pdfminer.six for layout)."""
+(RFL-R1: pypdfium2 for page labels, the outline and metadata, pdfminer.six for layout)."""
 
 import ctypes
 import hashlib
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -20,6 +20,19 @@ class CorruptPdf(Exception):
 
 
 @dataclass(frozen=True)
+class OutlineEntry:
+    """One entry of the PDF outline (bookmarks), in outline order."""
+
+    level: int
+    """0 for a top-level entry, 1 for an entry nested in it, and so on."""
+    title: str
+    page: int | None
+    """The 1-based page it points to, or None when it doesn't resolve to a page."""
+    top: float | None
+    """Where on that page it points, measured from the top; None for the whole page."""
+
+
+@dataclass(frozen=True)
 class SourcePdf:
     """A source PDF, opened once and described without any PDF objects."""
 
@@ -32,6 +45,7 @@ class SourcePdf:
     """The Info dictionary's non-empty entries, e.g. ``Title``, ``Author``, ``ModDate``."""
     language: str | None
     """The catalog ``/Lang``, if any."""
+    outline: list[OutlineEntry] = field(default_factory=list)
 
     @property
     def page_count(self) -> int:
@@ -56,6 +70,7 @@ def open_source(path: Path) -> SourcePdf:
         labels = [document.get_page_label(i) or str(i + 1) for i in range(len(document))]
         info = {key: value for key, value in document.get_metadata_dict(skip_empty=True).items()}
         language = _catalog_language(document)
+        outline = _outline(document)
     finally:
         document.close()
     return SourcePdf(
@@ -64,7 +79,34 @@ def open_source(path: Path) -> SourcePdf:
         page_labels=labels,
         info=info,
         language=language,
+        outline=outline,
     )
+
+
+# The most outline entries read, and the deepest nesting followed: an outline is a tree
+# the file describes, so it is bounded like anything else in it.
+_MAX_OUTLINE, _MAX_OUTLINE_DEPTH = 10_000, 15
+# The XYZ view mode, whose second parameter is the top of the view (PDF 32000-1 12.3.2.2).
+_VIEW_XYZ = 1
+
+
+def _outline(document: pdfium.PdfDocument) -> list[OutlineEntry]:
+    entries: list[OutlineEntry] = []
+    for item in document.get_toc(max_depth=_MAX_OUTLINE_DEPTH):
+        if len(entries) == _MAX_OUTLINE:
+            break
+        page = top = None
+        destination = item.get_dest()
+        index = destination.get_index() if destination is not None else None
+        if index is not None and 0 <= index < len(document):
+            page = index + 1
+            mode, params = destination.get_view() if destination is not None else (0, [])
+            # pdfium reports a null (unchanged) top as 0, which no real view uses.
+            if mode == _VIEW_XYZ and len(params) >= 2 and params[1]:
+                top = max(document.get_page_size(index)[1] - float(params[1]), 0.0)
+        title = " ".join(item.get_title().split())
+        entries.append(OutlineEntry(item.level, title, page, top))
+    return entries
 
 
 # pdfium's load errors that mean the file itself is broken: all but the password and
