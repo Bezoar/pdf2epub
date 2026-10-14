@@ -60,7 +60,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="write JSON Lines events to stdout, not the report"
     )
     reporting.add_argument(
-        "-v", "--verbose", action="store_true", help="log at INFO level (to stderr)"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="list each success in the report; log at INFO level",
     )
     reporting.add_argument("--debug", action="store_true", help="log at DEBUG level (to stderr)")
     parser.add_argument("--version", action="version", version=f"pdf2epub {TOOL_VERSION}")
@@ -83,7 +86,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(writer, final)
         )
     else:
-        reporter = HumanReport(sys.stderr, single=plan.single)
+        reporter = HumanReport(sys.stderr, single=plan.single, verbose=args.verbose)
         report = run_batch(
             plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
         )
@@ -151,11 +154,12 @@ def write_report(event: Event, path: Path) -> None:
 class HumanReport:
     """An event sink that prints the human report to stderr when the batch finishes:
     one result line for a single conversion (CLI-R16); for a batch, the totals, the
-    failures and the condensed warnings (CLI-R15)."""
+    failures and the condensed warnings, plus, with ``verbose``, each success (CLI-R15)."""
 
-    def __init__(self, stream: TextIO, single: bool) -> None:
+    def __init__(self, stream: TextIO, single: bool, verbose: bool = False) -> None:
         self._stream = stream
         self._single = single
+        self._verbose = verbose
         self._finished: Event | None = None
 
     def __call__(self, event: Event) -> None:
@@ -186,6 +190,13 @@ class HumanReport:
                 warning = _warnings_line(conversion)
                 if conversion["outcome"] == "converted" and warning:
                     lines.append(warning)
+            if self._verbose:
+                for conversion in conversions:
+                    if conversion["outcome"] == "converted":
+                        lines.append(f"✓ {conversion['source']} → {conversion['output']}")
+                    elif conversion["outcome"] == "skipped":
+                        codes = ", ".join(issue["code"] for issue in conversion["issues"])
+                        lines.append(f"- {conversion['source']}: {codes}")
         for line in lines:
             print(line, file=self._stream)
 
