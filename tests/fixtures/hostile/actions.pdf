@@ -1,0 +1,56 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /OpenAction 5 0 R /Names << /JavaScript << /Names [(init) 6 0 R] >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 432 648] /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 7 0 R >> >> /Contents 8 0 R /Annots [9 0 R] /AA << /O 10 0 R >> >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /S /URI /URI (http://example.invalid/open-action) >>
+endobj
+6 0 obj
+<< /S /JavaScript /JS (app.launchURL\('http://example.invalid/document-js', true\);) >>
+endobj
+7 0 obj
+<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /F << /FS /URL /F (http://example.invalid/image.png) >> /Length 0 >>
+stream
+
+endstream
+endobj
+8 0 obj
+<<  /Length 115 >>
+stream
+BT /F1 12 Tf 54 600 Td (Nothing on this page may run or reach the network.) Tj ET q 100 0 0 100 54 400 cm /Im1 Do Q
+endstream
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Link /Rect [54 590 378 615] /Border [0 0 0] /A << /S /Launch /F (launched.sh) >> >>
+endobj
+10 0 obj
+<< /S /JavaScript /JS (app.launchURL\('http://example.invalid/page-js', true\);) >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000135 00000 n 
+0000000192 00000 n 
+0000000380 00000 n 
+0000000477 00000 n 
+0000000548 00000 n 
+0000000651 00000 n 
+0000000850 00000 n 
+0000001017 00000 n 
+0000001142 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+1242
+%%EOF

@@ -58,6 +58,9 @@ def test_every_text_based_fixture_has_ground_truth_beside_it(
     first, _ = generated
     for fixture in registry():
         assert fixture.path in first
+        if not fixture.text_based:
+            assert fixture.ground_truth is None, f"{fixture.path} has no text of its own"
+            continue
         assert fixture.ground_truth is not None, f"{fixture.path} has no ground truth"
         assert Path(fixture.ground_truth).parent == Path(fixture.path).parent
         assert first[fixture.ground_truth].decode("utf-8").strip()
