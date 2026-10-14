@@ -11,7 +11,10 @@ RFL-R19). Line blocks (verse, code) keep their lines and are never joined
 an inline where a paragraph runs on across the page boundary. The blocks are then split
 into chapters with a table of contents (``reflow.chapters``, RFL-R23, RFL-R24).
 
-Page images and the cover come with later tickets.
+Pages set in more than one column, and in ``mode = "auto"`` complex pages, are not
+reflowed: each becomes a page image with its text kept searchable (RFL-R11, RFL-R13,
+RFL-R15), reported as one ``page_fallback`` issue per reason (API-R11). The cover comes
+with a later ticket.
 """
 
 import re
@@ -23,7 +26,9 @@ from itertools import pairwise
 
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.chapters import Position, make_chapters
+from pdf2epub.reflow.complexity import is_complex
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.furniture import Furniture, PageBlocks, find_furniture
 from pdf2epub.reflow.headings import heading_levels
@@ -46,9 +51,11 @@ from pdf2epub.reflow.model import (
     LineBlock,
     Metadata,
     PageBreak,
+    PageImage,
     Paragraph,
     Text,
 )
+from pdf2epub.reflow.render import render_pages
 from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
@@ -70,11 +77,17 @@ def build_document(
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
     options: ConversionOptions,
+    password: Secret | None = None,
 ) -> tuple[Document, list[Issue]]:
     """The document model for ``source`` from its pages' text and images, and the issues
     found while building it."""
     metadata, issues = _metadata(source, options)
-    blocks, positions, furniture = _body(source, pages, images, wordlist(metadata.language))
+    reasons = {page.page: reason for page in pages if (reason := _fallback(page, options))}
+    page_images = _page_images(source, pages, reasons, password)
+    blocks, positions, furniture = _body(
+        source, pages, images, page_images, wordlist(metadata.language)
+    )
+    issues.extend(_fallback_issues(reasons))
     gaps = sequence_gaps(furniture.page_numbers)
     if gaps is not None:
         issues.append(gaps)
@@ -82,10 +95,59 @@ def build_document(
     chapters, toc = make_chapters(blocks, positions, outline, metadata.title)
     assets: dict[ImageAsset, None] = {}
     for block in blocks:
-        if isinstance(block, Image):
+        if isinstance(block, Image | PageImage):
             assets.setdefault(block.asset)
     document = Document(metadata=metadata, chapters=chapters, toc=toc, images=list(assets))
     return document, issues
+
+
+MULTI_COLUMN, COMPLEX = "multi_column", "complex"
+_FALLBACK_MESSAGES = {
+    MULTI_COLUMN: "Pages set in more than one column were embedded as page images, "
+    "with their text kept searchable column by column.",
+    COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
+    "images, with their text kept searchable.",
+}
+
+
+def _fallback(page: PageText, options: ConversionOptions) -> str | None:
+    """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
+    interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
+    (RFL-R14)."""
+    if page.columns > 1:
+        return MULTI_COLUMN
+    if options.mode == "auto" and is_complex(page):
+        return COMPLEX
+    return None
+
+
+def _fallback_issues(reasons: dict[int, str]) -> list[Issue]:
+    """One ``page_fallback`` issue per reason, its pages ascending (API-R11)."""
+    return [
+        Issue(
+            IssueCode.PAGE_FALLBACK,
+            _FALLBACK_MESSAGES[reason],
+            pages=sorted(page for page, why in reasons.items() if why == reason),
+            reason=reason,
+        )
+        for reason in (COMPLEX, MULTI_COLUMN)
+        if reason in reasons.values()
+    ]
+
+
+def _page_images(
+    source: SourcePdf,
+    pages: list[PageText],
+    reasons: dict[int, str],
+    password: Secret | None,
+) -> dict[int, PageImage]:
+    """The page image block for each page that falls back: a render of the page, and its
+    lines (in column order on a multi-column page) as its searchable text."""
+    text = {page.page: "\n".join(line.text for line in page.lines) for page in pages}
+    return {
+        number: PageImage(ImageAsset(render.data, render.media_type), text[number] or None, number)
+        for number, render in render_pages(source.path, sorted(reasons), password)
+    }
 
 
 # A caption sits within this many body sizes of its image, above or below it.
@@ -109,17 +171,19 @@ class _Heading:
     level: int
 
 
-_Item = PageBreak | _Open | _Heading | LineBlock | Image
+_Item = PageBreak | _Open | _Heading | LineBlock | Image | PageImage
 
 
 def _body(
     source: SourcePdf,
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
+    page_images: dict[int, PageImage],
     words: Collection[str] | None,
 ) -> tuple[list[Block], list[Position], Furniture]:
     """The book's blocks in reading order, with where each starts, and its furniture."""
-    typography = measure(pages)
+    # Body text is measured on the reflowed pages; furniture is found on every page.
+    typography = measure(p for p in pages if p.page not in page_images)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
     levels = heading_levels(laid_out, furniture.removed, typography)
@@ -127,6 +191,12 @@ def _body(
     open_paragraph: _Open | None = None
     for page in laid_out:
         marker = PageBreak(label=source.page_labels[page.page - 1], page=page.page)
+        if page.page in page_images:
+            # The page image holds the page's own images; nothing joins across it (RFL-R18).
+            stream.append((marker, (page.page, -1.0)))
+            stream.append((page_images[page.page], (page.page, 0.0)))
+            open_paragraph = None
+            continue
         kept = [
             (index, block)
             for index, block in enumerate(page.blocks)

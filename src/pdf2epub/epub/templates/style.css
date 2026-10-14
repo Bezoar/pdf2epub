@@ -25,3 +25,29 @@ p.lines {
 p.code {
   white-space: pre-wrap;
 }
+
+/* Page images (EPUB-R9): a whole page as a full-width figure. */
+figure.page-image {
+  margin: 1em 0;
+  text-align: center;
+  text-indent: 0;
+}
+
+figure.page-image img {
+  width: 100%;
+  height: auto;
+}
+
+/* Text kept searchable and read aloud, but not shown. */
+.hidden-text {
+  position: absolute;
+  width: 0.01em;
+  height: 0.01em;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

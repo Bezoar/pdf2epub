@@ -1,6 +1,6 @@
 """The document model (RFL-R34): reflow's output and the EPUB writer's only input.
 
-It holds no PDF objects. Page images and the cover join the model with the tickets that
+It holds no PDF objects. The cover joins the model with the tickets that
 produce them. ``page`` is always the 1-based PDF page index (unique within a
 book); ``label`` is the printed page label, for display only.
 """
@@ -67,7 +67,19 @@ class LineBlock:
     """Set wholly in a monospace font; its lines keep their spaces, leading ones too."""
 
 
-Block = Heading | Paragraph | LineBlock | Image | PageBreak
+@dataclass(frozen=True)
+class PageImage:
+    """A page-image fallback (RFL-R15): a render of the whole page, with the page's text
+    kept searchable."""
+
+    asset: ImageAsset
+    text: str | None
+    """Its searchable text, one line per line of the page (in column order on a
+    multi-column page); None when the page has none."""
+    page: int
+
+
+Block = Heading | Paragraph | LineBlock | Image | PageImage | PageBreak
 
 
 @dataclass(frozen=True)
