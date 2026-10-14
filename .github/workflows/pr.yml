@@ -1,0 +1,86 @@
+name: PR
+
+# Runs on every pull request, whatever its base branch (MAIN-AC4), and on pushes to the
+# integration branches.
+on:
+  pull_request:
+  push:
+    branches: [main, v1-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EPUBCHECK_VERSION: "5.4.0"
+  EPUBCHECK_SHA256: "33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c"
+
+jobs:
+  lint:
+    name: Lint, types and AC-marker gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - name: AC-marker gate (TST-R17, TST-R20)
+        run: uv run python scripts/ac_gate.py
+
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS on Apple Silicon, Linux on x86-64 and on arm64 (MAIN-R10, MAIN-R11).
+        os: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      # The coverage job: Linux x86-64, Python 3.12, with Tesseract (coding.md section 5).
+      COVERAGE_JOB: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install epubcheck (TST-R19)
+        shell: bash
+        run: |
+          zip="$RUNNER_TEMP/epubcheck.zip"
+          curl -fsSL -o "$zip" \
+            "https://github.com/w3c/epubcheck/releases/download/v${EPUBCHECK_VERSION}/epubcheck-${EPUBCHECK_VERSION}.zip"
+          echo "${EPUBCHECK_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP"
+          jar="$RUNNER_TEMP/epubcheck-${EPUBCHECK_VERSION}/epubcheck.jar"
+          java -jar "$jar" --version
+          echo "EPUBCHECK_JAR=$jar" >> "$GITHUB_ENV"
+      - name: Install Tesseract
+        if: env.COVERAGE_JOB == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+          tesseract --version
+      - run: uv sync --locked
+      - name: Tests
+        if: env.COVERAGE_JOB != 'true'
+        run: uv run pytest
+      - name: Tests with branch coverage
+        if: env.COVERAGE_JOB == 'true'
+        env:
+          PDF2EPUB_REQUIRE_TESSERACT: "1"
+        run: |
+          uv run coverage run -m pytest
+          uv run coverage report
