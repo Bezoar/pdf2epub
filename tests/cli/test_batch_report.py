@@ -41,3 +41,24 @@ def test_batch_report_lists_warnings_of_converted_files(tmp_path: Path) -> None:
     warnings = [line for line in lines if line.startswith("! ")]
     assert warnings == [f"! {tmp_path / 'b.pdf'}: language_defaulted"]
     assert not any(re.match(r"[✓✗-] ", line) for line in lines)
+
+
+def test_verbose_batch_report_lists_each_success(tmp_path: Path) -> None:
+    shutil.copyfile(NOVEL, tmp_path / "a.pdf")
+    shutil.copyfile(NOVEL, tmp_path / "b.pdf")
+
+    proc = subprocess.run(
+        [str(PDF2EPUB), "-v", "--overwrite", "a.pdf", "b.pdf"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    # -v also logs at INFO, so the report follows the log lines.
+    lines = [line for line in proc.stderr.splitlines() if not line.startswith("INFO: ")]
+    assert lines[0] == "Converted: 2  Skipped: 0  Failed: 0"
+    successes = [line for line in lines if line.startswith("✓ ")]
+    assert successes == [f"✓ {tmp_path / name}.pdf → {tmp_path / name}.epub" for name in ("a", "b")]

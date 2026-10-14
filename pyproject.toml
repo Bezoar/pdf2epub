@@ -75,6 +75,7 @@ dev = [
     "coverage>=7.16.2",
     "hatchling>=1.32.4",
     "hypothesis>=6.169.1",
+    "jsonschema>=4.26.0",
     "lxml-stubs>=0.5.1",
     "mypy>=2.4.0",
     "packaging>=26.3",
@@ -83,5 +84,6 @@ dev = [
     "pyyaml>=6.0.3",
     "reportlab>=5.0.1",
     "ruff>=0.17.0",
+    "types-jsonschema>=4.26.0.20261006",
     "types-pyyaml>=6.0.12.20260906",
 ]
