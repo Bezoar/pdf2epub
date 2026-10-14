@@ -13,6 +13,7 @@ import pypdfium2 as pdfium
 from PIL import Image
 
 from pdf2epub.errors import UsageError
+from pdf2epub.passwords import Secret
 from pdf2epub.reflow.images import encode, render_page
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 from pdf2epub.reflow.model import ImageAsset
@@ -27,12 +28,15 @@ def check_cover(cover: Cover) -> None:
         load_cover(Path(cover))
 
 
-def book_cover(cover: Cover, source: Path) -> ImageAsset | None:
-    """The cover for the book converted from ``source``, or None for no cover."""
+def book_cover(cover: Cover, source: Path, password: Secret | None = None) -> ImageAsset | None:
+    """The cover for the book converted from ``source`` (opened with ``password`` if it
+    needs one), or None for no cover."""
     if cover is None:
         return None
     if cover == "page1":
-        document = pdfium.PdfDocument(source)
+        document = pdfium.PdfDocument(
+            source, password=password.reveal() if password is not None else None
+        )
         try:
             return encode(render_page(document, 0))
         finally:
