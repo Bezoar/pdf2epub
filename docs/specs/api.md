@@ -195,7 +195,7 @@ class BatchReport:
 | `issue` | `id` (`null` = batch-level), `issue` (an Issue) | As soon as an issue is known; the same issue also appears in `conversion_finished`. |
 | `password_required` | `id`, `sources_tried` (source labels only) | A password is needed and cannot be asked for now; the file is skipped and reported `missing_password`, `wrong_password`, or `restricted` (when only the owner password is missing). |
 | `password_request` | `id`, `request_id`, `attempt` (1–3) | `--interactive` only; answered on stdin ([§10](#10-stdin-messages---interactive)). |
-| `conversion_finished` | `id`, `outcome`, `output`, `issues`, `password_source`, `pages`, `duration`, `ocr` | A conversion ends, whatever its outcome. |
+| `conversion_finished` | `id`, `source`, `destination`, `outcome`, `output`, `issues`, `password_source`, `pages`, `duration`, `ocr` | A conversion ends, whatever its outcome. |
 | `batch_finished` | `tool_version`, `started_at`, `totals {converted, skipped, failed}`, `interrupted`, `exit_code`, `conversions` (ConversionResult list, plan order) | Last event of every run. |
 
 <a id="api-r18"></a>**API-R18**: Conversions whose fate is settled at planning time (`not_found`, `not_a_pdf`, `output_exists`, `output_collision`) shall be reported as `conversion_finished` events immediately after `batch_started`, in plan order, before any `conversion_started`. They get no `conversion_started` event.
