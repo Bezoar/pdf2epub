@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.extract import Line, PageText, normalise
-from pdf2epub.reflow.furniture import PageBlocks, find_furniture
+from pdf2epub.reflow.furniture import Furniture, PageBlocks, find_furniture
 from pdf2epub.reflow.layout import DraftParagraph, group_blocks, measure, paragraphs
 from pdf2epub.reflow.model import (
     Block,
@@ -31,6 +31,7 @@ from pdf2epub.reflow.model import (
     Paragraph,
     TocEntry,
 )
+from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
 from pdf2epub.reflow.wordlists import wordlist
@@ -51,7 +52,10 @@ def build_document(
 ) -> tuple[Document, list[Issue]]:
     """The document model for ``source``, and the issues found while building it."""
     metadata, issues = _metadata(source, options)
-    blocks = _body(source, pages, wordlist(metadata.language))
+    blocks, furniture = _body(source, pages, wordlist(metadata.language))
+    gaps = sequence_gaps(furniture.page_numbers)
+    if gaps is not None:
+        issues.append(gaps)
     chapter = Chapter(title=metadata.title, blocks=blocks)
     document = Document(
         metadata=metadata, chapters=[chapter], toc=[TocEntry(metadata.title, chapter=0)]
@@ -68,7 +72,9 @@ class _Open:
     items: list[Line | Join] = field(default_factory=list)
 
 
-def _body(source: SourcePdf, pages: list[PageText], words: Collection[str] | None) -> list[Block]:
+def _body(
+    source: SourcePdf, pages: list[PageText], words: Collection[str] | None
+) -> tuple[list[Block], Furniture]:
     typography = measure(pages)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
@@ -89,10 +95,11 @@ def _body(source: SourcePdf, pages: list[PageText], words: Collection[str] | Non
         else:
             stream.append(marker)
         stream.extend(_Open(draft, list(draft.lines)) for draft in drafts)
-    return [
+    blocks: list[Block] = [
         Paragraph(paragraph_inlines(item.items, words)) if isinstance(item, _Open) else item
         for item in stream
     ]
+    return blocks, furniture
 
 
 def _runs_on(end: DraftParagraph, start: DraftParagraph) -> bool:
