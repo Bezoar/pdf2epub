@@ -56,7 +56,13 @@ Normalisation applies equally to OCR'd text.
 - `image` (with an optional caption: the adjacent short block in smaller type directly below or above it);
 - `furniture` ([§4](#4-furniture)).
 
-Lists, block quotes and preformatted text are emitted as paragraphs in v1.
+Lists and block quotes are emitted as paragraphs in v1. Verse, code and other text whose line breaks carry meaning is a **line block** ([RFL-R36](#rfl-r36)).
+
+<a id="rfl-r36"></a>**RFL-R36**: A text block shall be classified as a **line block**, a block whose line breaks carry meaning (verse, song lyrics, addresses, code), when either:
+- every line of the block is set in a monospace font; or
+- it has at least 3 lines, most of them end well short of the column's right edge (ragged right), where prose lines run to it, and none of them ends in a word broken with a hyphen or a soft hyphen, as only wrapped prose does.
+
+Line blocks are detected from geometry and fonts only; the exact thresholds are internal constants calibrated on fixtures. A line block keeps its lines as they are in the source: it is exempt from line joining ([RFL-R19](#rfl-r19)), from line-end de-hyphenation ([RFL-R17](#rfl-r17)) and from page joining ([RFL-R18](#rfl-r18)), in both directions. A monospace line block also keeps the spaces in its lines, including leading spaces, which are counted from the text layer and from each line's start relative to the block's leftmost line. Line blocks are not detected on page-image fallback pages; their hidden text is unchanged.
 
 <a id="rfl-r13"></a>**RFL-R13**: The core shall compute a **page complexity** score from:
 - the fraction of the page area covered by images or vector graphics;
@@ -182,6 +188,7 @@ It fires only on a clear break.
 - `Block`: one of
   - `Heading{level, inlines, anchor}`;
   - `Paragraph{inlines}`;
+  - `LineBlock{lines, monospace}`: a line block ([RFL-R36](#rfl-r36)); each line is a list of inlines, and `monospace` is true when the block is set wholly in a monospace font;
   - `Image{asset, caption}`;
   - `PageImage{asset, text, page}`;
   - `PageBreak{label, page}`, when a page boundary falls between blocks.
@@ -299,10 +306,21 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 
 **Given** a fixture with `/Lang (fr)`, **then** the language is `fr` with no such issue.
 
+<a id="rfl-ac25"></a>**RFL-AC25** (covers [RFL-R36](#rfl-r36), [RFL-R34](#rfl-r34)): **Given** the born-digital verse-and-code fixture, whose first page holds a three-stanza poem between two prose paragraphs, **when** it is converted, **then**:
+- each stanza is one `LineBlock`, not `monospace`, whose lines match the stanza's source lines, in order;
+- the two prose paragraphs are ordinary `Paragraph`s matching the ground truth.
+
+<a id="rfl-ac26"></a>**RFL-AC26** (covers [RFL-R36](#rfl-r36)): **Given** the born-digital novel fixture, **when** it is converted, **then** the document model holds no `LineBlock` (no false positives on prose, dialogue or short final lines).
+
+<a id="rfl-ac27"></a>**RFL-AC27** (covers [RFL-R36](#rfl-r36), [RFL-R17](#rfl-r17), [RFL-R18](#rfl-r18), [RFL-R19](#rfl-r19)): **Given** the born-digital verse-and-code fixture, whose monospace code block has lines that end in a hyphen and continues on the next page, **when** it is converted, **then**:
+- the code is `monospace` `LineBlock`s whose lines match the source lines exactly, leading spaces included;
+- no line-end hyphen is removed and no two lines are joined;
+- the block ending the first page is not joined to the next page's text: a `PageBreak` block sits between it and the code that continues on the next page.
+
 ## Open points
 
 - Assumed `mode = "reflow"` disables only the `complex` fallback. Multi-column pages still fall back, because "never interleave" is absolute.
-- Lists, block quotes and preformatted text are rendered as paragraphs in v1, since the scope decision doesn't mention them.
+- Lists, block quotes and preformatted text are rendered as paragraphs in v1, since the scope decision doesn't mention them. _(Owner review in [#51](https://github.com/Bezoar/pdf2epub/issues/51), OP26: changed. Verse and code become line blocks ([RFL-R36](#rfl-r36), added by [#52](https://github.com/Bezoar/pdf2epub/issues/52)); lists and block quotes stay paragraphs in v1.)_
 - The PDF's declared language (`/Lang` or XMP) is used before defaulting to `en`. The scope decision says "`--language`, else `en`"; using declared metadata is consistent with the metadata precedence and the OCR language order.
 - Which wordlists ship in v1 isn't decided. Assumed at least English; other languages get soft-hyphen-only joining.
 - Assumed: a page join never crosses a page-image fallback page, and images between two joined paragraphs move after the joined paragraph.
