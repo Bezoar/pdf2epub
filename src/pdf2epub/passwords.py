@@ -163,7 +163,7 @@ def _read_map(path: Path) -> list[tuple[str, list[Secret]]]:
 
 
 def _read_password_file(path: Path) -> list[tuple[int, Secret]]:
-    """The file's non-blank lines with their 1-based line numbers (PWD-R15)."""
+    """The file's non-empty lines with their 1-based line numbers (PWD-R15)."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
@@ -175,7 +175,8 @@ def _read_password_file(path: Path) -> list[tuple[int, Secret]]:
     # Only "\n" and "\r\n" end a line: any other character, even one str.splitlines()
     # treats as a break, is part of the password as written.
     lines = [line.removesuffix("\r") for line in text.split("\n")]
-    return [(number, Secret(line)) for number, line in enumerate(lines, start=1) if line.strip()]
+    # A blank line is an empty one; a line of spaces is a password like any other.
+    return [(number, Secret(line)) for number, line in enumerate(lines, start=1) if line]
 
 
 def _is_glob(key: str) -> bool:

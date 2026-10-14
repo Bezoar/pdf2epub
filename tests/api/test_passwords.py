@@ -248,7 +248,7 @@ def test_the_password_appears_in_no_event_report_or_log(
 @pytest.mark.ac("PWD-AC15")
 def test_password_file_lines_end_only_at_line_breaks(tmp_path: Path) -> None:
     path = tmp_path / "passwords.txt"
-    path.write_bytes(b"first\r\nsec\x0cond\n\nthird")
+    path.write_bytes(b"first\r\nsec\x0cond\n\n  \nthird")
 
     provider = SourcePasswordProvider(PasswordSources(password_file=path))
 
@@ -256,7 +256,8 @@ def test_password_file_lines_end_only_at_line_breaks(tmp_path: Path) -> None:
     assert [(c.secret, c.source) for c in candidates] == [
         (Secret("first"), "file:line 1"),
         (Secret("sec\x0cond"), "file:line 2"),
-        (Secret("third"), "file:line 4"),
+        (Secret("  "), "file:line 4"),
+        (Secret("third"), "file:line 5"),
     ]
 
 
@@ -309,15 +310,20 @@ def test_copy_restricted_file_without_its_owner_password_fails_restricted(
     assert not (tmp_path / "locked.epub").exists()
 
 
-def test_owner_password_lifts_the_restriction(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("values", "label"), [(["u", "o"], "cli #2"), (["o"], "cli #1")], ids=["after-user", "alone"]
+)
+def test_owner_password_lifts_the_restriction(
+    tmp_path: Path, values: list[str], label: str
+) -> None:
     pdf = restricted_copy(tmp_path / "locked.pdf", "u", "o")
-    provider = SourcePasswordProvider(PasswordSources(values=[Secret("u"), Secret("o")]))
+    provider = SourcePasswordProvider(PasswordSources(values=[Secret(v) for v in values]))
 
     report, _ = run([pdf], provider)
 
     [result] = report.conversions
     assert result.outcome is Outcome.CONVERTED, result.issues
     assert [(i.code, i.severity) for i in result.issues] == [("owner_password_used", "info")]
-    assert result.issues[0].message == "converted using owner password from cli #2"
-    assert result.password_source == "cli #2"
+    assert result.issues[0].message == f"converted using owner password from {label}"
+    assert result.password_source == label
     assert (tmp_path / "locked.epub").is_file()

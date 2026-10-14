@@ -6,6 +6,7 @@ with pypdf, which needs no password for it; candidates are tried with pypdf's
 ``decrypt()``, which tells an owner-password match from a user-password one (PWD-R9).
 """
 
+import dataclasses
 import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -110,8 +111,12 @@ def _unlock(path: Path, candidates: Sequence[Candidate]) -> Access:
                 break
     if matched is PasswordType.NOT_DECRYPTED:
         _refuse_unopened(candidates)
-    if matched is PasswordType.OWNER_PASSWORD or _extraction_permitted(reader):
+    if _extraction_permitted(reader):
         return access
+    if matched is PasswordType.OWNER_PASSWORD and access.password is not None:
+        # A supplied owner password opened it: that lifts the restriction (PWD-R11). The
+        # empty password never does (PWD-R10).
+        return dataclasses.replace(access, owner_password_used=True)
     # MAIN-R6, PWD-R11: opened with a user password (or the empty one), but copying is
     # forbidden. Only the owner password lifts that; the remaining candidates are tried
     # as the owner password.
