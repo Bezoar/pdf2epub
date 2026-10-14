@@ -26,7 +26,7 @@ PDF2EPUB = Path(sys.executable).with_name("pdf2epub")
 AES256 = FIXTURES / "encrypted" / "aes256-user.pdf"
 PASSWORD = "hunter2"  # the AES-256 fixture's user password
 PROMPT = "Password for "
-WAIT = 60.0
+WAIT = 180.0  # generous: the suite runs in parallel, sometimes on a loaded machine
 
 
 def child_env() -> dict[str, str]:
@@ -81,7 +81,7 @@ class Terminal:
 
     def finish(self) -> tuple[int, str, str]:
         """Wait for the CLI; its exit code, stdout, and everything on the terminal."""
-        stdout, _ = self.proc.communicate(timeout=120)
+        stdout, _ = self.proc.communicate(timeout=WAIT)
         while select.select([self.controller], [], [], 0.2)[0]:
             try:
                 data = os.read(self.controller, 4096)
@@ -196,7 +196,7 @@ def test_a_single_conversion_without_a_terminal_does_not_prompt(tmp_path: Path, 
         text=True,
         encoding="utf-8",
         check=False,
-        timeout=120,
+        timeout=WAIT,
     )
 
     assert proc.returncode == 1
@@ -227,7 +227,7 @@ def test_prompt_flags_in_forbidden_combinations_are_usage_errors(
         text=True,
         encoding="utf-8",
         check=False,
-        timeout=120,
+        timeout=WAIT,
     )
 
     assert proc.returncode == 2, proc.stderr
@@ -274,7 +274,7 @@ class Interactive:
         if close_stdin:
             self.proc.stdin.close()
             self.proc.stdin = None  # communicate() must not touch it again
-        stdout, stderr = self.proc.communicate(timeout=120)
+        stdout, stderr = self.proc.communicate(timeout=WAIT)
         all_stdout = "".join(self.lines) + stdout.decode("utf-8")
         return self.proc.returncode, events_of(all_stdout), stderr.decode("utf-8")
 
