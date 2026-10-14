@@ -1,7 +1,6 @@
 """The document model (RFL-R34): reflow's output and the EPUB writer's only input.
 
-It holds no PDF objects. The cover joins the model with the tickets that
-produce them. ``page`` is always the 1-based PDF page index (unique within a
+It holds no PDF objects. ``page`` is always the 1-based PDF page index (unique within a
 book); ``label`` is the printed page label, for display only.
 """
 
@@ -116,3 +115,5 @@ class Document:
     chapters: list[Chapter]
     toc: list[TocEntry]
     images: list[ImageAsset] = field(default_factory=list)
+    """The book images, each stored once (RFL-R26); the cover is not among them."""
+    cover: ImageAsset | None = None

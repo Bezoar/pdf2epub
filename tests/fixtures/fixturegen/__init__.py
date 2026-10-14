@@ -38,7 +38,9 @@ def registry() -> list[Fixture]:
         encrypted,
         headings,
         hostile,
+        images,
         layouts,
+        metadata,
         not_a_pdf,
         novel,
         oversized,
@@ -103,6 +105,11 @@ def registry() -> list[Fixture]:
         Fixture(encrypted.AES256, encrypted.AES256_TRUTH, encrypted.build_aes256),
         Fixture(encrypted.AES128, encrypted.AES128_TRUTH, encrypted.build_aes128),
         Fixture(encrypted.RC4_128, encrypted.RC4_128_TRUTH, encrypted.build_rc4_128),
+        Fixture(images.PATH, images.GROUND_TRUTH, images.build),
+        Fixture(metadata.JANE_DOE, None, metadata.build_jane_doe),
+        Fixture(metadata.SCAN, None, metadata.build_scan),
+        Fixture(metadata.LANG_FR, None, metadata.build_lang_fr),
+        Fixture(metadata.XMP, None, metadata.build_xmp),
     ]
 
 

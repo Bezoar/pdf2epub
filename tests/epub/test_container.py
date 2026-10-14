@@ -19,6 +19,7 @@ MEDIA_TYPES = {
     ".css": "text/css",
     ".ncx": "application/x-dtbncx+xml",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
 }
 
 
@@ -68,6 +69,13 @@ def test_manifest_lists_every_file_and_spine_puts_nav_first(source: Path, tmp_pa
 
     [nav] = [i for i in items.values() if "nav" in str(i.get("properties", "")).split()]
     spine = opf.findall("opf:spine/opf:itemref", NS)
+    # EPUB-R4: the cover page (if any) comes first, then the non-linear nav.
+    [cover] = [i for i in items.values() if "cover-image" in str(i.get("properties", "")).split()]
+    assert spine[0].get("linear") in (None, "yes")
+    assert items[spine[0].get("idref")].get("media-type") == "application/xhtml+xml"
+    cover_page = archive.read(base + str(items[spine[0].get("idref")].get("href"))).decode()
+    assert f'src="{cover.get("href")}"' in cover_page
+    spine = spine[1:]
     assert spine[0].get("idref") == nav.get("id")
     assert spine[0].get("linear") == "no"
     chapters = spine[1:]
