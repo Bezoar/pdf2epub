@@ -276,59 +276,135 @@ def test_unreadable_password_sources_are_usage_errors(tmp_path: Path) -> None:
         SourcePasswordProvider(PasswordSources(password_file=bad_file))
 
 
-def restricted_copy(target: Path, user: str, owner: str) -> Path:
-    """The two-page book encrypted with copy/extract forbidden (``/P`` bit 5 clear).
-    #32 brings the committed restricted fixtures; this stand-in is built per test."""
-    from pypdf import PdfWriter
-    from pypdf.constants import UserAccessPermissions
+# --- Permission restrictions (PWD-R9 to PWD-R11) ------------------------------------------
 
-    writer = PdfWriter(clone_from=FIXTURES / "born-digital" / "two-pages.pdf")
-    permissions = UserAccessPermissions.all() & ~UserAccessPermissions.EXTRACT
-    writer.encrypt(user, owner, permissions_flag=permissions, algorithm="AES-256")
-    with target.open("wb") as file:
-        writer.write(file)
-    return target
+# The permission fixtures and their passwords, as published in
+# tests/fixtures/fixturegen/encrypted.py. Copy/extract is forbidden in both restricted ones.
+OWNER_RESTRICTED = ENCRYPTED / "owner-only-restricted.pdf"
+OWNER_RESTRICTED_OWNER = "restricted-owner"
+OWNER_ALL = ENCRYPTED / "owner-only-all-permissions.pdf"
+USER_OWNER_RESTRICTED = ENCRYPTED / "user-owner-restricted.pdf"
+USER, OWNER = "locked-user", "locked-owner"
+RESTRICTED = [("restricted", "supply the owner password")]
 
 
-@pytest.mark.parametrize(
-    ("user", "values"),
-    [("u", ["u"]), ("", []), ("", ["wrong"])],
-    ids=["user-password", "owner-only", "owner-only-wrong"],
-)
-def test_copy_restricted_file_without_its_owner_password_fails_restricted(
-    tmp_path: Path, user: str, values: list[str]
+def values(*passwords: str) -> SourcePasswordProvider:
+    return SourcePasswordProvider(PasswordSources(values=[Secret(v) for v in passwords]))
+
+
+@pytest.mark.ac("PWD-AC7")
+@pytest.mark.parametrize("provider", [None, values()], ids=["no-provider", "no-candidates"])
+def test_owner_only_restricted_file_without_candidates_fails_restricted(
+    tmp_path: Path, provider: PasswordProvider | None
 ) -> None:
-    pdf = restricted_copy(tmp_path / "locked.pdf", user, "o")
-
-    report, _ = run(
-        [pdf], SourcePasswordProvider(PasswordSources(values=[Secret(v) for v in values]))
-    )
-
-    [result] = report.conversions
-    assert result.outcome is Outcome.FAILED
-    assert [(i.code, i.hint) for i in result.issues] == [
-        ("restricted", "supply the owner password")
-    ]
-    assert not (tmp_path / "locked.epub").exists()
-
-
-@pytest.mark.parametrize(
-    ("values", "label"), [(["u", "o"], "cli #2"), (["o"], "cli #1")], ids=["after-user", "alone"]
-)
-def test_owner_password_lifts_the_restriction(
-    tmp_path: Path, values: list[str], label: str
-) -> None:
-    pdf = restricted_copy(tmp_path / "locked.pdf", "u", "o")
-    provider = SourcePasswordProvider(PasswordSources(values=[Secret(v) for v in values]))
+    pdf = copy(OWNER_RESTRICTED, tmp_path)
 
     report, _ = run([pdf], provider)
 
     [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.hint) for i in result.issues] == RESTRICTED
+    assert result.output is None
+    assert list(tmp_path.glob("*.epub")) == []
+
+
+def test_owner_only_file_with_every_permission_converts_without_a_password(
+    tmp_path: Path,
+) -> None:
+    # PWD-R10 applies only when copying is forbidden: the empty password is enough here.
+    pdf = copy(OWNER_ALL, tmp_path)
+
+    report, _ = run([pdf], values())
+
+    [result] = report.conversions
     assert result.outcome is Outcome.CONVERTED, result.issues
-    assert [(i.code, i.severity) for i in result.issues] == [("owner_password_used", "info")]
-    assert result.issues[0].message == f"converted using owner password from {label}"
+    assert result.issues == []
+    assert result.password_source is None
+    assert (tmp_path / "owner-only-all-permissions.epub").is_file()
+
+
+@pytest.mark.ac("PWD-AC8")
+def test_owner_password_from_the_map_lifts_the_restriction(tmp_path: Path) -> None:
+    pdf = copy(OWNER_RESTRICTED, tmp_path)
+    password_map = tmp_path / "passwords.toml"
+    password_map.write_text(
+        f'"owner-only-restricted.pdf" = ["wrong", "{OWNER_RESTRICTED_OWNER}"]\n',
+        encoding="utf-8",
+    )
+    label = 'map:"owner-only-restricted.pdf"'
+
+    report, _ = run([pdf], SourcePasswordProvider(PasswordSources(map_file=password_map)))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert [(i.code, i.severity, i.message) for i in result.issues] == [
+        ("owner_password_used", "info", f"converted using owner password from {label}")
+    ]
     assert result.password_source == label
-    assert (tmp_path / "locked.epub").is_file()
+    assert (tmp_path / "owner-only-restricted.epub").is_file()
+
+
+@pytest.mark.ac("PWD-AC9")
+def test_user_password_alone_leaves_the_file_restricted(tmp_path: Path) -> None:
+    pdf = copy(USER_OWNER_RESTRICTED, tmp_path)
+
+    report, _ = run([pdf], values(USER))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.hint) for i in result.issues] == RESTRICTED
+    assert list(tmp_path.glob("*.epub")) == []
+
+
+@pytest.mark.ac("PWD-AC9")
+def test_owner_password_after_the_user_password_converts(tmp_path: Path) -> None:
+    pdf = copy(USER_OWNER_RESTRICTED, tmp_path)
+
+    report, _ = run([pdf], values(USER, OWNER))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert [(i.code, i.severity, i.message) for i in result.issues] == [
+        ("owner_password_used", "info", "converted using owner password from cli #2")
+    ]
+    assert result.password_source == "cli #2"
+    assert (tmp_path / "user-owner-restricted.epub").is_file()
+
+
+@pytest.mark.parametrize(
+    ("fixture", "passwords"),
+    [(USER_OWNER_RESTRICTED, ["wrong", USER]), (OWNER_RESTRICTED, ["wrong"])],
+    ids=["user-password", "owner-only-wrong"],
+)
+def test_copy_restricted_file_without_its_owner_password_fails_restricted(
+    tmp_path: Path, fixture: Path, passwords: list[str]
+) -> None:
+    pdf = copy(fixture, tmp_path)
+
+    report, _ = run([pdf], values(*passwords))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.FAILED
+    assert [(i.code, i.hint) for i in result.issues] == RESTRICTED
+    assert list(tmp_path.glob("*.epub")) == []
+
+
+@pytest.mark.parametrize(
+    ("passwords", "label"), [([OWNER, USER], "cli #1"), ([OWNER], "cli #1")], ids=["first", "alone"]
+)
+def test_owner_password_alone_opens_and_lifts_the_restriction(
+    tmp_path: Path, passwords: list[str], label: str
+) -> None:
+    pdf = copy(USER_OWNER_RESTRICTED, tmp_path)
+
+    report, _ = run([pdf], values(*passwords))
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED, result.issues
+    assert [(i.code, i.message) for i in result.issues] == [
+        ("owner_password_used", f"converted using owner password from {label}")
+    ]
+    assert result.password_source == label
 
 
 # --- Refused before any password is tried (PWD-R2 to PWD-R4) -----------------------------
@@ -519,7 +595,7 @@ def test_each_access_issue_carries_its_hint(tmp_path: Path) -> None:
     # the others two wrong ones, so no file gets past its access check.
     missing = copy(AES128, tmp_path)
     wrong = copy(AES256, tmp_path)
-    restricted = restricted_copy(tmp_path / "locked.pdf", "u", "o")
+    restricted = copy(USER_OWNER_RESTRICTED, tmp_path, "locked.pdf")
     drm = copy(VENDOR_HANDLERS[0], tmp_path)
     unsupported = copy(UNKNOWN_CRYPT_FILTER, tmp_path)
 
@@ -530,7 +606,7 @@ def test_each_access_issue_carries_its_hint(tmp_path: Path) -> None:
             if path == missing:
                 return []
             if path == restricted:
-                return [Candidate(Secret("u"), "cli #1")]
+                return [Candidate(Secret(USER), "cli #1")]
             return [Candidate(Secret("nope"), "cli #1"), Candidate(Secret("nah"), "env")]
 
     report, _ = run([missing, wrong, restricted, drm, unsupported], PerFile())
@@ -647,3 +723,30 @@ def test_a_worker_crash_holding_the_password_leaks_it_nowhere(
         json.dumps(report.to_dict()),
     ):
         assert "hunter2" not in text
+
+
+@pytest.mark.ac("MAIN-AC-D")
+def test_a_mixed_batch_converts_only_the_good_file_and_reports_each_one(
+    tmp_path: Path,
+) -> None:
+    corrupt = copy(FIXTURES / "damaged" / "truncated.pdf", tmp_path)
+    no_password = copy(AES256, tmp_path)
+    drm = copy(ENCRYPTED / "fopn-foweb.pdf", tmp_path)
+    restricted = copy(OWNER_RESTRICTED, tmp_path)
+    good = copy(FIXTURES / "born-digital" / "two-pages.pdf", tmp_path)
+
+    report = run_in_workers(
+        [corrupt, no_password, drm, restricted, good], SourcePasswordProvider(PasswordSources())
+    )
+
+    results = {Path(r.source).name: r for r in report.conversions}
+    assert {name: (r.outcome, [i.code for i in r.issues]) for name, r in results.items()} == {
+        "truncated.pdf": (Outcome.FAILED, ["corrupt_pdf"]),
+        "aes256-user.pdf": (Outcome.FAILED, ["missing_password"]),
+        "fopn-foweb.pdf": (Outcome.FAILED, ["drm_protected"]),
+        "owner-only-restricted.pdf": (Outcome.FAILED, ["restricted"]),
+        "two-pages.pdf": (Outcome.CONVERTED, []),
+    }
+    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["two-pages.epub"]
+    assert not report.interrupted
+    assert report.exit_code == 1
