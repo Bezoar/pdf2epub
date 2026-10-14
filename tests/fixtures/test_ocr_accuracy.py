@@ -8,9 +8,10 @@ against that page's own ground truth. The ground truth of a page comes from the 
 generator (``fixturegen/novel.py`` lays the novel out line by line, and the scans are
 renders of its pages), never from pdf2epub.
 
-Each OCR'd page costs one orientation run and one to four recognition attempts, so only
-the first ``PAGES`` pages of each scan are converted: a chapter opener with its title,
-and the page after it, which a paragraph crosses onto.
+Each OCR'd page costs one orientation run and one to four recognition attempts. The
+degraded scans are measured whole (they are chapter 1 of the novel, its pages 1-4). The
+clean scan, all 40 pages of the novel, is measured on the same chapter, its first
+``PAGES`` pages, so each degraded score sits beside a clean score of the same text.
 """
 
 import shutil
@@ -33,6 +34,7 @@ from pdf2epub import (
     DiscoveryOptions,
     InputSpec,
     OcrOptions,
+    Outcome,
     plan_batch,
     run_batch,
 )
@@ -44,8 +46,9 @@ XHTML = "{http://www.w3.org/1999/xhtml}"
 EPUB_TYPE = "{http://www.idpf.org/2007/ops}type"
 OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
 
-PAGES = 2
-"""How many pages of each scan are converted and scored."""
+PAGES = 4
+"""How many pages of each scan are converted and scored: chapter 1, all of each degraded
+scan (``fixturegen/scans.py`` ``DEGRADED_PAGES``)."""
 CLEAN, DEGRADED = 0.98, 0.95
 """The v1 bars (TST-R15, MAIN-AC-G)."""
 SCANS = {
@@ -326,4 +329,10 @@ def test_without_tesseract_every_scan_finishes_with_ocr_unavailable(tmp_path: Pa
 
     assert len(report.conversions) == len(SCANS)
     for result in report.conversions:
-        assert "ocr_unavailable" in [str(issue.code) for issue in result.issues]
+        assert result.outcome is Outcome.CONVERTED
+        codes = [(str(issue.code), issue.reason) for issue in result.issues]
+        assert ("ocr_unavailable", None) in codes
+        # Every page needed OCR, so every page fell back (OCR-R24).
+        [fallback] = [i for i in result.issues if i.reason == "ocr_unavailable"]
+        assert str(fallback.code) == "page_fallback"
+        assert fallback.pages == list(range(1, PAGES + 1))
