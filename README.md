@@ -28,7 +28,7 @@ pdf2epub a.pdf b.pdf         # a batch: one failing file never stops the others
 pdf2epub --help              # every option
 ```
 
-A password-protected PDF opens with a password you supply: set it in `PDF2EPUB_PASSWORD`, list one per line in a `--password-file`, map paths or globs to passwords in a TOML `--password-map`, or pass `--password VALUE` (other processes on your machine can see that one). pdf2epub tries at most 25 candidates per file and reports only where a password came from, never the password itself.
+A password-protected PDF opens with a password you supply: set it in `PDF2EPUB_PASSWORD`, list one per line in a `--password-file`, map paths or globs to passwords in a TOML `--password-map`, or pass `--password VALUE` (other processes on your machine can see that one). pdf2epub tries at most 25 candidates per file and reports only where a password came from, never the password itself. If none of them works, a single file run in a terminal asks for the password (typing is not echoed; press Enter to skip); for a batch, add `--ask-password` to be asked once the other files are done, and with `--json --interactive` the request comes as a `password_request` event answered on stdin.
 
 A single conversion prints one result line to stderr, for example:
 
