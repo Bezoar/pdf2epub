@@ -286,3 +286,27 @@ def test_a_cancel_just_before_the_rename_leaves_no_epub(tmp_path: Path) -> None:
     assert [issue.code for issue in result.issues] == [IssueCode.NOT_ATTEMPTED]
     assert not epub.exists()
     assert leftovers(tmp_path) == []
+
+
+@pytest.mark.ac("BAT-AC14")
+def test_a_rename_asked_for_after_the_time_limit_is_a_timeout(tmp_path: Path) -> None:
+    """The sink holds the parent past the 2-second limit on the last ``reflow`` progress
+    event, so the worker asks to rename its EPUB only after the limit. (On a machine slow
+    enough to reach the limit before that event, the conversion times out all the
+    same.)"""
+    [pdf] = copies(NOVEL, tmp_path, "a.pdf")
+    started = time.monotonic()
+
+    def sink(event: dict[str, Any]) -> None:
+        if event["type"] == "progress" and event["stage"] == "reflow":
+            while time.monotonic() < started + 2.5:
+                time.sleep(0.05)
+
+    report = run([pdf], "subprocess", sink, timeout=2)
+
+    [result] = report.conversions
+    assert [issue.code for issue in result.issues] == [IssueCode.TIMEOUT]
+    assert result.outcome is Outcome.FAILED
+    assert report.exit_code == 1
+    assert not pdf.with_suffix(".epub").exists()
+    assert leftovers(tmp_path) == []

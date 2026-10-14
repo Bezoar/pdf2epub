@@ -69,8 +69,20 @@ def run_in_worker(
     )
     assert worker.stdin is not None and worker.stdout is not None
 
-    def may_commit() -> bool:
-        return not (cancel is not None and cancel.cancelled) and time.monotonic() < deadline
+    def stop_reason() -> Issue | None:
+        """Why the worker must stop now, if it must: the batch was cancelled (BAT-R17) or
+        the time limit ran out (BAT-R21)."""
+        if cancel is not None and cancel.cancelled:
+            return Issue(
+                IssueCode.NOT_ATTEMPTED, "The batch was interrupted during this conversion."
+            )
+        if time.monotonic() >= deadline:
+            return Issue(
+                IssueCode.TIMEOUT,
+                f"The conversion took longer than its time limit of {timeout:g} seconds "
+                "and was stopped.",
+            )
+        return None
 
     def answer(reply: bytes) -> None:
         assert worker.stdin is not None
@@ -80,7 +92,7 @@ def run_in_worker(
         except BrokenPipeError:
             pass  # it died: reported as a crash
 
-    session = _Session(reporter, may_commit, answer)
+    session = _Session(reporter, stop_reason, answer)
     stopped = False
     try:
         try:
@@ -88,7 +100,7 @@ def run_in_worker(
             worker.stdin.flush()
         except BrokenPipeError:
             pass  # it already died: reported below as a crash
-        _read_until_done(worker, session, cancel, deadline, timeout)
+        _read_until_done(worker, session, stop_reason)
         worker.wait()
     except _Stopped as stop:
         _stop(worker)
@@ -133,11 +145,11 @@ class _Session:
     def __init__(
         self,
         reporter: Reporter,
-        may_commit: Callable[[], bool],
+        stop_reason: Callable[[], Issue | None],
         answer: Callable[[bytes], None],
     ) -> None:
         self.reporter = reporter
-        self._may_commit = may_commit
+        self._stop_reason = stop_reason
         self._answer = answer
         self.committed = False
         """True once the worker was told to rename its EPUB over the destination: from
@@ -168,8 +180,11 @@ class _Session:
         elif type_ == "temporary":
             self.temporary = Path(message["path"])
         elif type_ == "commit":
-            self.committed = self._may_commit()
+            reason = self._stop_reason()
+            self.committed = reason is None
             self._answer(b"y" if self.committed else b"n")
+            if reason is not None:
+                raise _Stopped(reason)
         elif type_ == "log":
             record = logging.makeLogRecord(
                 {
@@ -187,34 +202,18 @@ class _Session:
 def _read_until_done(
     worker: subprocess.Popen[bytes],
     session: _Session,
-    cancel: CancelToken | None,
-    deadline: float,
-    timeout: float,
+    stop_reason: Callable[[], Issue | None],
 ) -> None:
     """Pass on the worker's messages until it closes its stdout. Raises ``_Stopped`` when
-    the batch is cancelled or the time limit runs out first."""
+    ``stop_reason`` gives a reason to stop first, unless the worker was already told to
+    rename its EPUB into place."""
     assert worker.stdout is not None
     fd = worker.stdout.fileno()
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_READ)
         while True:
-            if session.committed:
-                pass  # the EPUB is being renamed into place: let the worker finish
-            elif cancel is not None and cancel.cancelled:
-                raise _Stopped(
-                    Issue(
-                        IssueCode.NOT_ATTEMPTED,
-                        "The batch was interrupted during this conversion.",
-                    )
-                )
-            elif time.monotonic() >= deadline:
-                raise _Stopped(
-                    Issue(
-                        IssueCode.TIMEOUT,
-                        f"The conversion took longer than its time limit of {timeout:g} "
-                        "seconds and was stopped.",
-                    )
-                )
+            if not session.committed and (reason := stop_reason()) is not None:
+                raise _Stopped(reason)
             if not selector.select(POLL_INTERVAL):
                 continue
             data = os.read(fd, 65536)
