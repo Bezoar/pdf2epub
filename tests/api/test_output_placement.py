@@ -187,6 +187,36 @@ def test_collision_holds_with_overwrite_when_the_epub_exists(tmp_path: Path) -> 
     assert [r.outcome for r in report.conversions] == [Outcome.CONVERTED, Outcome.SKIPPED]
 
 
+def case_insensitive(folder: Path) -> bool:
+    """Whether ``folder``'s file system ignores letter case, found by experiment."""
+    probe = folder / "Case-Probe"
+    probe.touch()
+    try:
+        return (folder / "case-probe").exists()
+    finally:
+        probe.unlink()
+
+
+@pytest.mark.ac("BAT-AC7")
+def test_destinations_differing_only_in_case_collide_where_case_is_ignored(
+    tmp_path: Path,
+) -> None:
+    one = copy(PUBLIC_DOMAIN_SAMPLE, tmp_path / "one" / "book.pdf")
+    two = copy(NOVEL, tmp_path / "two" / "BOOK.PDF")
+    out = tmp_path / "out"
+    out.mkdir()
+    ignores_case = case_insensitive(out)
+
+    report = run([one, two], output=out)
+
+    if ignores_case:  # e.g. macOS: out/BOOK.epub is out/book.epub
+        assert codes(report) == [[], [IssueCode.OUTPUT_COLLISION]]
+        assert files_in(out) == {"book.epub"}
+    else:
+        assert codes(report) == [[], []]
+        assert files_in(out) == {"book.epub", "BOOK.epub"}
+
+
 # --- BAT-AC8: existing EPUBs and resume ----------------------------------------------
 
 
@@ -299,6 +329,20 @@ def test_unwritable_output_folder_fails_write_failed_naming_the_destination(
     assert result.output is None
     assert report.exit_code == 1
     assert sorted(os.listdir(folder)) == ["novel.pdf"]
+
+
+@pytest.mark.ac("BAT-AC10")
+def test_folder_at_the_destination_fails_write_failed_not_output_exists(tmp_path: Path) -> None:
+    folder = tmp_path / "shelf"
+    novel = copy(NOVEL, folder / "novel.pdf")
+    (folder / "novel.epub").mkdir()
+
+    report = run([novel])
+
+    assert codes(report) == [[IssueCode.WRITE_FAILED]]
+    assert str(folder / "novel.epub") in report.conversions[0].issues[0].message
+    assert report.exit_code == 1
+    assert sorted(os.listdir(folder)) == ["novel.epub", "novel.pdf"]
 
 
 @pytest.mark.ac("BAT-AC10")

@@ -95,6 +95,7 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
     conversions: list[PlannedConversion] = []
     seen: set[str] = set()
     claimed: set[str] = set()
+    ignores_case: dict[Path, bool] = {}
     for source, folder in _discover(inputs, options.recursive):
         try:
             key = os.path.realpath(source)
@@ -108,7 +109,7 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
         if not any(issue.code is IssueCode.NOT_FOUND for issue in issues):
             destination = _destination(source, folder, options, single)
         if destination is not None and not issues:
-            issues = _destination_issues(destination, claimed)
+            issues = _destination_issues(destination, claimed, ignores_case)
         conversions.append(
             PlannedConversion(
                 id=len(conversions),
@@ -120,12 +121,14 @@ def plan_batch(inputs: Sequence[InputSpec], options: DiscoveryOptions) -> BatchP
     return BatchPlan(conversions=conversions, single=single)
 
 
-def _destination_issues(destination: Path, claimed: set[str]) -> list[Issue]:
+def _destination_issues(
+    destination: Path, claimed: set[str], ignores_case: dict[Path, bool]
+) -> list[Issue]:
     """``output_collision`` when an earlier conversion in the plan already maps to
     ``destination`` (BAT-R11), else ``output_exists`` when the EPUB is already there
     (BAT-R12); ``run_batch`` drops ``output_exists`` under ``overwrite``. Only conversions
     that would run claim their destination."""
-    key = os.path.normcase(destination)
+    key = _identity(destination, ignores_case)
     if key in claimed:
         return [
             Issue(
@@ -134,9 +137,46 @@ def _destination_issues(destination: Path, claimed: set[str]) -> list[Issue]:
             )
         ]
     claimed.add(key)
-    if os.path.lexists(destination):
+    # Only an existing file is an earlier EPUB; anything else at the destination (a
+    # folder, say) is left for the writer, which reports write_failed (BAT-R15).
+    if destination.is_file():
         return [Issue(IssueCode.OUTPUT_EXISTS, f"{destination} already exists.")]
     return []
+
+
+def _identity(destination: Path, ignores_case: dict[Path, bool]) -> str:
+    """A key equal for two destinations exactly when they name the same file: the path,
+    case-folded when its file system ignores letter case (as macOS does by default).
+    ``ignores_case`` caches the probe per folder for one plan."""
+    folder = destination.parent
+    if folder not in ignores_case:
+        ignores_case[folder] = _ignores_case(folder)
+    path = os.path.normcase(destination)
+    return path.casefold() if ignores_case[folder] else path
+
+
+def _ignores_case(folder: Path) -> bool:
+    """Whether the file system that ``folder`` is (or would be created) on ignores letter
+    case, probed without writing anything: an entry of the nearest existing folder, or
+    else that folder or one of its ancestors, is looked up with its name's case swapped.
+    With nothing to probe, case counts."""
+    while not folder.is_dir() and folder.parent != folder:
+        folder = folder.parent
+    try:
+        with os.scandir(folder) as entries:
+            inside = next((folder / e.name for e in entries if e.name != e.name.swapcase()), None)
+    except OSError:
+        inside = None
+    candidates = [inside] if inside is not None else []
+    candidates += [p for p in (folder, *folder.parents) if p.name != p.name.swapcase()]
+    for path in candidates[:1]:
+        try:
+            original = os.lstat(path)
+            swapped = os.lstat(path.with_name(path.name.swapcase()))
+        except OSError:
+            return False
+        return (original.st_dev, original.st_ino) == (swapped.st_dev, swapped.st_ino)
+    return False
 
 
 def _discover(inputs: Sequence[InputSpec], recursive: bool) -> Iterator[tuple[Path, Path | None]]:
