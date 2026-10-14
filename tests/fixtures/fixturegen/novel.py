@@ -16,6 +16,13 @@ A single-column, 40-page novel of 10 chapters, 4 pages each, typeset with Report
 The ground truth, ``born-digital/novel.txt``, is the book's text without furniture:
 chapter titles, section titles and paragraphs, each on one line, separated by blank
 lines, with no hyphenation.
+
+Two variants share the layout, with their own text (RFL-AC16):
+
+- ``born-digital/novel-no-outline.pdf``: no outline and no section titles; each chapter
+  opens with ``CHAPTER ONE`` ... ``CHAPTER TEN`` in 14 pt bold instead of its title;
+- ``born-digital/novel-two-entry-outline.pdf``: the same, plus an outline of only 2
+  entries (``Opening`` and ``Middle``, pointing to chapters 1 and 6).
 """
 
 import random
@@ -29,6 +36,13 @@ from fixturegen import prose
 
 PATH = "born-digital/novel.pdf"
 GROUND_TRUTH = "born-digital/novel.txt"
+NO_OUTLINE = "born-digital/novel-no-outline.pdf"
+NO_OUTLINE_TRUTH = "born-digital/novel-no-outline.txt"
+TWO_ENTRY_OUTLINE = "born-digital/novel-two-entry-outline.pdf"
+TWO_ENTRY_OUTLINE_TRUTH = "born-digital/novel-two-entry-outline.txt"
+NUMBER_WORDS = ["ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN"]
+# The variants' two outline entries: (title, chapter index).
+SHORT_OUTLINE = [("Opening", 0), ("Middle", 5)]
 
 BOOK_TITLE = "The Lantern Coast"
 AUTHOR = "Ada Quill"
@@ -66,6 +80,27 @@ OPENER_SKIP = 4
 SLOTS = int((BODY_TOP - BODY_BOTTOM - BODY_SIZE) // LEADING) + 1
 SECTION_SLOTS = 3  # blank line, the section title, blank line
 MIN_HYPHEN_WORD, MIN_PREFIX, MIN_SUFFIX = 8, 4, 3
+
+
+@dataclass(frozen=True)
+class Variant:
+    """How a novel variant differs from the novel."""
+
+    outline: bool = True
+    """Chapters and sections are outline entries."""
+    sections: dict[int, str] = field(default_factory=lambda: dict(SECTIONS))
+    numbered: bool = False
+    """Chapters open with ``CHAPTER ONE`` ... in the section style, not their titles."""
+    short_outline: bool = False
+    """An outline of just the ``SHORT_OUTLINE`` entries."""
+
+    def heading(self, chapter: int) -> str:
+        return f"CHAPTER {NUMBER_WORDS[chapter]}" if self.numbered else CHAPTER_TITLES[chapter]
+
+
+NOVEL = Variant()
+NOVEL_NO_OUTLINE = Variant(outline=False, sections={}, numbered=True)
+NOVEL_TWO_ENTRY_OUTLINE = Variant(outline=False, sections={}, numbered=True, short_outline=True)
 
 
 @dataclass
@@ -148,7 +183,9 @@ def paginate(chapter: int, blocks: list[str | Section]) -> list[Page]:
     return pages
 
 
-def build_chapters() -> tuple[list[list[str | Section]], list[Page]]:
+def build_chapters(
+    sections: dict[int, str] = SECTIONS,
+) -> tuple[list[list[str | Section]], list[Page]]:
     """Each chapter's blocks, grown paragraph by paragraph until it fills its pages."""
     rng = random.Random(SEED)
     chapters: list[list[str | Section]] = []
@@ -156,8 +193,8 @@ def build_chapters() -> tuple[list[list[str | Section]], list[Page]]:
     for index in range(len(CHAPTER_TITLES)):
         blocks: list[str | Section] = []
         while True:
-            if index in SECTIONS and len(blocks) == 3:
-                blocks.append(Section(SECTIONS[index]))
+            if index in sections and len(blocks) == 3:
+                blocks.append(Section(sections[index]))
             trial = [*blocks, prose.paragraph(rng)]
             if len(paginate(index, trial)) > PAGES_PER_CHAPTER:
                 break
@@ -195,10 +232,22 @@ def _centred(canvas: Canvas, text: str, font: str, size: float, y: float) -> Non
 
 
 def build(out_dir: Path) -> None:
-    chapters, pages = build_chapters()
+    _build(out_dir, PATH, GROUND_TRUTH, NOVEL)
+
+
+def build_no_outline(out_dir: Path) -> None:
+    _build(out_dir, NO_OUTLINE, NO_OUTLINE_TRUTH, NOVEL_NO_OUTLINE)
+
+
+def build_two_entry_outline(out_dir: Path) -> None:
+    _build(out_dir, TWO_ENTRY_OUTLINE, TWO_ENTRY_OUTLINE_TRUTH, NOVEL_TWO_ENTRY_OUTLINE)
+
+
+def _build(out_dir: Path, path: str, ground_truth: str, variant: Variant) -> None:
+    chapters, pages = build_chapters(variant.sections)
     _check_properties(pages)
 
-    pdf_path = out_dir / PATH
+    pdf_path = out_dir / path
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     canvas = Canvas(
         str(pdf_path),
@@ -217,9 +266,16 @@ def build(out_dir: Path) -> None:
         if page.opener:
             key = f"chapter-{page.chapter + 1}"
             canvas.bookmarkPage(key)
-            canvas.addOutlineEntry(chapter_title, key, level=0)
-            canvas.setFont(CHAPTER_FONT, CHAPTER_SIZE)
-            canvas.drawString(MARGIN_X, BODY_TOP - CHAPTER_SIZE, chapter_title)
+            if variant.outline:
+                canvas.addOutlineEntry(chapter_title, key, level=0)
+            for title, chapter in SHORT_OUTLINE if variant.short_outline else []:
+                if chapter == page.chapter:
+                    canvas.addOutlineEntry(title, key, level=0)
+            font, size = (
+                (SECTION_FONT, SECTION_SIZE) if variant.numbered else (CHAPTER_FONT, CHAPTER_SIZE)
+            )
+            canvas.setFont(font, size)
+            canvas.drawString(MARGIN_X, BODY_TOP - size, variant.heading(page.chapter))
             y -= OPENER_SKIP * LEADING
         else:
             header = BOOK_TITLE if number % 2 == 0 else chapter_title
@@ -242,7 +298,7 @@ def build(out_dir: Path) -> None:
     canvas.save()
 
     text: list[str] = []
-    for title, blocks in zip(CHAPTER_TITLES, chapters, strict=True):
-        text.append(title)
+    for index, blocks in enumerate(chapters):
+        text.append(variant.heading(index))
         text.extend(b.title if isinstance(b, Section) else b for b in blocks)
-    (out_dir / GROUND_TRUTH).write_text("\n\n".join(text) + "\n", encoding="utf-8")
+    (out_dir / ground_truth).write_text("\n\n".join(text) + "\n", encoding="utf-8")
