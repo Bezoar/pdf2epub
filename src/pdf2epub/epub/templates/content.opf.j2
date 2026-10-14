@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="{{ meta.language }}">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">{{ meta.identifier }}</dc:identifier>
+    <dc:title>{{ meta.title }}</dc:title>
+{%- for author in meta.authors %}
+    <dc:creator>{{ author }}</dc:creator>
+{%- endfor %}
+    <dc:language>{{ meta.language }}</dc:language>
+    <meta property="dcterms:modified">{{ meta.modified }}</meta>
+  </metadata>
+  <manifest>
+{%- for item in manifest %}
+    <item id="{{ item.id }}" href="{{ item.href }}" media-type="{{ item.media_type }}"{% if item.properties %} properties="{{ item.properties }}"{% endif %}/>
+{%- endfor %}
+  </manifest>
+  <spine toc="{{ ncx_id }}">
+{%- for itemref in spine %}
+    <itemref idref="{{ itemref.idref }}"{% if not itemref.linear %} linear="no"{% endif %}/>
+{%- endfor %}
+  </spine>
+</package>

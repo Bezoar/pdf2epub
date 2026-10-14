@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="{{ meta.language }}">
+  <head>
+    <meta name="dtb:uid" content="{{ meta.identifier }}"/>
+    <meta name="dtb:depth" content="{{ depth }}"/>
+    <meta name="dtb:totalPageCount" content="{{ page_list | length }}"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>{{ meta.title }}</text></docTitle>
+{%- macro points(items) %}
+{%- for entry in items %}
+    <navPoint id="{{ entry.id }}">
+      <navLabel><text>{{ entry.label }}</text></navLabel>
+      <content src="{{ entry.href }}"/>
+{%- if entry.children %}{{ points(entry.children) }}{% endif %}
+    </navPoint>
+{%- endfor %}
+{%- endmacro %}
+  <navMap>
+{{- points(toc) }}
+  </navMap>
+{%- if page_list %}
+  <pageList>
+    <navLabel><text>Pages</text></navLabel>
+{%- for target in page_list %}
+    <pageTarget id="{{ target.id }}" type="normal">
+      <navLabel><text>{{ target.label }}</text></navLabel>
+      <content src="{{ target.href }}"/>
+    </pageTarget>
+{%- endfor %}
+  </pageList>
+{%- endif %}
+</ncx>
