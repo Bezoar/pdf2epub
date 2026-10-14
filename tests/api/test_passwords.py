@@ -431,6 +431,28 @@ def test_xml_that_is_not_an_adept_token_is_not_a_pdf(tmp_path: Path, xml: bytes)
     assert [i.code for i in result.issues] == ["not_a_pdf"]
 
 
+TOKEN = (FIXTURES / "drm-wrappers" / "sample.acsm").read_bytes()
+XML_DECLARATION = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+
+
+@pytest.mark.ac("PWD-AC5")
+@pytest.mark.parametrize(
+    "prolog",
+    [b"<!-- not a <!DOCTYPE here, nor an <!ENTITY -->\n", b"<!--" + b" " * 8192 + b"-->\n"],
+    ids=["dtd-words-in-a-comment", "long-prolog"],
+)
+def test_an_adept_token_after_any_prolog_is_refused_drm_protected(
+    tmp_path: Path, prolog: bytes
+) -> None:
+    token = tmp_path / "token.acsm"
+    token.write_bytes(TOKEN.replace(XML_DECLARATION, XML_DECLARATION + prolog, 1))
+
+    report, _ = run([token])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["drm_protected"]
+
+
 def test_a_zip_without_an_lcp_licence_is_not_a_pdf(tmp_path: Path) -> None:
     archive = tmp_path / "book.lcpdf"
     with zipfile.ZipFile(archive, "w") as zip_file:
@@ -456,6 +478,25 @@ def test_an_unknown_crypt_filter_fails_unsupported_encryption_untried(tmp_path: 
     ]
     assert provider.calls == []
     assert not (tmp_path / "unknown-crypt-filter.epub").exists()
+
+
+@pytest.mark.ac("PWD-AC6")
+def test_a_crypt_filter_name_missing_from_cf_fails_unsupported_untried(tmp_path: Path) -> None:
+    # The fixture with /StmF and /StrF naming a filter /CF doesn't hold (same length, so
+    # the cross-reference offsets still hold).
+    data = UNKNOWN_CRYPT_FILTER.read_bytes()
+    assert data.count(b"/StmF /StdCF /StrF /StdCF") == 1
+    pdf = tmp_path / "missing-crypt-filter.pdf"
+    pdf.write_bytes(data.replace(b"/StmF /StdCF /StrF /StdCF", b"/StmF /NoXCF /StrF /NoXCF"))
+    provider = ScriptedProvider(("hunter2", "env"))
+
+    report, _ = run([pdf], provider)
+
+    [result] = report.conversions
+    assert [(i.code, i.hint) for i in result.issues] == [
+        ("unsupported_encryption", UNSUPPORTED_HINT)
+    ]
+    assert provider.calls == []
 
 
 @pytest.mark.ac("PWD-AC23")

@@ -13,7 +13,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
+from typing import BinaryIO, NoReturn
 from xml.parsers import expat
 
 import pypdf
@@ -149,6 +149,9 @@ def _open_encrypted(path: Path) -> pypdf.PdfReader | None:
     revision = encrypt.get("/R")
     if not isinstance(revision, int) or not _MIN_REVISION <= revision <= _MAX_REVISION:
         raise AccessDenied(_unsupported(f"revision {revision}"))
+    problem = _crypt_filter_problem(encrypt)
+    if problem is not None:
+        raise AccessDenied(_unsupported(problem))
     try:
         # pypdf reads the crypt filters as it opens the file, and refuses those it can't
         # decrypt before it tries the empty password.
@@ -159,6 +162,34 @@ def _open_encrypted(path: Path) -> pypdf.PdfReader | None:
 
 # PWD-R1: the Standard security handler revisions pdf2epub decrypts.
 _MIN_REVISION, _MAX_REVISION = 2, 6
+# PWD-R1: the algorithm versions (/V) it decrypts: RC4 (1, 2), crypt filters (4, 5).
+_ALGORITHMS = (1, 2, 4, 5)
+# The crypt filter methods (/CFM) pypdf decrypts: RC4, AES-128, AES-256.
+_METHODS = ("/V2", "/AESV2", "/AESV3")
+
+
+def _crypt_filter_problem(encrypt: DictionaryObject) -> str | None:
+    """Why the Standard ``encrypt`` dictionary can't be decrypted, read from its
+    algorithm and crypt filters alone; None when nothing there stops it."""
+    version = encrypt.get("/V", 0)
+    if not isinstance(version, int) or version not in _ALGORITHMS:
+        return f"algorithm /V {version}"
+    if version < 4:
+        return None
+    filters = encrypt.get("/CF")
+    filters = filters.get_object() if filters is not None else DictionaryObject()
+    for key in ("/StmF", "/StrF", "/EFF"):
+        name = encrypt.get(key, "/Identity")
+        if name == "/Identity":
+            continue
+        crypt_filter = filters.get(name) if isinstance(filters, DictionaryObject) else None
+        crypt_filter = crypt_filter.get_object() if crypt_filter is not None else None
+        if not isinstance(crypt_filter, DictionaryObject):
+            return f"{key} names no crypt filter: {name}"
+        method = crypt_filter.get("/CFM")
+        if method not in _METHODS:
+            return f"{key} crypt filter method {method}"
+    return None
 
 
 class _StructureReader(pypdf.PdfReader):
@@ -193,35 +224,46 @@ def _unsupported(detail: str) -> Issue:
     )
 
 
-def _xml_root(head: bytes) -> str | None:
+def _xml_root(file: BinaryIO) -> str | None:
     """The root element's name, as ``<namespace> <local name>``, of the XML document
-    starting with ``head``; None when ``head`` doesn't reach a root element as
-    well-formed XML, or declares a DTD. Without a DTD there are no entities to expand,
-    and parsing stops at the root's start tag."""
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
-        return None  # an .acsm token has no DTD; refuse to expand anyone's entities
+    ``file`` holds; None when it isn't well-formed XML up to its root's start tag, has a
+    DTD, or has no root within the first ``_XML_PROLOG_LIMIT`` bytes. Parsing stops at a
+    DTD, so no entity is ever expanded, and at the root's start tag."""
     roots: list[str] = []
 
     def start(name: str, attributes: object) -> None:
         roots.append(name)
-        raise _RootFound
+        raise _StopParsing
+
+    def doctype(*_: object) -> None:
+        raise _StopParsing  # an .acsm token has no DTD; refuse to read anyone's entities
 
     parser = expat.ParserCreate(namespace_separator=" ")
     parser.StartElementHandler = start
-    with suppress(_RootFound, expat.ExpatError):
-        parser.Parse(head, False)
+    parser.StartDoctypeDeclHandler = doctype
+    with suppress(_StopParsing, expat.ExpatError):
+        read = 0
+        while read < _XML_PROLOG_LIMIT and (chunk := file.read(_XML_CHUNK)):
+            read += len(chunk)
+            parser.Parse(chunk, False)
+        # Expat may hold back a start tag until more input comes (reparse deferral);
+        # ending the input makes it report what it has.
+        parser.Parse(b"", True)
     return roots[0] if roots else None
 
 
-class _RootFound(Exception):
-    """Stops parsing at the root element's start tag."""
+class _StopParsing(Exception):
+    """Stops parsing at the root element's start tag, or at a DTD."""
 
 
 # PWD-R3: a Readium LCP package is a ZIP archive holding this licence document.
 _LCP_LICENSE = "META-INF/license.lcpl"
 # PWD-R3: an Adobe .acsm file is an XML fulfilment token in the ADEPT namespace.
 _ACSM_ROOT = "http://ns.adobe.com/adept fulfillmentToken"
-_ACSM_WINDOW = 4096
+_XML_CHUNK = 4096
+# How far into an XML file its root element is looked for: comments and processing
+# instructions may come first, but not without end.
+_XML_PROLOG_LIMIT = 1 << 20
 
 
 def is_drm_wrapper(path: Path) -> bool:
@@ -230,9 +272,9 @@ def is_drm_wrapper(path: Path) -> bool:
     in the wrapper is read beyond that."""
     try:
         with path.open("rb") as file:
-            head = file.read(_ACSM_WINDOW)
-        if head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
-            return _xml_root(head) == _ACSM_ROOT
+            if file.read(_XML_CHUNK).lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
+                file.seek(0)
+                return _xml_root(file) == _ACSM_ROOT
         if not zipfile.is_zipfile(path):
             return False
         with zipfile.ZipFile(path) as archive:
