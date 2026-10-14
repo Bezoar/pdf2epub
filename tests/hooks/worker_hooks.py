@@ -1,5 +1,5 @@
 """Test hooks that make a conversion crash, hang or run slowly (BAT-AC13, BAT-AC14,
-BAT-AC12, CLI-AC17).
+BAT-AC12, CLI-AC17), or record how its process was started (BAT-AC15).
 
 They live in the test suite only: nothing in the ``pdf2epub`` package knows of them. A
 test reaches a worker subprocess by putting this folder on ``PYTHONPATH`` (see
@@ -17,11 +17,15 @@ normally. Each rule is a dict:
   wait for the conversion to be running rather than guess with a sleep. With
   ``"on_term": PATH`` the process ignores SIGTERM, creating ``PATH`` when one arrives, so
   that it outlives the grace period of BAT-R17 until it is killed.
+- ``{"action": "record", "path": PATH}``: the process's argv and environment are written
+  to ``PATH`` as JSON (``{"argv": [...], "env": {...}}``), then the conversion goes on
+  normally.
 """
 
 import json
 import os
 import signal
+import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -81,5 +85,9 @@ def _apply(rule: Mapping[str, Any]) -> None:
         deadline = time.monotonic() + float(rule["seconds"])
         while (left := deadline - time.monotonic()) > 0:
             time.sleep(left)  # a handled signal may cut a sleep short
+        return
+    if action == "record":
+        record = {"argv": sys.argv, "env": dict(os.environ)}
+        Path(rule["path"]).write_text(json.dumps(record), encoding="utf-8")
         return
     raise ValueError(f"unknown test hook action {action!r}")
