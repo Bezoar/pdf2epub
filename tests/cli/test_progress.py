@@ -82,3 +82,17 @@ def test_redraws_on_a_terminal_are_spaced_at_least_about_100_ms(
     draws = [at for at, data in chunks for _ in range(data.count(frame.encode()))]
     gaps = [later - earlier for earlier, later in itertools.pairwise(draws)]
     assert all(gap >= 0.08 for gap in gaps), gaps
+
+
+@pytest.mark.ac("CLI-AC13")
+def test_log_lines_on_a_terminal_start_on_a_cleared_line(sample_pdf: Path, tmp_path: Path) -> None:
+    code, chunks = run_on_terminal(["--debug", "sample.pdf"], tmp_path)
+
+    assert code == 0
+    output = b"".join(data for _, data in chunks).decode("utf-8")
+    logged = [line for line in output.split("\n") if "DEBUG: " in line or "INFO: " in line]
+    assert logged, output
+    for line in logged:
+        before = line[: min(i for i in (line.find("DEBUG: "), line.find("INFO: ")) if i >= 0)]
+        # Whatever progress frame was on the line has been cleared first.
+        assert before.rsplit("\r", 1)[-1] in ("", "\x1b[K"), repr(line)

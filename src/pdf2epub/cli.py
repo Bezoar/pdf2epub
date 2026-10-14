@@ -144,9 +144,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             quiet=args.quiet,
             progress=not args.quiet and sys.stderr.isatty(),
         )
-        report = run_batch(
-            plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
-        )
+        handlers = logging.getLogger().handlers
+        for handler in handlers:
+            handler.addFilter(reporter.clear_progress)
+        try:
+            report = run_batch(
+                plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
+            )
+        finally:
+            for handler in handlers:
+                handler.removeFilter(reporter.clear_progress)
         reporter.render()
     if args.report is not None and final.event is not None:
         write_report(final.event, Path(args.report))
@@ -263,10 +270,18 @@ class HumanReport:
         self._stream.flush()
         self._drawn = True
 
-    def render(self) -> None:
+    def clear_progress(self, record: logging.LogRecord | None = None) -> bool:
+        """Clear the progress line, if one is drawn, so that what is written next starts
+        on an empty line. As a logging filter, it runs before each log record is written
+        and lets every record through."""
         if self._drawn:
             self._stream.write("\r\x1b[K")
+            self._stream.flush()
             self._drawn = False
+        return True
+
+    def render(self) -> None:
+        self.clear_progress()
         if self._finished is None:
             return
         conversions: list[dict[str, Any]] = self._finished["conversions"]
