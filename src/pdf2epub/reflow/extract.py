@@ -12,6 +12,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import pairwise
 
 from pdfminer.layout import LAParams, LTChar, LTTextContainer, LTTextLine
 
@@ -36,6 +37,12 @@ LIGATURES = str.maketrans(
 _SAME_ROW = 0.5
 # Pieces of one row this many ems apart or closer are one line of text.
 _PIECE_GAP_EM = 3.0
+# Font names of common monospace faces (RFL-R36).
+_MONO_NAME = re.compile(r"courier|mono|consol|menlo|typewriter|fixed", re.IGNORECASE)
+# A line whose glyphs all have the same advance (within this share) is monospace when it
+# has at least this many glyphs, of at least this many distinct characters; no
+# proportional face sets that many different letters all the same width.
+_MONO_SPREAD, _MONO_GLYPHS, _MONO_DISTINCT = 0.01, 10, 5
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,13 @@ class Line:
     """The line's most common character size, in points."""
     soft_hyphen: bool = False
     """The line ended in a soft hyphen (removed from ``text``)."""
+    monospace: bool = False
+    """Every glyph of the line is set in a monospace font (RFL-R36)."""
+    verbatim: str = ""
+    """A monospace line's normalised text with its spaces kept, leading ones included
+    (only trailing whitespace removed); empty for other lines."""
+    advance: float = 0.0
+    """A monospace line's glyph advance, in points; 0 for other lines."""
 
 
 @dataclass(frozen=True)
@@ -92,10 +106,30 @@ def _line(item: LTTextLine, page_height: float) -> Line | None:
     text = " ".join(normalise(raw).split())
     if not text:
         return None
-    sizes = Counter(round(c.size, 1) for c in item if isinstance(c, LTChar))
+    chars = [c for c in item if isinstance(c, LTChar)]
+    sizes = Counter(round(c.size, 1) for c in chars)
     size = sizes.most_common(1)[0][0] if sizes else item.height
     x0, y0, x1, y1 = item.bbox
-    return Line(text, x0, x1, page_height - y1, page_height - y0, size, soft)
+    mono = _monospace(chars)
+    verbatim = normalise(item.get_text()).rstrip() if mono else ""
+    advance = chars[0].adv if mono else 0.0
+    return Line(
+        text, x0, x1, page_height - y1, page_height - y0, size, soft, mono, verbatim, advance
+    )
+
+
+def _monospace(chars: list[LTChar]) -> bool:
+    if not chars:
+        return False
+    if all(_MONO_NAME.search(c.fontname) for c in chars):
+        return True
+    advances = [c.adv for c in chars]
+    distinct = {c.get_text() for c in chars if not c.get_text().isspace()}
+    return (
+        len(chars) >= _MONO_GLYPHS
+        and len(distinct) >= _MONO_DISTINCT
+        and max(advances) - min(advances) <= _MONO_SPREAD * max(advances)
+    )
 
 
 def _rows(lines: list[Line]) -> list[Line]:
@@ -129,6 +163,15 @@ def _overlap(a: Line, b: Line) -> float:
 def _merge(row: list[Line]) -> Line:
     if len(row) == 1:
         return row[0]
+    monospace = all(line.monospace for line in row)
+    verbatim = ""
+    if monospace:
+        # Keep the gaps between pieces of a monospace line as spaces.
+        verbatim = row[0].verbatim
+        for left, right in pairwise(row):
+            gap = right.x0 - left.x1
+            spaces = max(1, round(gap / right.advance)) if right.advance > 0 else 1
+            verbatim += " " * spaces + right.verbatim
     return Line(
         text=" ".join(line.text for line in row),
         x0=min(line.x0 for line in row),
@@ -137,4 +180,7 @@ def _merge(row: list[Line]) -> Line:
         bottom=max(line.bottom for line in row),
         size=max(row, key=lambda line: len(line.text)).size,
         soft_hyphen=row[-1].soft_hyphen,
+        monospace=monospace,
+        verbatim=verbatim,
+        advance=row[0].advance,
     )
