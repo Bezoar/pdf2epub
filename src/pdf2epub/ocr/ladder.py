@@ -25,7 +25,7 @@ no confidence) and the ladder goes on; one that runs out of budget ends the ladd
 """
 
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 
 import cv2
@@ -196,16 +196,22 @@ def attempt(engine: OcrEngine, request: OcrRequest, variant: str = "baseline") -
 def coverage(image: Image.Image, result: OcrPageResult) -> float:
     """The share of the image's ink (dark pixels after Otsu binarisation) inside the boxes
     of the recognised words (OCR-R16); 1 for an image with no ink."""
+    return ink_coverage(image, [(w.x0, w.top, w.x1, w.bottom) for w in result.words])
+
+
+def ink_coverage(image: Image.Image, boxes: Iterable[tuple[float, float, float, float]]) -> float:
+    """The share of the image's ink (dark pixels after Otsu binarisation) inside
+    ``boxes``, each ``(left, top, right, bottom)`` in pixels; 1 for an image with no ink."""
     grey = np.asarray(image.convert("L"), dtype=np.uint8)
     _, binary = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     ink = binary == 0
     total = int(ink.sum())
     if total == 0 or ink.all():
         return 1.0 if total == 0 else 0.0
-    boxes = np.zeros_like(ink)
+    inside = np.zeros_like(ink)
     rows, columns = ink.shape
-    for word in result.words:
-        top, bottom = max(int(word.top), 0), min(int(np.ceil(word.bottom)), rows)
-        left, right = max(int(word.x0), 0), min(int(np.ceil(word.x1)), columns)
-        boxes[top:bottom, left:right] = True
-    return int((ink & boxes).sum()) / total
+    for left, top, right, bottom in boxes:
+        y0, y1 = max(int(top), 0), min(int(np.ceil(bottom)), rows)
+        x0, x1 = max(int(left), 0), min(int(np.ceil(right)), columns)
+        inside[y0:y1, x0:x1] = True
+    return int((ink & inside).sum()) / total

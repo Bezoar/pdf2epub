@@ -48,6 +48,7 @@ def registry() -> list[Fixture]:
         pagenumbers,
         scans,
         structure,
+        textlayers,
         twopage,
         typography,
         verse,
@@ -141,6 +142,17 @@ def registry() -> list[Fixture]:
         Fixture(scans.ROTATED, scans.ROTATED_TRUTH, scans.build_rotated),
         Fixture(scans.LOW_DPI, scans.LOW_DPI_TRUTH, scans.build_low_dpi),
         Fixture(scans.EMPHASIS, scans.EMPHASIS_TRUTH, scans.build_emphasis),
+        # The text-layer quality check's fixtures (OCR-AC3 to OCR-AC6).
+        Fixture(textlayers.OCR_LAYER, textlayers.OCR_LAYER_TRUTH, textlayers.build_ocr_layer),
+        Fixture(
+            textlayers.GARBLED_LAYER,
+            textlayers.GARBLED_LAYER_TRUTH,
+            textlayers.build_garbled_layer,
+        ),
+        Fixture(textlayers.HALF_LAYER, textlayers.HALF_LAYER_TRUTH, textlayers.build_half_layer),
+        Fixture(
+            textlayers.NO_TOUNICODE, textlayers.NO_TOUNICODE_TRUTH, textlayers.build_no_tounicode
+        ),
     ]
 
 

@@ -68,3 +68,11 @@ def ocr_languages(options: ConversionOptions, declared: str | None) -> str:
     if not tag:
         return DEFAULT
     return tesseract_code(tag) or DEFAULT
+
+
+def known_codes() -> frozenset[str]:
+    """Every Tesseract language code the table above names."""
+    return _KNOWN
+
+
+_KNOWN = frozenset(_TESSERACT.values()) | _THREE_LETTER | frozenset(_VARIANTS.values())
