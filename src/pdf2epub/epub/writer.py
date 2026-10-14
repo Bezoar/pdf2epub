@@ -117,16 +117,19 @@ def write_epub(document: Document) -> bytes:
         size = shell
         for block in chapter.blocks:
             markup = _block_markup(_block(block, images, figures))
-            if isinstance(block, Paragraph) and len(markup.encode("utf-8")) + shell > SPLIT_BYTES:
-                pieces = _paragraph_pieces(block, SPLIT_BYTES - shell)
-                rendered_pieces: list[tuple[Block, str]] = [
+            oversized = len(markup.encode("utf-8")) + shell > SPLIT_BYTES
+            rendered_pieces: list[tuple[Block, str]] = [(block, markup)]
+            if oversized and isinstance(block, Paragraph):
+                rendered_pieces = [
                     (piece, _block_markup(_block(piece, images, figures, continued=n > 0)))
-                    for n, piece in enumerate(pieces)
+                    for n, piece in enumerate(_paragraph_pieces(block, SPLIT_BYTES - shell))
                 ]
-                if any(len(m.encode("utf-8")) + shell > SPLIT_BYTES for _, m in rendered_pieces):
-                    raise PackageCheckError(f"a paragraph in chapter {index + 1} can't be split")
-            else:
-                rendered_pieces = [(block, markup)]
+            elif oversized and isinstance(block, LineBlock):
+                rendered_pieces = _line_block_pieces(block, SPLIT_BYTES - shell)
+            # No file may pass the limit: a block that can't be cut small enough is a bug
+            # report, not an oversized file (EPUB-R8, EPUB-R21).
+            if any(len(m.encode("utf-8")) + shell > SPLIT_BYTES for _, m in rendered_pieces):
+                raise PackageCheckError(f"a block in chapter {index + 1} is too large to split")
             for piece, piece_markup in rendered_pieces:
                 rendered = len(piece_markup.encode("utf-8")) + 1
                 if parts[-1] and size + rendered > SPLIT_BYTES:
@@ -272,6 +275,24 @@ def _paragraph_pieces(paragraph: Paragraph, budget: int) -> list[Paragraph]:
             pieces[-1].append(token)
             size += cost
     return [Paragraph(inlines) for inlines in pieces]
+
+
+def _line_block_pieces(block: LineBlock, budget: int) -> list[tuple[Block, str]]:
+    """A line block too large for one chapter file, cut between its lines into line blocks
+    whose markup each fits within ``budget`` bytes where a single line allows."""
+    pieces: list[tuple[Block, str]] = []
+    lines: list[list[Inline]] = []
+    for line in block.lines:
+        trial = LineBlock([*lines, line], block.monospace)
+        markup = _block_markup(_block(trial, {}, iter(())))
+        if lines and len(markup.encode("utf-8")) > budget:
+            done = LineBlock(lines, block.monospace)
+            pieces.append((done, _block_markup(_block(done, {}, iter(())))))
+            lines = []
+        lines.append(line)
+    rest = LineBlock(lines, block.monospace)
+    pieces.append((rest, _block_markup(_block(rest, {}, iter(())))))
+    return pieces
 
 
 def _cost(text: str) -> int:

@@ -223,22 +223,41 @@ def _place_images(
     taken: set[int] = set()
     placed: list[tuple[float, Image]] = []
     reach = _CAPTION_GAP_EM * typography.body_size
+
+    def is_caption(block: TextBlock) -> bool:
+        return (
+            len(block.lines) <= _CAPTION_LINES
+            and block.size <= typography.body_size - _CAPTION_SMALLER
+        )
+
     for image in images:
-        candidates = [
+        # The adjacent blocks: the nearest block overlapping the image horizontally,
+        # directly below it and directly above it. Only an adjacent block can be the
+        # caption, and only if it is short and in smaller type.
+        overlapping = [
             (index, block)
             for index, block in blocks
             if index not in taken
-            and len(block.lines) <= _CAPTION_LINES
-            and block.size <= typography.body_size - _CAPTION_SMALLER
             and min(block.lines[0].x1, image.x1) > max(block.lines[0].x0, image.x0)
         ]
-        below = [(i, b) for i, b in candidates if 0 <= b.top - image.bottom + 1 <= reach]
-        above = [(i, b) for i, b in candidates if 0 <= image.top - b.bottom + 1 <= reach]
+        below = [(i, b) for i, b in overlapping if b.top >= image.bottom - 1]
+        above = [(i, b) for i, b in overlapping if b.bottom <= image.top + 1]
+        nearest = [
+            *sorted(below, key=lambda item: item[1].top)[:1],
+            *sorted(above, key=lambda item: -item[1].bottom)[:1],
+        ]
         caption = None
-        for index, block in below[:1] or above[-1:]:
-            taken.add(index)
-            inlines = paragraph_inlines(list(block.lines), words)
-            caption = "".join(i.text for i in inlines if isinstance(i, Text))
+        for index, block in nearest:
+            gap = (
+                block.top - image.bottom
+                if block.top >= image.bottom - 1
+                else image.top - block.bottom
+            )
+            if gap <= reach and is_caption(block):
+                taken.add(index)
+                inlines = paragraph_inlines(list(block.lines), words)
+                caption = "".join(i.text for i in inlines if isinstance(i, Text))
+                break
         placed.append((image.top, Image(image.asset, caption)))
     return placed, taken
 
