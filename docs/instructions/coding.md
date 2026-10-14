@@ -22,8 +22,8 @@ These rules apply to every change in this repository. They are instructions, not
 | Check formatting | `uv run ruff format --check .` |
 | Apply formatting | `uv run ruff format .` |
 | Type-check | `uv run mypy` |
-| Run all tests | `uv run pytest` |
-| Run one test | `uv run pytest tests/api/test_passwords.py::test_wrong_password` |
+| Run all tests (in parallel, one pytest-xdist worker per CPU) | `uv run pytest` |
+| Run one test (`-n 0`: in one process, without starting workers) | `uv run pytest -n 0 tests/api/test_passwords.py::test_wrong_password` |
 | Tests with branch coverage | `uv run coverage run -m pytest && uv run coverage report` |
 | Run the CLI from the checkout | `uv run pdf2epub --help` |
 | Fetch the real-world smoke set | `uv run python scripts/smoke.py fetch` |
@@ -62,7 +62,8 @@ Expected values come from the spec (exact issue codes, exit codes, event fields)
 ## 5. Coverage
 
 - Branch coverage is measured over **all** of `src/pdf2epub`, with nothing listed under `omit`.
-- The measured CI job runs on Linux with Python 3.12 and has Tesseract installed, so the OCR paths count.
+- The measured CI job runs on Linux x86-64 with Python 3.13 and has Tesseract installed, so the OCR paths count.
+- Coverage follows subprocesses: the xdist workers, the CLI and pdf2epub's own workers. The job moved from Python 3.12 to 3.13 by owner decision in [#73](https://github.com/Bezoar/pdf2epub/issues/73): under 3.12's `sys.settrace`, every measured process spent about 10 s importing pypdf's glyph table (0.7 s on 3.13), which made the job take over 45 minutes. For the same reason, prefer Python 3.13 for a local coverage run.
 - The bar is a floor: `fail_under = 75`, with no ratchet. A PR may lower coverage as long as it stays at or above 75%.
 - `# pragma: no cover` is allowed **only** on:
   - `if TYPE_CHECKING:` blocks;
