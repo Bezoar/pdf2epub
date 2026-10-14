@@ -67,15 +67,15 @@ def test_verbose_batch_report_lists_each_success(tmp_path: Path) -> None:
 
 # --- CLI-AC14: totals, failures first, condensed warnings ------------------------------
 
-MISSING_PAGE = FIXTURES / "scanned" / "page-numbers-missing.pdf"
+COMPLEX_PAGES = FIXTURES / "born-digital" / "complex-pages.pdf"
 TRUNCATED = FIXTURES / "damaged" / "truncated.pdf"
 
 
 def mixed_batch(tmp_path: Path) -> list[str]:
-    """``a.pdf`` converts with a page-list warning (``page_sequence_gap`` on pages 16 and
-    17, standing in for ``page_fallback`` until page fallback lands), ``b.pdf``'s EPUB
-    already exists, and ``c.pdf`` is corrupt."""
-    shutil.copyfile(MISSING_PAGE, tmp_path / "a.pdf")
+    """``a.pdf`` converts with a ``page_fallback`` warning (reason ``complex``: a table or
+    equations on pages 3, 7, 8 and 9), ``b.pdf``'s EPUB already exists, and ``c.pdf`` is
+    corrupt."""
+    shutil.copyfile(COMPLEX_PAGES, tmp_path / "a.pdf")
     shutil.copyfile(NOVEL, tmp_path / "b.pdf")
     shutil.copyfile(TRUNCATED, tmp_path / "c.pdf")
     first = run_cli(["b.pdf"], tmp_path)
@@ -103,7 +103,7 @@ def test_report_lists_totals_then_failures_then_condensed_warnings(tmp_path: Pat
     assert lines[0] == "Converted: 1  Skipped: 1  Failed: 1"
     assert lines[1] == f"✗ {tmp_path / 'c.pdf'}"
     assert lines[2].startswith("  corrupt_pdf [error]: ")
-    assert lines[3] == f"! {tmp_path / 'a.pdf'}: page_sequence_gap pages 16–17"  # noqa: RUF001
+    assert lines[3] == f"! {tmp_path / 'a.pdf'}: page_fallback(complex) pages 3, 7–9"  # noqa: RUF001
     assert len(lines) == 4
     assert not any(line.startswith("✓") for line in lines)
 

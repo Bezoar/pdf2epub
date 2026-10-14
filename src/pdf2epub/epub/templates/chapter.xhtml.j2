@@ -25,6 +25,13 @@
   {{ pagebreak(node) }}
 {%- elif node.kind == "heading" %}
   <h{{ node.level }} id="{{ node.id }}">{{ inlines(node.inlines) }}</h{{ node.level }}>
+{%- elif node.kind == "page_image" %}
+  <figure class="page-image">
+    <img src="{{ node.src }}" alt="{{ node.alt }}"/>
+    {%- if node.text %}
+    <div class="hidden-text">{{ node.text }}</div>
+    {%- endif %}
+  </figure>
 {%- elif node.kind == "lines" and node.monospace %}
   <p class="lines code"><code>
   {%- for line in node.lines %}{% if not loop.first %}<br/>{% endif %}{{ inlines(line) }}{% endfor -%}

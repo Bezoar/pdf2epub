@@ -10,6 +10,7 @@ Package layout (EPUB-R2, EPUB-R4)::
     OEBPS/toc.ncx                 EPUB 2 table of contents (EPUB-R6)
     OEBPS/style.css               default stylesheet (EPUB-R10)
     OEBPS/chapter-NNN.xhtml       one file per chapter, in document order
+    OEBPS/images/...              the book's images, page images included
 
 Output is deterministic (EPUB-R15): entries in sorted order after ``mimetype``, fixed
 timestamps, a fixed compression level, and names and ids derived from document order.
@@ -33,6 +34,7 @@ from pdf2epub.reflow.model import (
     Inline,
     LineBlock,
     PageBreak,
+    PageImage,
     Paragraph,
     Text,
     TocEntry,
@@ -47,6 +49,7 @@ ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 COMPRESS_LEVEL = 9
 
 XHTML = "application/xhtml+xml"
+IMAGES = "images"
 MEDIA_TYPES = {".xhtml": XHTML, ".css": "text/css", ".ncx": "application/x-dtbncx+xml"}
 
 
@@ -90,19 +93,21 @@ def write_epub(document: Document) -> bytes:
     contents: dict[str, bytes] = {}
 
     page_list: list[_Nav] = []
+    labels: dict[int, str] = {}
     for index, chapter in enumerate(document.chapters):
         name = chapter_file(index)
-        page_list.extend(
-            _Nav(f"pt-{b.page}", b.label, f"{name}#{page_id(b.page)}")
-            for b in _page_breaks(chapter.blocks)
-        )
+        breaks = _page_breaks(chapter.blocks)
+        labels.update((b.page, b.label) for b in breaks)
+        page_list.extend(_Nav(f"pt-{b.page}", b.label, f"{name}#{page_id(b.page)}") for b in breaks)
         contents[name] = _render(
             "chapter.xhtml.j2",
             meta=meta,
             title=chapter.title or meta.title,
             stylesheet=STYLESHEET,
-            blocks=[_block(block) for block in chapter.blocks],
+            blocks=[_block(block, labels) for block in chapter.blocks],
         )
+    for image in document.images:
+        contents[f"{IMAGES}/{image.name}"] = image.data
 
     counter = iter(range(1, 1_000_000))
     toc = [_toc_entry(entry, counter) for entry in document.toc]
@@ -124,14 +129,31 @@ def write_epub(document: Document) -> bytes:
     contents[STYLESHEET] = _template_source(STYLESHEET).encode("utf-8")
 
     chapters = [chapter_file(i) for i in range(len(document.chapters))]
-    manifest = [
-        {"id": "nav", "href": NAV, "media_type": XHTML, "properties": "nav"},
-        {"id": "ncx", "href": NCX, "media_type": MEDIA_TYPES[".ncx"], "properties": None},
-        {"id": "style", "href": STYLESHEET, "media_type": "text/css", "properties": None},
-    ] + [
-        {"id": name.removesuffix(".xhtml"), "href": name, "media_type": XHTML, "properties": None}
-        for name in chapters
-    ]
+    manifest = (
+        [
+            {"id": "nav", "href": NAV, "media_type": XHTML, "properties": "nav"},
+            {"id": "ncx", "href": NCX, "media_type": MEDIA_TYPES[".ncx"], "properties": None},
+            {"id": "style", "href": STYLESHEET, "media_type": "text/css", "properties": None},
+        ]
+        + [
+            {
+                "id": name.removesuffix(".xhtml"),
+                "href": name,
+                "media_type": XHTML,
+                "properties": None,
+            }
+            for name in chapters
+        ]
+        + [
+            {
+                "id": f"image-{index + 1}",
+                "href": f"{IMAGES}/{image.name}",
+                "media_type": image.media_type,
+                "properties": None,
+            }
+            for index, image in enumerate(document.images)
+        ]
+    )
     spine = [{"idref": "nav", "linear": False}] + [
         {"idref": name.removesuffix(".xhtml"), "linear": True} for name in chapters
     ]
@@ -167,9 +189,18 @@ def _inline(inline: Inline) -> dict[str, Any]:
     return {"kind": "text", "text": inline.text, "bold": inline.bold, "italic": inline.italic}
 
 
-def _block(block: Block) -> dict[str, Any]:
+def _block(block: Block, labels: dict[int, str]) -> dict[str, Any]:
     if isinstance(block, PageBreak):
         return _inline(block)
+    if isinstance(block, PageImage):
+        # EPUB-R9, EPUB-R11: a full-width figure, its alt text the page's label, and the
+        # page's text in a visually hidden element.
+        return {
+            "kind": "page_image",
+            "src": f"{IMAGES}/{block.asset}",
+            "alt": f"Page {labels.get(block.page, str(block.page))}",
+            "text": block.text,
+        }
     if isinstance(block, Heading):
         return {
             "kind": "heading",
@@ -246,7 +277,7 @@ def check_package(entries: dict[str, bytes]) -> None:
         for element in tree.iter():
             tag = etree.QName(element).localname if isinstance(element.tag, str) else ""
             link = element.get("href") if tag == "a" else element.get("src")
-            if tag not in ("a", "content") or link is None:
+            if tag not in ("a", "content", "img") or link is None:
                 continue
             path, fragment = urldefrag(link)
             target = posixpath.normpath(posixpath.join(posixpath.dirname(name), path))

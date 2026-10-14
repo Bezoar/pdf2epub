@@ -1,7 +1,7 @@
 """The document model (RFL-R34): reflow's output and the EPUB writer's only input.
 
-It holds no PDF objects. Images, page images and the cover join the model with the
-tickets that produce them. ``page`` is always the 1-based PDF page index (unique within a
+It holds no PDF objects. Book images and the cover join the model with the tickets that
+produce them. ``page`` is always the 1-based PDF page index (unique within a
 book); ``label`` is the printed page label, for display only.
 """
 
@@ -51,7 +51,30 @@ class LineBlock:
     """Set wholly in a monospace font; its lines keep their spaces, leading ones too."""
 
 
-Block = Heading | Paragraph | LineBlock | PageBreak
+@dataclass(frozen=True)
+class ImageAsset:
+    """An image stored once in the book (RFL-R26), whatever refers to it."""
+
+    name: str
+    """Its file name in the book, e.g. ``page-3.png``: unique within the book."""
+    media_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class PageImage:
+    """A page-image fallback (RFL-R15): a render of the whole page, with the page's text
+    kept searchable."""
+
+    asset: str
+    """The ``name`` of its ``ImageAsset`` in ``Document.images``."""
+    text: str | None
+    """Its searchable text, one line per line of the page (in column order on a
+    multi-column page); None when the page has none."""
+    page: int
+
+
+Block = Heading | Paragraph | LineBlock | PageImage | PageBreak
 
 
 @dataclass(frozen=True)
@@ -87,3 +110,5 @@ class Document:
     metadata: Metadata
     chapters: list[Chapter]
     toc: list[TocEntry]
+    images: list[ImageAsset] = field(default_factory=list)
+    """Every image the blocks refer to, each stored once."""

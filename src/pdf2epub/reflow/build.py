@@ -8,10 +8,15 @@ joined (``reflow.text``, RFL-R17, RFL-R19). Line blocks (verse, code) keep their
 and are never joined (``reflow.lineblocks``, RFL-R36). Each page starts with a page-break marker: a
 block, or an inline where a paragraph runs on across the page boundary.
 
+Pages set in more than one column, and in ``mode = "auto"`` complex pages, are not
+reflowed: each becomes a page image with its text kept searchable (RFL-R11, RFL-R13,
+RFL-R15), reported as one ``page_fallback`` issue per reason (API-R11).
+
 The book is still one chapter; headings, chapters from the outline, images and the cover
 come with later tickets.
 """
 
+import hashlib
 import re
 import uuid
 from collections.abc import Collection
@@ -20,6 +25,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
+from pdf2epub.reflow.complexity import is_complex
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.furniture import Furniture, PageBlocks, find_furniture
 from pdf2epub.reflow.layout import DraftParagraph, group_blocks, measure, paragraphs
@@ -28,12 +34,15 @@ from pdf2epub.reflow.model import (
     Block,
     Chapter,
     Document,
+    ImageAsset,
     LineBlock,
     Metadata,
     PageBreak,
+    PageImage,
     Paragraph,
     TocEntry,
 )
+from pdf2epub.reflow.render import render_pages
 from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
@@ -55,15 +64,72 @@ def build_document(
 ) -> tuple[Document, list[Issue]]:
     """The document model for ``source``, and the issues found while building it."""
     metadata, issues = _metadata(source, options)
-    blocks, furniture = _body(source, pages, wordlist(metadata.language))
+    reasons = {page.page: reason for page in pages if (reason := _fallback(page, options))}
+    images, page_images = _page_images(source, pages, reasons)
+    blocks, furniture = _body(source, pages, wordlist(metadata.language), page_images)
+    issues.extend(_fallback_issues(reasons))
     gaps = sequence_gaps(furniture.page_numbers)
     if gaps is not None:
         issues.append(gaps)
     chapter = Chapter(title=metadata.title, blocks=blocks)
     document = Document(
-        metadata=metadata, chapters=[chapter], toc=[TocEntry(metadata.title, chapter=0)]
+        metadata=metadata,
+        chapters=[chapter],
+        toc=[TocEntry(metadata.title, chapter=0)],
+        images=images,
     )
     return document, issues
+
+
+MULTI_COLUMN, COMPLEX = "multi_column", "complex"
+_FALLBACK_MESSAGES = {
+    MULTI_COLUMN: "Pages set in more than one column were embedded as page images, "
+    "with their text kept searchable column by column.",
+    COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
+    "images, with their text kept searchable.",
+}
+
+
+def _fallback(page: PageText, options: ConversionOptions) -> str | None:
+    """Why ``page`` becomes a page image, or None if it is reflowed. Columns are never
+    interleaved, in either mode (RFL-R11); ``reflow`` mode keeps complex pages as text
+    (RFL-R14)."""
+    if page.columns > 1:
+        return MULTI_COLUMN
+    if options.mode == "auto" and is_complex(page):
+        return COMPLEX
+    return None
+
+
+def _fallback_issues(reasons: dict[int, str]) -> list[Issue]:
+    """One ``page_fallback`` issue per reason, its pages ascending (API-R11)."""
+    return [
+        Issue(
+            IssueCode.PAGE_FALLBACK,
+            _FALLBACK_MESSAGES[reason],
+            pages=sorted(page for page, why in reasons.items() if why == reason),
+            reason=reason,
+        )
+        for reason in (COMPLEX, MULTI_COLUMN)
+        if reason in reasons.values()
+    ]
+
+
+def _page_images(
+    source: SourcePdf, pages: list[PageText], reasons: dict[int, str]
+) -> tuple[list[ImageAsset], dict[int, PageImage]]:
+    """The renders of the pages that fall back, each image stored once (RFL-R26), and the
+    page image block for each of those pages."""
+    assets: dict[str, ImageAsset] = {}
+    blocks: dict[int, PageImage] = {}
+    text = {page.page: "\n".join(line.text for line in page.lines) for page in pages}
+    for number, render in render_pages(source.path, sorted(reasons)):
+        digest = hashlib.sha256(render.data).hexdigest()
+        if digest not in assets:
+            name = f"page-{number}.{render.extension}"
+            assets[digest] = ImageAsset(name, render.media_type, render.data)
+        blocks[number] = PageImage(assets[digest].name, text[number] or None, number)
+    return list(assets.values()), blocks
 
 
 @dataclass
@@ -76,14 +142,22 @@ class _Open:
 
 
 def _body(
-    source: SourcePdf, pages: list[PageText], words: Collection[str] | None
+    source: SourcePdf,
+    pages: list[PageText],
+    words: Collection[str] | None,
+    page_images: dict[int, PageImage],
 ) -> tuple[list[Block], Furniture]:
-    typography = measure(pages)
+    # Body text is measured on the reflowed pages; furniture is found on every page.
+    typography = measure(p for p in pages if p.page not in page_images)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
-    stream: list[PageBreak | LineBlock | _Open] = []
+    stream: list[PageBreak | LineBlock | PageImage | _Open] = []
     for page in laid_out:
         marker = PageBreak(label=source.page_labels[page.page - 1], page=page.page)
+        if page.page in page_images:
+            # Nothing joins across a page image (RFL-R18).
+            stream.extend([marker, page_images[page.page]])
+            continue
         drafts: list[DraftParagraph | LineBlock] = []
         for index, block in enumerate(page.blocks):
             if (page.page, index) in furniture.removed:
