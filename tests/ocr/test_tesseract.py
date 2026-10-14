@@ -18,7 +18,7 @@ import pypdfium2 as pdfium
 import pytest
 from conftest import FIXTURES, RecordingSink
 from fake_tesseract import EXIT_1, SLEEP_FOREVER, alive, fake_tesseract, record, started
-from test_routing import page_contents
+from test_routing import XHTML, page_contents
 
 from pdf2epub import (
     BatchOptions,
@@ -199,7 +199,10 @@ def test_tesseract_runs_with_one_thread_and_no_password_variable(
 
     assert report.conversions[0].outcome is Outcome.CONVERTED
     runs = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
-    assert len(runs) == 2
+    # On each page: orientation detection (psm 0), then the four ladder steps, which all
+    # read nothing (OCR-R18, OCR-R20).
+    psm = [run["argv"][run["argv"].index("--psm") + 1] for run in runs]
+    assert psm == ["0", "3", "6", "3", "3"] * 2
     for run in runs:
         assert run["env"]["OMP_THREAD_LIMIT"] == "1"
         assert "PDF2EPUB_PASSWORD" not in run["env"]
@@ -224,3 +227,24 @@ def test_a_crashing_tesseract_costs_the_pages_not_the_conversion(tmp_path: Path,
     images = page_contents(Path(str(result.output)))
     for page in (1, 2):
         assert [e.get("class") for e in images[page]] == ["page-image"]
+
+
+@pytest.mark.tesseract
+@pytest.mark.ac("OCR-AC23")
+def test_ocred_text_carries_no_bold_or_italic(tmp_path: Path) -> None:
+    report, sink = convert(SCANNED / "emphasis.pdf", tmp_path, OcrOptions())
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED
+    assert [e["fell_back"] for e in ocr_events(sink)] == [False]
+    contents = page_contents(Path(str(result.output)))[1]
+    # The page was reflowed from what Tesseract read, italic and bold words included...
+    read = words(" ".join(" ".join(map(str, e.itertext())) for e in contents))
+    # The words set in Times-Italic and Times-Bold (fixturegen/scans.py, EMPHASIS_LINES).
+    emphasised = ["Harbour Log", "never", "Mariner", "without", "three", "broken", "silver"]
+    for text in emphasised:
+        assert includes(read, words(text)), text
+    # ...as plain text: no emphasis is detected in OCR'd text.
+    tags = [f"{XHTML}{tag}" for tag in ("em", "i", "strong", "b")]
+    marks = [mark for element in contents for mark in element.iter(*tags)]
+    assert marks == []

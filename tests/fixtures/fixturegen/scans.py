@@ -7,28 +7,42 @@ text layer, as a scanner without OCR writes them.
 - ``image-only.pdf``: a 3-page image-only scan, each page a running header, one English
   paragraph in 11 pt Times-Roman and a centred page number;
 - ``blank-page.pdf``: page 1 of ``image-only.pdf``, then a blank scanned page (a white
-  300 DPI image, no text layer) (OCR-AC25).
+  300 DPI image, no text layer) (OCR-AC25);
+- the degraded scans (TST-R3), each of chapter 1 of the novel (its pages 1-4):
+  ``novel-noise.pdf`` (1% of the pixels of the clean render flipped, at random),
+  ``novel-skew.pdf`` (the clean render turned 2 degrees counter-clockwise),
+  ``novel-rotated.pdf`` (the page scanned sideways: the render turned 90 degrees
+  clockwise, on a landscape page) and ``novel-150dpi.pdf`` (rendered at 150 DPI);
+- ``emphasis.pdf``: one page of three English paragraphs in 11 pt Times with italic
+  (Times-Italic) and bold (Times-Bold) words inside their lines (OCR-AC23).
 
 Each ground truth (the ``.txt`` beside the PDF) is the text of the page images without
 furniture: for the renders of a born-digital fixture, that fixture's own ground truth;
 for ``image-only.pdf``, its paragraphs, separated by blank lines; for ``blank-page.pdf``,
-the first of them.
+the first of them; for the degraded scans, chapter 1 of the novel's ground truth; for
+``emphasis.pdf``, its paragraphs without markup.
 
 How the bytes stay the same on every platform: each page is rendered by PDFium (shipped
 inside the pinned pypdfium2 wheel) with its own built-in fonts only (never the system's),
 without anti-aliasing, and cut to bitonal at mid-grey. It is stored CCITT Group 4
 encoded (``/CCITTFaxDecode``, ``/K -1``), which is a canonical encoding: every correct
 encoder (here libtiff, through Pillow) writes the same bits for the same image. The PDF
-around the images is written by ``rawpdf``, uncompressed.
+around the images is written by ``rawpdf``, uncompressed. The degraded scans change the
+render only by exact steps: noise from NumPy's PCG64 generator with a fixed seed, skew as
+three shears of whole-pixel row and column shifts (Paeth's rotation), and the quarter
+turn and the 150 DPI render by PDFium itself.
 """
 
 import io
+import math
 import random
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
+from numpy.typing import NDArray
 from PIL import Image, TiffImagePlugin
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
@@ -45,6 +59,16 @@ IMAGE_ONLY = "scanned/image-only.pdf"
 IMAGE_ONLY_TRUTH = "scanned/image-only.txt"
 BLANK_PAGE = "scanned/blank-page.pdf"
 BLANK_PAGE_TRUTH = "scanned/blank-page.txt"
+NOISE = "scanned/novel-noise.pdf"
+NOISE_TRUTH = "scanned/novel-noise.txt"
+SKEW = "scanned/novel-skew.pdf"
+SKEW_TRUTH = "scanned/novel-skew.txt"
+ROTATED = "scanned/novel-rotated.pdf"
+ROTATED_TRUTH = "scanned/novel-rotated.txt"
+LOW_DPI = "scanned/novel-150dpi.pdf"
+LOW_DPI_TRUTH = "scanned/novel-150dpi.txt"
+EMPHASIS = "scanned/emphasis.pdf"
+EMPHASIS_TRUTH = "scanned/emphasis.txt"
 
 DPI = 300
 LANGUAGE = "en"
@@ -55,6 +79,33 @@ BODY_FONT, HEADER_FONT = "Times-Roman", "Times-Italic"
 BODY_SIZE, SMALL_SIZE, LEADING = 11.0, 9.0, 14.5
 MARGIN_X, HEADER_Y, BODY_TOP, FOLIO_Y, INDENT = 54.0, 600.0, 560.0, 40.0, 18.0
 _SEED = 4018
+DEGRADED_PAGES = 4
+"""The degraded scans are of chapter 1 of the novel: its first 4 pages."""
+NOISE_SHARE = 0.01
+SKEW_DEGREES = 2.0
+LOW_RESOLUTION = 150
+_NOISE_SEED = 4319
+EMPHASIS_TITLE = "Emphasis in a Scan"
+# Each paragraph is its lines, each line a list of (text, style) runs; style is "", "i"
+# (italic) or "b" (bold). Lines are drawn as given: no line breaking.
+EMPHASIS_LINES: list[list[list[tuple[str, str]]]] = [
+    [
+        [("The keeper wrote in the ", ""), ("Harbour Log", "i"), (" every evening,", "")],
+        [("and on the night of the storm he underlined the word ", ""), ("never", "b")],
+        [("twice before he closed the book.", "")],
+    ],
+    [
+        [("The schoolteacher read the entry aloud. It said the ", ""), ("Mariner", "i")],
+        [("had passed the point at midnight, ", ""), ("without", "i"), (" a light,", "")],
+        [("and that the bell on the reef had rung ", ""), ("three", "b"), (" times.", "")],
+    ],
+    [
+        [("Nobody in the village believed it until the morning, when the", "")],
+        [("boats came back with a ", ""), ("broken", "i"), (" oar and a ", ""), ("silver", "b")],
+        [("lamp that nobody could explain.", "")],
+    ],
+]
+EMPHASIS_FONTS = {"": "Times-Roman", "i": "Times-Italic", "b": "Times-Bold"}
 
 
 # --- Rendering and encoding -------------------------------------------------------------
@@ -85,23 +136,29 @@ def _builtin_fonts_only() -> None:
     _NO_SYSTEM_FONTS.append(info)
 
 
-def _render(pdf: bytes) -> list[Image.Image]:
-    """Every page of ``pdf`` as a bitonal 300 DPI image."""
+def _render(
+    pdf: bytes, dpi: int = DPI, rotation: int = 0, count: int | None = None
+) -> list[Image.Image]:
+    """The first ``count`` pages of ``pdf`` (all, by default) as bitonal ``dpi`` images,
+    turned ``rotation`` degrees clockwise."""
     _builtin_fonts_only()
     document = pdfium.PdfDocument(pdf)
     pages: list[Image.Image] = []
     try:
-        for index in range(len(document)):
+        for index in range(len(document) if count is None else count):
             page = document[index]
             width, height = page.get_size()
             bitmap = page.render(
-                scale=DPI / 72,
+                scale=dpi / 72,
+                rotation=rotation,
                 grayscale=True,
                 no_smoothtext=True,
                 no_smoothpath=True,
                 no_smoothimage=True,
             )
-            size = (round(width * DPI / 72), round(height * DPI / 72))
+            if rotation in (90, 270):
+                width, height = height, width
+            size = (round(width * dpi / 72), round(height * dpi / 72))
             grey = bitmap.to_pil().crop((0, 0, *size))
             pages.append(grey.point(lambda value: 255 if value >= 128 else 0).convert("1"))
             page.close()
@@ -123,8 +180,8 @@ def group4(image: Image.Image) -> bytes:
     return buffer.getvalue()[offset : offset + length]
 
 
-def _scan_pdf(images: list[Image.Image], title: str) -> bytes:
-    """A PDF of one page per image, each image filling its page at 300 DPI. Objects: 1
+def _scan_pdf(images: list[Image.Image], title: str, dpi: int = DPI) -> bytes:
+    """A PDF of one page per image, each image filling its page at ``dpi``. Objects: 1
     catalog, 2 page tree, 3 Info, then a page, its content stream and its image for each
     page."""
     kids = b" ".join(b"%d 0 R" % (4 + 3 * i) for i in range(len(images)))
@@ -135,7 +192,7 @@ def _scan_pdf(images: list[Image.Image], title: str) -> bytes:
     ]
     for index, image in enumerate(images):
         image_ref = 6 + 3 * index
-        width, height = image.width * 72 / DPI, image.height * 72 / DPI
+        width, height = image.width * 72 / dpi, image.height * 72 / dpi
         objects.append(
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %g %g]"
             b" /Resources << /XObject << /Im0 %d 0 R >> >> /Contents %d 0 R >>"
@@ -232,3 +289,101 @@ def build_blank_page(out_dir: Path) -> None:
     blank = Image.new("1", first.size, 1)
     _write(out_dir, BLANK_PAGE, _scan_pdf([first, blank], IMAGE_ONLY_TITLE))
     (out_dir / BLANK_PAGE_TRUTH).write_text(paragraphs[0] + "\n", encoding="utf-8")
+
+
+# --- The degraded scans (TST-R3) --------------------------------------------------------
+
+
+def _chapter_one_truth(out_dir: Path) -> str:
+    """Chapter 1 of the novel's ground truth: its entries before chapter 2's title."""
+    entries = (out_dir / novel.GROUND_TRUTH).read_text(encoding="utf-8").split("\n\n")
+    end = entries.index(novel.CHAPTER_TITLES[1])
+    return "\n\n".join(entries[:end]) + "\n"
+
+
+def _chapter_one(out_dir: Path, dpi: int = DPI, rotation: int = 0) -> list[Image.Image]:
+    """The pages of chapter 1 of the generated novel, rendered bitonal."""
+    return _render((out_dir / novel.PATH).read_bytes(), dpi, rotation, DEGRADED_PAGES)
+
+
+def _degraded(out_dir: Path, path: str, truth: str, images: list[Image.Image], dpi: int) -> None:
+    _write(out_dir, path, _scan_pdf(images, f"{novel.BOOK_TITLE} (chapter 1)", dpi))
+    (out_dir / truth).write_text(_chapter_one_truth(out_dir), encoding="utf-8")
+
+
+def _noisy(image: Image.Image, rng: np.random.Generator) -> Image.Image:
+    """``image`` (bitonal) with ``NOISE_SHARE`` of its pixels flipped."""
+    pixels = np.array(image.convert("L"), dtype=np.uint8)
+    flips = rng.random(pixels.shape) < NOISE_SHARE
+    pixels[flips] = 255 - pixels[flips]
+    return Image.fromarray(pixels).convert("1")
+
+
+def _shear_rows(pixels: NDArray[np.uint8], factor: float) -> NDArray[np.uint8]:
+    """Each row shifted right by ``factor`` times its distance below the centre row,
+    rounded to whole pixels; paper fills in."""
+    out = np.full_like(pixels, 255)
+    height, width = pixels.shape
+    for row in range(height):
+        shift = round(factor * (row - height / 2))
+        if shift >= 0:
+            out[row, shift:] = pixels[row, : width - shift]
+        else:
+            out[row, :shift] = pixels[row, -shift:]
+    return out
+
+
+def _skewed(image: Image.Image, degrees: float) -> Image.Image:
+    """``image`` (bitonal) turned ``degrees`` counter-clockwise about its centre by three
+    shears (rows, columns, rows), each moving whole pixels."""
+    radians = math.radians(degrees)
+    pixels = np.array(image.convert("L"), dtype=np.uint8)
+    pixels = _shear_rows(pixels, math.tan(radians / 2))
+    pixels = np.ascontiguousarray(_shear_rows(pixels.T.copy(), -math.sin(radians)).T)
+    pixels = _shear_rows(pixels, math.tan(radians / 2))
+    return Image.fromarray(pixels).convert("1")
+
+
+def build_noise(out_dir: Path) -> None:
+    rng = np.random.default_rng(_NOISE_SEED)
+    images = [_noisy(image, rng) for image in _chapter_one(out_dir)]
+    _degraded(out_dir, NOISE, NOISE_TRUTH, images, DPI)
+
+
+def build_skew(out_dir: Path) -> None:
+    images = [_skewed(image, SKEW_DEGREES) for image in _chapter_one(out_dir)]
+    _degraded(out_dir, SKEW, SKEW_TRUTH, images, DPI)
+
+
+def build_rotated(out_dir: Path) -> None:
+    _degraded(out_dir, ROTATED, ROTATED_TRUTH, _chapter_one(out_dir, rotation=90), DPI)
+
+
+def build_low_dpi(out_dir: Path) -> None:
+    images = _chapter_one(out_dir, dpi=LOW_RESOLUTION)
+    _degraded(out_dir, LOW_DPI, LOW_DPI_TRUTH, images, LOW_RESOLUTION)
+
+
+# --- The emphasis scan (OCR-AC23) -------------------------------------------------------
+
+
+def build_emphasis(out_dir: Path) -> None:
+    buffer = io.BytesIO()
+    canvas = Canvas(buffer, pagesize=(PAGE_WIDTH, PAGE_HEIGHT), invariant=True, pageCompression=0)
+    y = BODY_TOP
+    paragraphs = []
+    for paragraph in EMPHASIS_LINES:
+        for index, line in enumerate(paragraph):
+            x = MARGIN_X + (0 if index else INDENT)
+            for text, style in line:
+                font = EMPHASIS_FONTS[style]
+                canvas.setFont(font, BODY_SIZE)
+                canvas.drawString(x, y, text)
+                x += stringWidth(text, font, BODY_SIZE)
+            y -= LEADING
+        y -= LEADING
+        paragraphs.append(" ".join("".join(text for text, _ in line) for line in paragraph))
+    canvas.showPage()
+    canvas.save()
+    _write(out_dir, EMPHASIS, _scan_pdf(_render(buffer.getvalue()), EMPHASIS_TITLE))
+    (out_dir / EMPHASIS_TRUTH).write_text("\n\n".join(paragraphs) + "\n", encoding="utf-8")

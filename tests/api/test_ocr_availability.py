@@ -113,8 +113,9 @@ def test_tesseract_is_probed_once_per_batch_not_once_per_worker(tmp_path: Path) 
     calls = calls_of(log)
     assert sum("--version" in argv for argv in calls) == 1
     assert sum("--list-langs" in argv for argv in calls) == 1
-    recognitions = [argv for argv in calls if "stdin" in argv]
-    assert len(recognitions) == 5  # two pages, then three
+    # One orientation check (psm 0) per page OCR'd, before its ladder attempts.
+    orientations = [argv for argv in calls if "stdin" in argv and argv[-1] == "0"]
+    assert len(orientations) == 5  # two pages, then three
 
 
 @pytest.mark.ac("API-AC17")
@@ -159,8 +160,11 @@ def test_a_known_engine_option_reaches_tesseract_without_its_namespace(tmp_path:
     report, _ = batch(tmp_path, [SCANNED / "image-only.pdf"], options)
 
     assert report.conversions[0].outcome is Outcome.CONVERTED
-    recognitions = [argv for argv in calls_of(log) if "stdin" in argv]
-    assert len(recognitions) == 3
+    runs = [argv for argv in calls_of(log) if "stdin" in argv]
+    # Each page: an orientation check (psm 0), then its ladder attempts.
+    assert sum(argv[-1] == "0" for argv in runs) == 3
+    recognitions = [argv for argv in runs if argv[-1] != "0"]
+    assert len(recognitions) >= 3
     for argv in recognitions:
         assert argv[argv.index("-c") + 1] == "preserve_interword_spaces=1"
 

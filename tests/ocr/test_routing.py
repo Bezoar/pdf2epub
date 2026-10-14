@@ -69,8 +69,10 @@ def issue_codes(report: BatchReport, index: int = 0) -> list[str]:
 
 
 def one_line(call: int, request: OcrRequest) -> OcrPageResult:
-    """One recognised line in the middle of the page."""
-    word = Word("Recognised", 300, 1300, 900, 1360, CONFIDENCE, 95)
+    """One recognised word whose box holds all the page's ink, so the first attempt is
+    accepted (OCR-R19)."""
+    width, height = request.image.size
+    word = Word("Recognised", 0, 0, width, height, CONFIDENCE, 95)
     return OcrPageResult(lines=(OcrLine((word,), 60),))
 
 
@@ -244,11 +246,13 @@ def test_an_empty_ocr_result_keeps_a_good_text_layer(
     source = BORN_DIGITAL / "two-pages.pdf"
     engine = install(monkeypatch, FakeEngine(no_words))
 
-    report, _ = convert([(source, "book.pdf")], tmp_path, "always")
+    report, sink = convert([(source, "book.pdf")], tmp_path, "always")
 
     [result] = report.conversions
     assert result.outcome is Outcome.CONVERTED
-    assert len(engine.requests) == 2
+    # Every ladder step runs on each page, and reads nothing (OCR-R20).
+    assert len(engine.requests) == 8
+    assert [e["attempts"] for e in ocr_events(sink)] == [4, 4]
     assert "page_fallback" not in issue_codes(report)
     assert result.output is not None
     pages = page_contents(Path(result.output))
@@ -286,15 +290,17 @@ def test_a_blank_scanned_page_raises_no_issue(
     def first_page_only(call: int, request: OcrRequest) -> OcrPageResult:
         return one_line(call, request) if call == 0 else no_words(call, request)
 
-    engine = install(monkeypatch, FakeEngine(first_page_only))
+    install(monkeypatch, FakeEngine(first_page_only))
 
     report, sink = convert([(SCANNED / "blank-page.pdf", "scan.pdf")], tmp_path)
 
     [result] = report.conversions
     assert result.outcome is Outcome.CONVERTED
     # Both pages are scans: both go to the engine, which finds nothing on page 2.
-    assert len(engine.requests) == 2
     assert [e["page"] for e in ocr_events(sink)] == [1, 2]
+    # Page 1 is accepted at once; page 2 has no ink to miss, so the ladder skips the BLOCK
+    # step and tries both Sauvola steps for confidence (OCR-R20).
+    assert [e["attempts"] for e in ocr_events(sink)] == [1, 3]
     assert result.issues == []
 
 

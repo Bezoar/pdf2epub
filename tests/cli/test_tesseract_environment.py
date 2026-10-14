@@ -54,7 +54,8 @@ def test_the_password_reaches_neither_tesseract_nor_the_worker(tmp_path: Path) -
     assert finished["outcome"] == "converted"
     assert finished["password_source"] == "env"
     tesseract_runs = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
-    assert len(tesseract_runs) == 2, "the scanned pages were not OCR'd"
+    # Each page gets an orientation check and its ladder attempts (OCR-R18, OCR-R20).
+    assert len(tesseract_runs) >= 2, "the scanned pages were not OCR'd"
     worker = json.loads(started.read_text(encoding="utf-8"))
     for process in [*tesseract_runs, worker]:
         recorded = json.dumps([process["argv"], process["env"]])
