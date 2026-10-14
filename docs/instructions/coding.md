@@ -106,7 +106,7 @@ The specs are normative; tickets and PRs are not.
 
 ## 9. Dependencies
 
-1. A new **runtime** dependency must be MIT-compatible: MIT, BSD, Apache-2.0, ISC, PSF, or MPL-2.0 used unmodified.
+1. A new **runtime** dependency must be MIT-compatible: MIT, BSD, Apache-2.0, ISC, PSF, HPND (Pillow's licence), or MPL-2.0 used unmodified.
 2. Anything else must stop the session and escalate before the dependency is added. That includes GPL, LGPL, AGPL, OpenRAIL or other use-restricted model licences, unlicensed model weights, and anything with no licence.
 3. **Dev-only** dependencies follow the same list, except that LGPL is allowed, because dev dependencies are never distributed.
 4. Name every new runtime dependency, with its licence, in the PR body.

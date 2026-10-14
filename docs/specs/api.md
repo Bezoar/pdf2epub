@@ -200,7 +200,7 @@ class BatchReport:
 
 <a id="api-r18"></a>**API-R18**: Conversions whose fate is settled at planning time (`not_found`, `not_a_pdf`, `output_exists`, `output_collision`) shall be reported as `conversion_finished` events immediately after `batch_started`, in plan order, before any `conversion_started`. They get no `conversion_started` event.
 
-<a id="api-r19"></a>**API-R19**: The `batch_finished` event shall be the serialised `BatchReport`. The `--report FILE` output shall be byte-for-byte the JSON object of that event (one object, UTF-8, with a trailing newline).
+<a id="api-r19"></a>**API-R19**: The `batch_finished` event shall be the serialised `BatchReport` (its fields, by the same names) wrapped in the common event envelope `v`, `type` and `t`. `BatchReport` itself carries no envelope fields. The `--report FILE` output shall be byte-for-byte the JSON object of that event (one object, UTF-8, with a trailing newline).
 
 <a id="api-r20"></a>**API-R20**: In `--json` mode, stdout shall carry only events: one JSON object per line, UTF-8, with no blank lines, flushed after each event. Nothing else (logs, progress bars, the human report) shall be written to stdout.
 
@@ -235,7 +235,7 @@ In `--json --interactive` mode the CLI reads JSON Lines from stdin while the bat
 
 <a id="api-r25"></a>**API-R25**: **Breaking** changes (removing or renaming an event, field or code, or changing what one means) shall increase `v`.
 
-<a id="api-r26"></a>**API-R26**: A JSON Schema (draft 2020-12) for v1 events shall ship inside the package at `src/pdf2epub/schema/events.v1.json`. It is authoritative for **shape**; this spec's prose is authoritative for **meaning**. Every event the core emits, and every `--report` file, shall validate against it. Until the build creates the file, the draft in [§13](#13-json-schema-draft) is the reference.
+<a id="api-r26"></a>**API-R26**: A JSON Schema (draft 2020-12) for v1 events shall ship inside the package at `src/pdf2epub/schema/events.v1.json`. It is authoritative for **shape**; this spec's prose is authoritative for **meaning**. Every event the core emits, and every `--report` file, shall validate against it. An event of a known `type` must match that type's definition. An event of an unknown `type` (an additive type from a later release, [API-R24](#api-r24)) validates against the envelope alone, so additions never require a new schema version. Until the build creates the file, the draft in [§13](#13-json-schema-draft) is the reference.
 
 ## 12. Design rules for parallel conversions and diagnostics
 
@@ -269,7 +269,8 @@ Inline draft of `events.v1.json`. Shape only; `additionalProperties` stays open 
     {"$ref": "#/$defs/password_required"},
     {"$ref": "#/$defs/password_request"},
     {"$ref": "#/$defs/conversion_finished"},
-    {"$ref": "#/$defs/batch_finished"}
+    {"$ref": "#/$defs/batch_finished"},
+    {"properties": {"type": {"not": {"enum": ["batch_started", "conversion_started", "progress", "issue", "password_required", "password_request", "conversion_finished", "batch_finished"]}}}}
   ],
   "$defs": {
     "id": {"type": "integer", "minimum": 0},
@@ -289,7 +290,7 @@ Inline draft of `events.v1.json`. Shape only; `additionalProperties` stays open 
       }
     },
     "ocr_summary": {
-      "type": ["object", "null"],
+      "type": "object",
       "required": ["engine", "engine_version", "languages", "quality"],
       "properties": {
         "engine": {"type": "string"},
@@ -311,7 +312,7 @@ Inline draft of `events.v1.json`. Shape only; `additionalProperties` stays open 
         "password_source": {"type": ["string", "null"]},
         "pages": {"type": ["integer", "null"], "minimum": 0},
         "duration": {"type": "number", "minimum": 0},
-        "ocr": {"$ref": "#/$defs/ocr_summary"}
+        "ocr": {"oneOf": [{"$ref": "#/$defs/ocr_summary"}, {"type": "null"}]}
       }
     },
     "batch_started": {
@@ -417,7 +418,7 @@ Fixture names refer to the fixtures in [testing](testing.md).
 
 <a id="api-ac1"></a>**API-AC1** (covers [API-R2](#api-r2), [API-R18](#api-r18)): **Given** inputs `[novel.pdf, missing.pdf]` where `missing.pdf` does not exist, **when** `plan_batch` and then `run_batch` run, **then** the plan has two entries with `id` 0 and 1, and the sink receives `batch_started` (`total` = 2), then `conversion_finished` for `id` 1 with `outcome` `failed` and one issue `not_found`, before any `conversion_started`; `conversion_started` is emitted for `id` 0 only.
 
-<a id="api-ac2"></a>**API-AC2** (covers [API-R3](#api-r3), [API-R4](#api-r4), [API-R16](#api-r16), [API-R17](#api-r17)): **Given** a single born-digital fixture and `isolation="inprocess"`, **when** `run_batch` returns, **then** the recorded events begin with `batch_started` and end with `batch_finished`, contain exactly one `conversion_started` and one `conversion_finished` for `id` 0, every event has `v` = 1, `t` never decreases, every sink call happened on the thread that called `run_batch`, and the returned `BatchReport` equals the `batch_finished` payload.
+<a id="api-ac2"></a>**API-AC2** (covers [API-R3](#api-r3), [API-R4](#api-r4), [API-R16](#api-r16), [API-R17](#api-r17)): **Given** a single born-digital fixture and `isolation="inprocess"`, **when** `run_batch` returns, **then** the recorded events begin with `batch_started` and end with `batch_finished`, contain exactly one `conversion_started` and one `conversion_finished` for `id` 0, every event has `v` = 1, `t` never decreases, every sink call happened on the thread that called `run_batch`, and the returned `BatchReport` equals the `batch_finished` payload once the envelope fields `v`, `type` and `t` are removed.
 
 <a id="api-ac3"></a>**API-AC3** (covers [API-R5](#api-r5)): **Given** the same born-digital fixture and the same options, **when** it is converted once with `isolation="subprocess"` and once with `isolation="inprocess"`, **then** both runs produce the same sequence of event types, the same outcome, the same issue codes and byte-identical EPUBs.
 

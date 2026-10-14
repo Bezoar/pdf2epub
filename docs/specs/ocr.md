@@ -75,12 +75,12 @@ Results are word-level: no character-level detail and no alternative readings.
 3. If confidence was below `p_min`: Sauvola binarisation.
 4. If confidence is still below `p_min`: Sauvola plus denoise.
 
-The ladder shall keep the best attempt, ranked by coverage first and then confidence. If no attempt is accepted, the page becomes a page-image fallback with reason `ocr_low_confidence`, and all attempts are recorded in the result. There is no voting between attempts and no second engine.
+The ladder shall keep the best attempt, ranked by coverage first and then confidence. If attempts completed but none was accepted, the page becomes a page-image fallback with reason `ocr_low_confidence` (timeouts and engine failures take the reasons in [OCR-R22](#ocr-r22) and [OCR-R23](#ocr-r23)), and all attempts are recorded in the result. There is no voting between attempts and no second engine.
 
 <a id="ocr-r21"></a>**OCR-R21**: `OcrOptions.quality` sets how deep the ladder goes:
 - `fast`: the baseline attempt only;
 - `balanced` (default): the full ladder of [OCR-R20](#ocr-r20), stopping at the first accepted attempt;
-- `best`: the full ladder even after an accepted attempt, keeping the best.
+- `best`: all four ladder steps, **unconditionally**: the conditions in [OCR-R20](#ocr-r20) steps 2–4 are ignored and nothing stops early except the page budget ([OCR-R22](#ocr-r22)). The best attempt by (coverage, confidence) is kept.
 
 Model choice is separate: it comes from `OcrOptions.tessdata_dir` (e.g. a tessdata_best folder).
 

@@ -2,8 +2,10 @@ Closes #NNN
 
 ## Acceptance criteria → tests
 
-<!-- One line per AC in the ticket: the linked ID, then every test carrying @pytest.mark.ac("<ID>"). -->
+<!-- One line per AC in the ticket: the linked ID, then every test carrying @pytest.mark.ac("<ID>"). For example:
 - [PWD-AC3](https://github.com/Bezoar/pdf2epub/blob/main/docs/specs/passwords.md#pwd-ac3): `tests/api/test_passwords.py::test_wrong_password`
+-->
+- 
 
 ## Spec changes
 

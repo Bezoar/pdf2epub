@@ -127,7 +127,7 @@ How tests are written (red-green, coverage, what a tautological test is) is proc
 
 <a id="main-r12"></a>**MAIN-R12**: pdf2epub shall be MIT-licensed (`LICENSE` at the repo root; SPDX `license = "MIT"` with `license-files` in the package metadata).
 
-<a id="main-r13"></a>**MAIN-R13**: Every runtime dependency shall be MIT-compatible (MIT, BSD, Apache-2.0, ISC, PSF, or MPL-2.0 used unmodified). The v1 runtime dependencies are pypdfium2, pdfminer.six, pypdf, Pillow, NumPy and opencv-python-headless, plus lxml (BSD-3) and Jinja2 (BSD-3, with its MarkupSafe dependency) for the EPUB writer ([epub](epub.md)). Tesseract is an external program, not a Python dependency. AGPL libraries (PyMuPDF, ebooklib) and LGPL libraries (fpdf2) shall not be used. GPL tools (unpaper, ScanTailor) shall not be used in v1.
+<a id="main-r13"></a>**MAIN-R13**: Every runtime dependency shall be MIT-compatible (MIT, BSD, Apache-2.0, ISC, PSF, HPND (Pillow's licence), or MPL-2.0 used unmodified). The v1 runtime dependencies are pypdfium2, pdfminer.six, pypdf, Pillow (HPND), NumPy and opencv-python-headless, plus lxml (BSD-3) and Jinja2 (BSD-3, with its MarkupSafe dependency) for the EPUB writer ([epub](epub.md)). Tesseract is an external program, not a Python dependency. AGPL libraries (PyMuPDF, ebooklib) and LGPL libraries (fpdf2) shall not be used. GPL tools (unpaper, ScanTailor) shall not be used in v1.
 
 <a id="main-r14"></a>**MAIN-R14**: Any distribution that bundles PDFium binaries (wheels pulled in via pypdfium2, and future frozen GUI helpers) shall ship PDFium's bundled third-party notices (FreeType, libjpeg/IJG, ICU and the rest). This is attribution, not copyleft.
 
