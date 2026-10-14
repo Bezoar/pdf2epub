@@ -36,10 +36,13 @@ def registry() -> list[Fixture]:
         cjk,
         damaged,
         encrypted,
+        headings,
         hostile,
         not_a_pdf,
         novel,
+        oversized,
         pagenumbers,
+        structure,
         twopage,
         typography,
         verse,
@@ -58,6 +61,25 @@ def registry() -> list[Fixture]:
         Fixture(blank.PLUS_TEXT, blank.PLUS_TEXT_TRUTH, blank.build_plus_text),
         Fixture(not_a_pdf.PATH, None, not_a_pdf.build),
         Fixture(typography.PATH, typography.GROUND_TRUTH, typography.build),
+        Fixture(novel.NO_OUTLINE, novel.NO_OUTLINE_TRUTH, novel.build_no_outline),
+        Fixture(
+            novel.TWO_ENTRY_OUTLINE, novel.TWO_ENTRY_OUTLINE_TRUTH, novel.build_two_entry_outline
+        ),
+        Fixture(headings.PATH, headings.GROUND_TRUTH, headings.build),
+        Fixture(oversized.PATH, oversized.GROUND_TRUTH, oversized.build),
+        Fixture(oversized.GIANT, oversized.GIANT_TRUTH, oversized.build_giant),
+        Fixture(structure.IMAGE_ONLY, None, structure.build_image_only),
+        Fixture(
+            structure.IMAGE_BETWEEN_LINES,
+            structure.IMAGE_BETWEEN_LINES_TRUTH,
+            structure.build_image_between_lines,
+        ),
+        Fixture(
+            structure.OUTLINE_TO_PAGE,
+            structure.OUTLINE_TO_PAGE_TRUTH,
+            structure.build_outline_to_page,
+        ),
+        Fixture(structure.IMAGE_PAGE, structure.IMAGE_PAGE_TRUTH, structure.build_image_page),
         Fixture(
             pagenumbers.PAGE_LABELS, pagenumbers.PAGE_LABELS_TRUTH, pagenumbers.build_page_labels
         ),

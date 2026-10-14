@@ -1,6 +1,6 @@
 """Joining a paragraph's lines into text: de-hyphenation (RFL-R17) and line joins
 (RFL-R19), including the page-break markers of a paragraph joined across pages
-(RFL-R18)."""
+(RFL-R18), and keeping the lines' bold and italic runs (RFL-R22)."""
 
 import re
 from collections.abc import Collection
@@ -42,6 +42,7 @@ def paragraph_inlines(items: list[Line | Join], words: Collection[str] | None) -
     """The inlines of a paragraph made of these lines, with a ``PageBreak`` inline at each
     join point between pages. ``words`` is the language's wordlist, or None."""
     text = ""
+    styles: list[_Style] = []
     soft = False
     breaks: list[tuple[int, PageBreak]] = []
     pending: list[PageBreak] = []
@@ -49,19 +50,30 @@ def paragraph_inlines(items: list[Line | Join], words: Collection[str] | None) -
         if isinstance(item, Join):
             pending.append(item.marker)
             continue
+        line_styles = [(run.bold, run.italic) for run in item.styled for _ in run.text]
         if not text:
             breaks.extend((0, marker) for marker in pending)
+            text, styles = item.text, line_styles
         else:
-            text = _join(text, soft, item.text, words)
+            joined = _join(text, soft, item.text, words)
             # A marker sits right before the text of the page it starts.
-            at = len(text) - len(item.text)
+            at = len(joined) - len(item.text)
+            kept = styles[:at]
+            if at > len(styles):  # a space was added between the lines
+                kept.append(_space(styles[-1], line_styles[0]))
+            text, styles = joined, kept + line_styles
             breaks.extend((at, marker) for marker in pending)
-        if not text:
-            text = item.text
         pending = []
         soft = item.soft_hyphen
     breaks.extend((len(text), marker) for marker in pending)
-    return _split(text, breaks)
+    return _split(text, styles, breaks)
+
+
+_Style = tuple[bool, bool]
+
+
+def _space(before: _Style, after: _Style) -> _Style:
+    return before[0] and after[0], before[1] and after[1]
 
 
 def _join(text: str, soft: bool, line: str, words: Collection[str] | None) -> str:
@@ -82,14 +94,22 @@ def _known(word: str, words: Collection[str]) -> bool:
     return word in words or word.lower() in words
 
 
-def _split(text: str, breaks: list[tuple[int, PageBreak]]) -> list[Inline]:
+def _split(text: str, styles: list[_Style], breaks: list[tuple[int, PageBreak]]) -> list[Inline]:
     inlines: list[Inline] = []
-    start = 0
-    for at, marker in breaks:
-        if at > start:
-            inlines.append(Text(text[start:at]))
-        inlines.append(marker)
-        start = max(start, at)
-    if start < len(text) or not inlines:
-        inlines.append(Text(text[start:]))
+    cuts = sorted({0, len(text), *(at for at, _ in breaks)} | _style_changes(styles))
+    markers = iter(sorted(breaks, key=lambda item: item[0]))
+    marker = next(markers, None)
+    for start, end in zip(cuts, [*cuts[1:], None], strict=True):
+        while marker is not None and marker[0] == start:
+            inlines.append(marker[1])
+            marker = next(markers, None)
+        if end is not None and end > start:
+            bold, italic = styles[start] if start < len(styles) else (False, False)
+            inlines.append(Text(text[start:end], bold, italic))
+    if not inlines:
+        inlines.append(Text(text))
     return inlines
+
+
+def _style_changes(styles: list[_Style]) -> set[int]:
+    return {i for i in range(1, len(styles)) if styles[i] != styles[i - 1]}
