@@ -19,6 +19,7 @@ from pdf2epub.access import AccessDenied, unlock
 from pdf2epub.cancel import CancelToken
 from pdf2epub.epub import write_epub
 from pdf2epub.issues import Issue, IssueCode, derive_outcome
+from pdf2epub.ocr.engine import EngineProbe
 from pdf2epub.ocr.pages import ocr_pages
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Candidate
@@ -27,6 +28,7 @@ from pdf2epub.reflow.cover import book_cover
 from pdf2epub.reflow.extract import PageText, read_pages
 from pdf2epub.reflow.images import read_images
 from pdf2epub.reflow.limits import ResourceLimitExceeded
+from pdf2epub.reflow.metadata import read_xmp
 from pdf2epub.reflow.parse import ParsedPdf
 from pdf2epub.reflow.source import CorruptPdf, open_source
 from pdf2epub.results import ConversionResult, OcrSummary
@@ -92,9 +94,11 @@ def convert(
     reporter: Reporter,
     cancel: CancelToken | None = None,
     candidates: Sequence[Candidate] = (),
+    engine: EngineProbe | None = None,
 ) -> ConversionResult:
     """Convert ``planned``. If the source is password-protected, ``candidates`` are the
-    passwords that may open it, in trial order (PWD-R12)."""
+    passwords that may open it, in trial order (PWD-R12). ``engine`` is the run's OCR
+    engine probe (OCR-R24); without one, the engine is probed if a page needs OCR."""
     started = time.monotonic()
     issues: list[Issue] = []
     output: str | None = None
@@ -155,7 +159,10 @@ def convert(
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
-        recognised = ocr_pages(source_path, access.password, pages, images, options, progress)
+        declared = source.language or read_xmp(source.xmp).language
+        recognised = ocr_pages(
+            source_path, access.password, pages, images, options, progress, engine, declared
+        )
         pages, images, ocr = recognised.pages, recognised.images, recognised.summary
         for issue in recognised.issues:
             add(issue)

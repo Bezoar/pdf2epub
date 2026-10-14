@@ -8,6 +8,10 @@ The pipeline, not the engine, computes coverage (OCR-R16) and records the attemp
 v1 has one adapter, for Tesseract (``ocr.tesseract``). ``load_engine`` is the one place
 the core gets its engine from; there is no registry and no engine-selection option.
 
+The run's preflight probes the engine once (``probe_engine``, OCR-R24): whether it is
+there, which languages it has and which options it takes. The ``EngineProbe`` it returns
+travels to each conversion, worker subprocesses included, so nothing probes again.
+
 An attempt that runs past its deadline raises ``EngineTimeout``; one where the engine
 crashes or reports an error raises ``EngineFailed`` (OCR-R22, OCR-R23). Either costs the
 page, never the conversion.
@@ -149,6 +153,41 @@ class DetectsOrientation(Protocol):
         """The clockwise degrees (0, 90, 180 or 270) that turn ``image`` upright; 0 when
         the engine can't tell. ``EngineTimeout`` at ``deadline``."""
         raise NotImplementedError  # pragma: no cover
+
+
+@dataclass(frozen=True)
+class EngineProbe:
+    """What the run's preflight found out about the OCR engine (OCR-R24, OCR-R25)."""
+
+    engine: OcrEngine | None
+    """The engine, its capabilities already asked; None when it is missing."""
+    languages: frozenset[str] | None = None
+    """The languages it has data for; None when the engine doesn't say (any is taken)."""
+    parameters: frozenset[str] | None = None
+    """The names of the options it takes; None when not asked (no engine options were
+    given) or when it couldn't say."""
+
+    def missing(self, languages: str) -> list[str]:
+        """The languages in ``languages`` (e.g. ``eng+deu``) the engine has no data for."""
+        if self.languages is None:
+            return []
+        return [code for code in languages.split("+") if code not in self.languages]
+
+
+def probe_engine(options: OcrOptions) -> EngineProbe:
+    """Probe the OCR engine ``options`` name, once per run: Tesseract, from
+    ``options.tesseract_path`` or else ``PATH`` (OCR-R24). It lists the engine's options
+    only when ``options.engine_options`` has some to check (OCR-R25)."""
+    from pdf2epub.ocr.tesseract import Tesseract
+
+    engine = load_engine(options)
+    if not isinstance(engine, Tesseract):
+        return EngineProbe(engine)
+    return EngineProbe(
+        engine,
+        engine.languages(),
+        engine.parameters() if options.engine_options else None,
+    )
 
 
 def load_engine(options: OcrOptions) -> OcrEngine | None:

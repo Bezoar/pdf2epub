@@ -33,13 +33,20 @@ from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.ocr import engine as ocr_engine
 from pdf2epub.ocr import ladder
 from pdf2epub.ocr.cleanup import Frame
-from pdf2epub.ocr.engine import OcrLine, OcrPageResult
+from pdf2epub.ocr.engine import EngineProbe, OcrLine, OcrPageResult
 from pdf2epub.ocr.ladder import attempt as attempt
 from pdf2epub.ocr.ladder import coverage as coverage
+from pdf2epub.ocr.languages import ocr_languages
 from pdf2epub.ocr.signals import garbage_ratio
 from pdf2epub.options import ConversionOptions
 from pdf2epub.passwords import Secret
-from pdf2epub.reflow.build import OCR_FAILED, OCR_LOW_CONFIDENCE, OCR_TIMEOUT, fallback_reason
+from pdf2epub.reflow.build import (
+    OCR_FAILED,
+    OCR_LOW_CONFIDENCE,
+    OCR_TIMEOUT,
+    OCR_UNAVAILABLE,
+    fallback_reason,
+)
 from pdf2epub.reflow.columns import Gutter, Piece, column_of, find_gutters, split
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.images import PlacedImage
@@ -60,7 +67,6 @@ FULL_PAGE = 0.9
 """An image covering at least this share of the page is a full-page scan."""
 SIGNIFICANT_IMAGE = 0.01
 """An image covering less than this share of the page is insignificant (OCR-R1)."""
-DEFAULT_LANGUAGES = "eng"
 # Recognised lines whose heights are within this share of the page's median line height
 # are body lines, of one size; only lines clearly taller stand out (RFL-R21).
 _SAME_HEIGHT = 0.2
@@ -119,19 +125,35 @@ def ocr_pages(
     images: dict[int, list[PlacedImage]],
     conversion: ConversionOptions,
     progress: Progress,
+    probe: EngineProbe | None = None,
+    declared_language: str | None = None,
 ) -> OcrOutcome:
     """OCR the pages that need it, reporting each as it finishes (OCR-R29). A page's
-    ``fell_back`` is the reflow's own decision on the page as OCR left it."""
+    ``fell_back`` is the reflow's own decision on the page as OCR left it.
+
+    The OCR language follows OCR-R26, ``declared_language`` being the PDF's own.
+    ``probe`` is what the run's preflight found out about the engine; without one, the
+    engine is probed here, if any page needs OCR. When the engine or the OCR language's
+    data is missing, those pages become page images with reason ``ocr_unavailable``
+    (OCR-R24)."""
     options = conversion.ocr
     routed = [
         (page, trigger)
         for page in pages
         if (trigger := route(page, images.get(page.page, []), options.mode)) is not None
     ]
-    engine = ocr_engine.load_engine(options) if routed else None
-    if engine is None:
+    if not routed:
         return OcrOutcome(pages, images, None)
-    languages = options.languages or DEFAULT_LANGUAGES
+    if probe is None:
+        probe = ocr_engine.probe_engine(options)
+    languages = ocr_languages(conversion, declared_language)
+    engine = probe.engine
+    missing = probe.missing(languages)
+    if engine is None or missing:
+        # OCR-R24: the pages that need OCR fall back; one warning says how to install.
+        unrun = {page.page for page, _ in routed}
+        pages = [replace(p, fallback=OCR_UNAVAILABLE) if p.page in unrun else p for p in pages]
+        return OcrOutcome(pages, images, None, [unavailable(missing if engine else None)])
     engine_options = {
         key.removeprefix("tesseract."): value for key, value in options.engine_options.items()
     }
@@ -202,6 +224,30 @@ def ocr_pages(
         if reason in failed
     ]
     return OcrOutcome(pages, {k: v for k, v in kept_images.items() if v}, summary, issues)
+
+
+def unavailable(missing: list[str] | None) -> Issue:
+    """The ``ocr_unavailable`` warning, with an install hint (OCR-R24): for Tesseract
+    itself when ``missing`` is None, else for the language data in ``missing``."""
+    if missing is None:
+        message = "Pages needed OCR but Tesseract was not found; they were embedded as page images."
+        hint = (
+            "Install Tesseract: `brew install tesseract tesseract-lang` on macOS, "
+            "`sudo apt install tesseract-ocr` on Debian or Ubuntu; or name the program "
+            "with --tesseract or PDF2EPUB_TESSERACT."
+        )
+    else:
+        codes = ", ".join(missing)
+        packages = " ".join(f"tesseract-ocr-{code.replace('_', '-')}" for code in missing)
+        message = (
+            f"Pages needed OCR but Tesseract has no language data for {codes}; they were "
+            "embedded as page images."
+        )
+        hint = (
+            "Install the language data: `brew install tesseract-lang` on macOS, "
+            f"`sudo apt install {packages}` on Debian or Ubuntu."
+        )
+    return Issue(IssueCode.OCR_UNAVAILABLE, message, hint=hint)
 
 
 def _render(document: pdfium.PdfDocument, number: int) -> Image.Image:

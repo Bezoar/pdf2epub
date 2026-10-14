@@ -3,14 +3,11 @@
 # Each build ticket removes the IDs it implements, in the same PR as their marked tests.
 # The v1 acceptance ticket requires this list to be empty.
 
-API-AC17
 
 CLI-AC3
-CLI-AC4
 CLI-AC6
 
 
-MAIN-AC5
 MAIN-AC-F
 MAIN-AC-G
 
@@ -20,10 +17,6 @@ OCR-AC5
 OCR-AC6
 OCR-AC7
 OCR-AC9
-OCR-AC19
-OCR-AC20
-OCR-AC21
-OCR-AC22
 
 
 TST-AC2

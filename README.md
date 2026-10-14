@@ -61,6 +61,10 @@ sudo apt install tesseract-ocr tesseract-ocr-eng      # Debian and Ubuntu
 sudo apt install tesseract-ocr-fra tesseract-ocr-deu  # more languages: tesseract-ocr-<code>
 ```
 
+On macOS, `tesseract-lang` installs every language pack; with apt, add one `tesseract-ocr-<code>` package per language, where `<code>` is Tesseract's code for it (`fra`, `deu`, `chi-sim`). `tesseract --list-langs` shows what is installed.
+
+pdf2epub finds `tesseract` on your `PATH`. To use another one, pass `--tesseract PATH` or set `PDF2EPUB_TESSERACT`. Without Tesseract, or without the data for a book's language, the conversion still finishes: the scanned pages become page images, and an `ocr_unavailable` warning says what to install. The OCR language is the language the PDF declares (`de` is read with `deu`), else English.
+
 ## Development
 
 See [AGENTS.md](AGENTS.md) for the specification, the plan and how to work on the code.
