@@ -1,0 +1,14 @@
+# Provenance of en.txt, written by scripts/wordlist_en.py.
+language = "en"
+source = "SCOWLv2 (now the English Speller Database)"
+source_url = "https://github.com/en-wl/wordlist"
+version = "rel-2026.02.25"
+commit = "7e99edab8e32f9f9ea2b15f249ca8d4d67237410"
+archive_url = "https://codeload.github.com/en-wl/wordlist/tar.gz/refs/tags/rel-2026.02.25"
+archive_sha256 = "74e7cc3e9e03e609c1c74bb7e8862fcd988cdd64768dcbee4611581b7e633852"
+license = "LicenseRef-SCOWL"
+license_file = "en.LICENSE"
+generator = "scripts/wordlist_en.py"
+generator_options = "word-list 60 A,B,Z,C 1 --regions US,GB,CA --categories="
+words = 112720
+sha256 = "1c4dbeba83334eb4ab01a06177f1e2decd576a34adf5b392af2ef494b7d2c63e"
