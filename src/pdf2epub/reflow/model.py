@@ -57,7 +57,17 @@ class Image:
     caption: str | None = None
 
 
-Block = Heading | Paragraph | Image | PageBreak
+@dataclass(frozen=True)
+class LineBlock:
+    """A line block (RFL-R36): verse, code or other text whose line breaks carry meaning.
+    Its lines are kept as in the source, never joined or de-hyphenated."""
+
+    lines: list[list[Inline]]
+    monospace: bool = False
+    """Set wholly in a monospace font; its lines keep their spaces, leading ones too."""
+
+
+Block = Heading | Paragraph | LineBlock | Image | PageBreak
 
 
 @dataclass(frozen=True)

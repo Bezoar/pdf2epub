@@ -5,6 +5,7 @@ The measures that the whole document shares (body size, usual line gap, left mar
 taken once, as a ``Typography``, from every page's lines.
 """
 
+import math
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ _INDENT_EM = 0.8
 _SHORT_EM = 2.0
 # Text this much larger than body text is display type (a title or heading).
 _DISPLAY = 1.15
+# The column's right edge is the right edge this share of body lines stay within.
+_RIGHT_QUANTILE = 0.9
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,8 @@ class Typography:
     """The most common gap between consecutive body lines."""
     left: float
     """The most common left edge of body lines."""
+    right: float = 0.0
+    """The column's right edge: where most body lines end (RFL-R36)."""
 
     def is_display(self, size: float) -> bool:
         return size > self.body_size * _DISPLAY
@@ -82,6 +87,7 @@ def measure(pages: Iterable[PageText]) -> Typography:
     sizes: Counter[float] = Counter()
     lefts: Counter[float] = Counter()
     gaps: Counter[float] = Counter()
+    rights: list[float] = []
     lines_by_page = [page.lines for page in pages]
     for lines in lines_by_page:
         for line in lines:
@@ -91,11 +97,21 @@ def measure(pages: Iterable[PageText]) -> Typography:
         body = [line for line in lines if abs(line.size - body_size) <= 0.5]
         for line in body:
             lefts[round(line.x0)] += 1
+            rights.append(line.x1)
         for above, below in pairwise(body):
             gaps[round(below.top - above.bottom, 1)] += 1
     left = lefts.most_common(1)[0][0] if lefts else 0.0
     line_gap = max(gaps.most_common(1)[0][0], 0.0) if gaps else 0.0
-    return Typography(body_size=body_size, line_gap=line_gap, left=left)
+    return Typography(body_size=body_size, line_gap=line_gap, left=left, right=_right(rights))
+
+
+def _right(rights: list[float]) -> float:
+    """Where the column ends: the right edge that this share of body lines reach, so
+    short last lines and verse don't pull it in, nor a stray long line push it out."""
+    if not rights:
+        return 0.0
+    ordered = sorted(rights)
+    return ordered[max(0, math.ceil(_RIGHT_QUANTILE * len(ordered)) - 1)]
 
 
 def group_blocks(lines: list[Line], typography: Typography) -> list[TextBlock]:

@@ -15,3 +15,13 @@ h1, h2, h3, h4, h5, h6 {
   text-indent: 0;
   margin: 1.5em 0 0.75em;
 }
+
+/* Line blocks (EPUB-R20): verse and code keep their line breaks; code keeps its spaces. */
+p.lines {
+  text-indent: 0;
+  margin: 1em 0;
+}
+
+p.code {
+  white-space: pre-wrap;
+}

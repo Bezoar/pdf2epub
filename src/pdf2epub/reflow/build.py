@@ -6,9 +6,10 @@ is removed (``reflow.furniture``, RFL-R16), headings are found (``reflow.heading
 RFL-R20) and images are placed with their captions (RFL-R26). A paragraph left open at
 the end of a page is joined to the first paragraph of the next (RFL-R18), skipping over
 images between them, with its lines de-hyphenated and joined (``reflow.text``, RFL-R17,
-RFL-R19). Each page starts with a page-break marker: a block, or an inline where a
-paragraph runs on across the page boundary. The blocks are then split into chapters with
-a table of contents (``reflow.chapters``, RFL-R23, RFL-R24).
+RFL-R19). Line blocks (verse, code) keep their lines and are never joined
+(``reflow.lineblocks``, RFL-R36). Each page starts with a page-break marker: a block, or
+an inline where a paragraph runs on across the page boundary. The blocks are then split
+into chapters with a table of contents (``reflow.chapters``, RFL-R23, RFL-R24).
 
 Page images and the cover come with later tickets.
 """
@@ -35,12 +36,14 @@ from pdf2epub.reflow.layout import (
     measure,
     paragraphs,
 )
+from pdf2epub.reflow.lineblocks import is_line_block, line_block
 from pdf2epub.reflow.model import (
     Block,
     Document,
     Heading,
     Image,
     ImageAsset,
+    LineBlock,
     Metadata,
     PageBreak,
     Paragraph,
@@ -106,7 +109,7 @@ class _Heading:
     level: int
 
 
-_Item = PageBreak | _Open | _Heading | Image
+_Item = PageBreak | _Open | _Heading | LineBlock | Image
 
 
 def _body(
@@ -138,6 +141,8 @@ def _body(
             level = levels.get((page.page, index))
             if level is not None:
                 found.append((block.top, _Heading(block.lines, level)))
+            elif is_line_block(block, typography):
+                found.append((block.top, line_block(block)))  # RFL-R36: kept line by line
             else:
                 found.extend(
                     (part.lines[0].top, _Open(part, list(part.lines)))

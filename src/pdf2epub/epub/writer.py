@@ -38,6 +38,7 @@ from pdf2epub.reflow.model import (
     Image,
     ImageAsset,
     Inline,
+    LineBlock,
     PageBreak,
     Paragraph,
     Text,
@@ -228,6 +229,8 @@ def _page_breaks(blocks: list[Block]) -> list[PageBreak]:
             breaks.append(block)
         elif isinstance(block, Heading | Paragraph):
             breaks.extend(i for i in block.inlines if isinstance(i, PageBreak))
+        elif isinstance(block, LineBlock):
+            breaks.extend(i for line in block.lines for i in line if isinstance(i, PageBreak))
     return breaks
 
 
@@ -292,6 +295,13 @@ def _block(
             "level": min(max(block.level, 1), 6),
             "id": block.anchor,
             "inlines": [_inline(i) for i in block.inlines],
+        }
+    if isinstance(block, LineBlock):
+        # EPUB-R20: one <p class="lines">, a <br/> between lines; code also in <code>.
+        return {
+            "kind": "lines",
+            "monospace": block.monospace,
+            "lines": [[_inline(i) for i in line] for line in block.lines],
         }
     return {
         "kind": "paragraph",
