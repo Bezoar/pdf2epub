@@ -186,8 +186,11 @@ def test_javascript_actions_and_external_references_never_run_or_fetch(
     script.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
     script.chmod(0o755)
     tripwire = Tripwire(monkeypatch)
+    # The run's preflight probes Tesseract (OCR-R24) by running it; with no Tesseract
+    # there, any program started can only have come from the PDF.
+    no_tesseract = OcrOptions(tesseract_path=tmp_path / "no-tesseract")
 
-    convert([HOSTILE], tmp_path, sink)
+    convert([HOSTILE], tmp_path, sink, ConversionOptions(ocr=no_tesseract))
 
     assert tripwire.attempts == []
     assert not marker.exists()

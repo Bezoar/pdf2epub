@@ -182,6 +182,7 @@ def test_source_provider_applies_trial_order_and_labels_in_the_core(tmp_path: Pa
 
 
 @pytest.mark.ac("PWD-AC15")
+@pytest.mark.ac("API-AC17")
 def test_source_provider_cap_is_checked_in_the_preflight(tmp_path: Path) -> None:
     pdfs = [copy(AES256, tmp_path, "a.pdf"), copy(AES256, tmp_path, "b.pdf")]
     lines = [f"pw{n}" for n in range(26)]

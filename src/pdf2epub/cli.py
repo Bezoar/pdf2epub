@@ -44,6 +44,8 @@ EPILOG = """\
 Legal scope: https://github.com/Bezoar/pdf2epub#legal-scope
 Installing Tesseract (for scanned PDFs): https://github.com/Bezoar/pdf2epub#installing-tesseract"""
 PASSWORD_ENV = "PDF2EPUB_PASSWORD"
+TESSERACT_ENV = "PDF2EPUB_TESSERACT"
+ENGINE_PREFIX = "tesseract."
 PASSWORD_WARNING = (
     "warning: --password values are visible to other processes on this machine; "
     "prefer --password-map, --password-file or PDF2EPUB_PASSWORD."
@@ -105,7 +107,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         type=Path,
         default=argparse.SUPPRESS,
-        help="the tesseract program to OCR scanned pages with (default: tesseract on PATH)",
+        help=f"the tesseract program to OCR scanned pages with (default: ${TESSERACT_ENV}, "
+        "else tesseract on PATH)",
+    )
+    ocr.add_argument(
+        "--ocr-engine-opt",
+        metavar="tesseract.KEY=VALUE",
+        type=engine_option,
+        action="append",
+        default=argparse.SUPPRESS,
+        help="a Tesseract parameter to pass on (see tesseract --print-parameters); repeatable",
     )
     passwords = parser.add_argument_group(
         "passwords",
@@ -179,6 +190,16 @@ def positive_integer(text: str) -> int:
     return value
 
 
+def engine_option(text: str) -> tuple[str, str]:
+    """An argparse type: ``tesseract.KEY=VALUE`` as ``(KEY, VALUE)``; the engine prefix
+    is required (CLI §2.5)."""
+    key, equals, value = text.partition("=")
+    name = key.removeprefix(ENGINE_PREFIX)
+    if not equals or name == key or not name:
+        raise argparse.ArgumentTypeError(f"must be {ENGINE_PREFIX}KEY=VALUE, not {text!r}")
+    return name, value
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -195,7 +216,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         name: getattr(args, name) for name in ("overwrite", "timeout", "strict") if name in args
     }
 
-    ocr_fields: dict[str, Any] = {"tesseract_path": args.tesseract} if "tesseract" in args else {}
+    ocr_fields: dict[str, Any] = {}
+    # CLI-R5: the flag wins over the variable; with neither, the core searches PATH.
+    tesseract = getattr(args, "tesseract", None) or os.environ.get(TESSERACT_ENV) or None
+    if tesseract is not None:
+        ocr_fields["tesseract_path"] = Path(tesseract)
+    if "ocr_engine_opt" in args:
+        ocr_fields["engine_options"] = dict(args.ocr_engine_opt)
     conversion = ConversionOptions(ocr=OcrOptions(**ocr_fields))
 
     discovery_fields: dict[str, Any] = {

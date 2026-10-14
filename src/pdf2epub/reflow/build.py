@@ -90,6 +90,7 @@ def build_document(
 
 MULTI_COLUMN, COMPLEX = "multi_column", "complex"
 OCR_TIMEOUT, OCR_FAILED = "ocr_timeout", "ocr_failed"
+OCR_UNAVAILABLE = "ocr_unavailable"
 # In the order their page_fallback issues are reported.
 _FALLBACK_MESSAGES = {
     COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
@@ -98,6 +99,8 @@ _FALLBACK_MESSAGES = {
     "with their text kept searchable column by column.",
     OCR_TIMEOUT: "OCR ran out of time on these pages, so they were embedded as page images.",
     OCR_FAILED: "The OCR engine failed on these pages, so they were embedded as page images.",
+    OCR_UNAVAILABLE: "These pages needed OCR, which is unavailable, so they were embedded as "
+    "page images.",
 }
 
 

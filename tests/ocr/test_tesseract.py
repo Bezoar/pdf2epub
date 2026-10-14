@@ -170,7 +170,9 @@ def test_a_hung_tesseract_is_killed_at_the_page_timeout(tmp_path: Path) -> None:
 
     result = report.conversions[0]
     assert result.outcome is Outcome.CONVERTED
-    runs = [json.loads(line) for line in starts.read_text(encoding="utf-8").splitlines()]
+    # Only the recognition calls (image on stdin), not the preflight's probe (OCR-R24).
+    logged = [json.loads(line) for line in starts.read_text(encoding="utf-8").splitlines()]
+    runs = [run for run in logged if "stdin" in run["argv"]]
     assert len(runs) == 2
     events = [(e, t) for e, t in zip(sink.events, sink.times, strict=True) if e in ocr_events(sink)]
     for run, (event, reported) in zip(runs, events, strict=True):
