@@ -22,6 +22,8 @@ Footnotes, tables and math as content, fixed layout, multi-column reading order,
 
 <a id="rfl-r4"></a>**RFL-R4**: A document with zero pages shall fail with [`empty_document`](api.md#code-empty_document).
 
+<a id="rfl-r35"></a>**RFL-R35**: A document that has pages but none of whose pages yields any content shall also fail with [`empty_document`](api.md#code-empty_document), and no EPUB shall be written. A page yields content if its text (from its text layer or from OCR, after normalisation and before furniture removal) has at least one non-whitespace character, or if it has a significant image. Blank pages are still handled page by page as [OCR-R1](ocr.md#ocr-r1) and [OCR-R17](ocr.md#ocr-r17) say (no OCR, no page-level issue); `empty_document` is a document-level failure raised only when every page is like that, whatever `OcrOptions.mode` is.
+
 <a id="rfl-r5"></a>**RFL-R5**: The core shall treat every PDF as untrusted:
 - it never executes embedded JavaScript or actions;
 - it never fetches external resources or opens a network connection;
@@ -207,6 +209,8 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 
 <a id="rfl-ac4"></a>**RFL-AC4** (covers [RFL-R4](#rfl-r4)): **Given** a valid PDF with zero pages, **when** it is converted, **then** the outcome is `failed` with [`empty_document`](api.md#code-empty_document) (error) and no EPUB is written.
 
+<a id="rfl-ac24"></a>**RFL-AC24** (covers [RFL-R35](#rfl-r35)): **Given** a valid born-digital PDF with three pages that have no text and no image, **when** it is converted with each `OcrOptions.mode` (`auto`, `always`, `never`), **then** the outcome is `failed` with [`empty_document`](api.md#code-empty_document) (error), no EPUB is written, the OCR engine is never called, and `empty_document` is the conversion's only issue. **Given** the same PDF with a fourth page holding one line of text, **then** the outcome is `converted` with no issue for the three blank pages.
+
 <a id="rfl-ac5"></a>**RFL-AC5** (covers [RFL-R5](#rfl-r5)): **Given** a fixture with document-level JavaScript, an `/OpenAction` launching a URI, and a page with an external image reference, **when** it is converted with network access blocked in the test, **then**:
 - no network connection is attempted;
 - no script runs;
@@ -305,4 +309,5 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 - The printed "Contents" page is kept as ordinary text (the archived spec's drop-it heuristic is not carried over).
 - Assumed minimum run length of 5 numbered pages before a page sequence gap can fire; calibrate on fixtures.
 - Resource-limit values, complexity threshold and heading-detection tolerances are internal constants to calibrate on fixtures.
+- [RFL-R35](#rfl-r35) reads the `empty_document` registry entry ("no page yields any text or image") as a document-level check on top of the per-page blank-page rule. A test of a single blank page that expects no issue (for example [OCR-AC25](ocr.md#ocr-ac25)'s blank scanned page) therefore puts that page in a document with at least one page that yields content.
 - A `resource_limit` hit fails the whole conversion (severity error per the registry), rather than degrading only the offending page.
