@@ -14,7 +14,7 @@ This spec covers the product's test **assets** and **measurements**: synthetic f
 
 | Group | Fixtures |
 |---|---|
-| Born-digital | a multi-chapter single-column novel with a PDF outline, running headers and footers, page numbers, paragraphs split across pages and hyphenated line ends; the same without an outline (chapter headings only); a two-column page set; a page with a table and a page with math (complex pages); a blank page; italic and bold runs |
+| Born-digital | a multi-chapter single-column novel with a PDF outline, running headers and footers, page numbers, paragraphs split across pages and hyphenated line ends; the same without an outline (chapter headings only); a two-column page set; a page with a table and a page with math (complex pages); a blank page; italic and bold runs; a verse-and-code sample (a poem between prose paragraphs, and a monospace code block crossing a page break) |
 | Scanned | the novel's pages rendered to images at 300 DPI (clean); variants with noise, 2° skew, 90° rotation, and at 150 DPI (degraded); an image-only scan with no text layer; a scan with a good invisible OCR layer |
 | Encrypted | Standard handler AES-256 (R6) with a user password; RC4-128 (R3) with a user password; owner-password-only with copy/extract forbidden (opens with the empty password, `restricted`); owner-password-only with all permissions; a non-Standard security handler (e.g. a `/Filter /FOPN_foweb` Encrypt dictionary) for `drm_protected` |
 | Must reject (text layer) | a font with no ToUnicode map, so text extracts as Private Use Area code points or garbage; a garbled invisible OCR layer (real characters, nonsense words); an invisible OCR layer covering only half of each page |

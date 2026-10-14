@@ -12,6 +12,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import pairwise
 
 from pdfminer.layout import LAParams, LTChar, LTTextContainer, LTTextLine
 
@@ -36,6 +37,10 @@ LIGATURES = str.maketrans(
 _SAME_ROW = 0.5
 # Pieces of one row this many ems apart or closer are one line of text.
 _PIECE_GAP_EM = 3.0
+# Font names of common monospace faces (RFL-R36).
+_MONO_NAME = re.compile(r"courier|mono|consol|menlo|typewriter|fixed", re.IGNORECASE)
+# Glyph advances within this share of each other are the same advance.
+MONO_SPREAD = 0.01
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,14 @@ class Line:
     """The line's most common character size, in points."""
     soft_hyphen: bool = False
     """The line ended in a soft hyphen (removed from ``text``)."""
+    monospace: bool = False
+    """Every glyph of the line is set in a font named as monospace (RFL-R36)."""
+    advance: float = 0.0
+    """The glyph advance, in points, when every glyph of the line has the same one (as in
+    a monospace font, whatever its name); 0 otherwise."""
+    verbatim: str = ""
+    """When ``advance`` is set: the normalised text with its spaces kept, leading ones
+    included (only trailing whitespace removed); empty otherwise."""
 
 
 @dataclass(frozen=True)
@@ -92,10 +105,24 @@ def _line(item: LTTextLine, page_height: float) -> Line | None:
     text = " ".join(normalise(raw).split())
     if not text:
         return None
-    sizes = Counter(round(c.size, 1) for c in item if isinstance(c, LTChar))
+    chars = [c for c in item if isinstance(c, LTChar)]
+    sizes = Counter(round(c.size, 1) for c in chars)
     size = sizes.most_common(1)[0][0] if sizes else item.height
     x0, y0, x1, y1 = item.bbox
-    return Line(text, x0, x1, page_height - y1, page_height - y0, size, soft)
+    named = bool(chars) and all(_MONO_NAME.search(c.fontname) for c in chars)
+    advance = _advance(chars)
+    verbatim = normalise(item.get_text()).rstrip() if advance > 0 else ""
+    return Line(
+        text, x0, x1, page_height - y1, page_height - y0, size, soft, named, advance, verbatim
+    )
+
+
+def _advance(chars: list[LTChar]) -> float:
+    """The glyphs' common advance, or 0 if they don't share one."""
+    advances = [c.adv for c in chars]
+    if not advances or max(advances) <= 0:
+        return 0.0
+    return advances[0] if max(advances) - min(advances) <= MONO_SPREAD * max(advances) else 0.0
 
 
 def _rows(lines: list[Line]) -> list[Line]:
@@ -129,6 +156,17 @@ def _overlap(a: Line, b: Line) -> float:
 def _merge(row: list[Line]) -> Line:
     if len(row) == 1:
         return row[0]
+    advance = row[0].advance
+    if any(abs(line.advance - advance) > MONO_SPREAD * advance for line in row):
+        advance = 0.0
+    verbatim = ""
+    if advance > 0:
+        # Keep the gaps between pieces of an equal-advance line as spaces (none when the
+        # pieces touch).
+        verbatim = row[0].verbatim
+        for left, right in pairwise(row):
+            spaces = max(0, round((right.x0 - left.x1) / advance))
+            verbatim += " " * spaces + right.verbatim
     return Line(
         text=" ".join(line.text for line in row),
         x0=min(line.x0 for line in row),
@@ -137,4 +175,7 @@ def _merge(row: list[Line]) -> Line:
         bottom=max(line.bottom for line in row),
         size=max(row, key=lambda line: len(line.text)).size,
         soft_hyphen=row[-1].soft_hyphen,
+        monospace=all(line.monospace for line in row),
+        advance=advance,
+        verbatim=verbatim,
     )

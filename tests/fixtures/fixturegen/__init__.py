@@ -31,7 +31,16 @@ class Fixture:
 
 def registry() -> list[Fixture]:
     """Every fixture generator, in a fixed order."""
-    from fixturegen import blank, damaged, hostile, not_a_pdf, novel, pagenumbers, typography
+    from fixturegen import (
+        blank,
+        damaged,
+        hostile,
+        not_a_pdf,
+        novel,
+        pagenumbers,
+        typography,
+        verse,
+    )
 
     # The novel comes first: the cross-reference fixture is cut from it.
     return [
@@ -58,6 +67,7 @@ def registry() -> list[Fixture]:
             pagenumbers.FRONT_MATTER_TRUTH,
             pagenumbers.build_front_matter,
         ),
+        Fixture(verse.PATH, verse.GROUND_TRUTH, verse.build),
     ]
 
 

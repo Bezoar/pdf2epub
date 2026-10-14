@@ -1,0 +1,147 @@
+%PDF-1.3
+%“Œ‹ž ReportLab Generated PDF document (opensource)
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R /F3 4 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Times-Roman /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Courier /Encoding /WinAnsiEncoding /Name /F3 /Subtype /Type1 /Type /Font
+>>
+endobj
+5 0 obj
+<<
+/Contents 10 0 R /MediaBox [ 0 0 432 648 ] /Parent 9 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+6 0 obj
+<<
+/Contents 11 0 R /MediaBox [ 0 0 432 648 ] /Parent 9 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+7 0 obj
+<<
+/Lang (en) /PageMode /UseNone /Pages 9 0 R /Type /Catalog
+>>
+endobj
+8 0 obj
+<<
+/Author (anonymous) /CreationDate (D:20000101000000+00'00') /Creator (anonymous) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+  /Subject (unspecified) /Title (Verse and Code Sample) /Trapped /False
+>>
+endobj
+9 0 obj
+<<
+/Count 2 /Kids [ 5 0 R 6 0 R ] /Type /Pages
+>>
+endobj
+10 0 obj
+<<
+/Length 2324
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 72 576 Tm (In the quiet message, he recognised a wooden river although nobody) Tj T* ET
+BT 1 0 0 1 54 561.5 Tm (had asked. Her brother suddenly watched the distant schoolteacher) Tj T* ET
+BT 1 0 0 1 54 547 Tm (because the weather had changed. In the narrow garden, her brother) Tj T* ET
+BT 1 0 0 1 54 532.5 Tm (noticed a distant river since the harbour was closed. It was a comfortable) Tj T* ET
+BT 1 0 0 1 54 518 Tm (keeper, and the question under the harbour was bright. The keeper) Tj T* ET
+BT 1 0 0 1 54 503.5 Tm (examined the promise beyond the cold telegram, and then particularly) Tj T* ET
+BT 1 0 0 1 54 489 Tm (went home.) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 90 460 Tm (The lamp is lit above the bay,) Tj T* ET
+BT 1 0 0 1 90 445.5 Tm (the boats come slowly in;) Tj T* ET
+BT 1 0 0 1 90 431 Tm (the keeper climbs the winding stair) Tj T* ET
+BT 1 0 0 1 90 416.5 Tm (to where the lights begin.) Tj T* ET
+BT 1 0 0 1 90 387.5 Tm (The fog rolls up across the stones,) Tj T* ET
+BT 1 0 0 1 90 373 Tm (the gulls have gone to ground;) Tj T* ET
+BT 1 0 0 1 90 358.5 Tm (the mirror turns, the shutters close,) Tj T* ET
+BT 1 0 0 1 90 344 Tm (the harbour makes no sound.) Tj T* ET
+BT 1 0 0 1 90 315 Tm (And when the morning finds the coast) Tj T* ET
+BT 1 0 0 1 90 300.5 Tm (the lamp is dark once more;) Tj T* ET
+BT 1 0 0 1 90 286 Tm (the keeper sleeps, the boats go out,) Tj T* ET
+BT 1 0 0 1 90 271.5 Tm (the tide comes to the shore.) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 72 242.5 Tm (It was a particular fisherman, and the lighthouse across the harbour) Tj T* ET
+BT 1 0 0 1 54 228 Tm (was comfortable. It was a beautiful afternoon, and the garden behind the) Tj T* ET
+BT 1 0 0 1 54 213.5 Tm (harbour was mysterious. The schoolteacher prepared that the staircase) Tj T* ET
+BT 1 0 0 1 54 199 Tm (was familiar although nobody had asked, afterwards. The schoolteacher) Tj T* ET
+BT 1 0 0 1 54 184.5 Tm (patiently noticed the particular boat although nobody had asked.) Tj T* ET
+BT /F3 10 Tf 12 TL ET
+BT 1 0 0 1 54 108 Tm (def light_the_lamp\(keeper\):) Tj T* ET
+BT 1 0 0 1 54 96 Tm (    # Trim the wick, then exam-) Tj T* ET
+BT 1 0 0 1 54 84 Tm (    # ine the glass for well-) Tj T* ET
+BT 1 0 0 1 54 72 Tm (    # known cracks and re-) Tj T* ET
+ 
+endstream
+endobj
+11 0 obj
+<<
+/Length 926
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+BT /F3 10 Tf 12 TL ET
+BT 1 0 0 1 54 576 Tm (    # pair them before dusk.) Tj T* ET
+BT 1 0 0 1 54 564 Tm (    if keeper.oil < 3:) Tj T* ET
+BT 1 0 0 1 54 552 Tm (        keeper.fetch\("oil"\)) Tj T* ET
+BT 1 0 0 1 54 540 Tm (    keeper.light\(\)) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 72 513.5 Tm (The grey staircase considered the window near the important village.) Tj T* ET
+BT 1 0 0 1 54 499 Tm (The schoolteacher considered that the afternoon was remarkable since) Tj T* ET
+BT 1 0 0 1 54 484.5 Tm (the harbour was closed, quietly. Everyone carefully watched the old) Tj T* ET
+BT 1 0 0 1 54 470 Tm (experience although nobody had asked. He immediately repaired the) Tj T* ET
+BT 1 0 0 1 54 455.5 Tm (narrow neighbour since the harbour was closed. The keeper repaired the) Tj T* ET
+BT 1 0 0 1 54 441 Tm (village towards the gentle letter, and then eventually went home.) Tj T* ET
+ 
+endstream
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000061 00000 n 
+0000000112 00000 n 
+0000000219 00000 n 
+0000000328 00000 n 
+0000000433 00000 n 
+0000000627 00000 n 
+0000000821 00000 n 
+0000000900 00000 n 
+0000001174 00000 n 
+0000001239 00000 n 
+0000003615 00000 n 
+trailer
+<<
+/ID 
+[<f926d139f4ee5f4b8216fda45962daf5><f926d139f4ee5f4b8216fda45962daf5>]
+% ReportLab generated PDF document -- digest (opensource)
+
+/Info 8 0 R
+/Root 7 0 R
+/Size 12
+>>
+startxref
+4592
+%%EOF

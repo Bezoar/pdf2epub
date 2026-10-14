@@ -4,7 +4,8 @@ RFL-R32, RFL-R34).
 Every page's lines are grouped into blocks and paragraphs (``reflow.layout``), furniture
 is removed (``reflow.furniture``, RFL-R16), and a paragraph left open at the end of a page
 is joined to the first paragraph of the next (RFL-R18), with its lines de-hyphenated and
-joined (``reflow.text``, RFL-R17, RFL-R19). Each page starts with a page-break marker: a
+joined (``reflow.text``, RFL-R17, RFL-R19). Line blocks (verse, code) keep their lines
+and are never joined (``reflow.lineblocks``, RFL-R36). Each page starts with a page-break marker: a
 block, or an inline where a paragraph runs on across the page boundary.
 
 The book is still one chapter; headings, chapters from the outline, images and the cover
@@ -22,10 +23,12 @@ from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.furniture import Furniture, PageBlocks, find_furniture
 from pdf2epub.reflow.layout import DraftParagraph, group_blocks, measure, paragraphs
+from pdf2epub.reflow.lineblocks import is_line_block, line_block
 from pdf2epub.reflow.model import (
     Block,
     Chapter,
     Document,
+    LineBlock,
     Metadata,
     PageBreak,
     Paragraph,
@@ -78,23 +81,34 @@ def _body(
     typography = measure(pages)
     laid_out = [PageBlocks(p.page, p.height, group_blocks(p.lines, typography)) for p in pages]
     furniture = find_furniture(laid_out, typography)
-    stream: list[PageBreak | _Open] = []
+    stream: list[PageBreak | LineBlock | _Open] = []
     for page in laid_out:
         marker = PageBreak(label=source.page_labels[page.page - 1], page=page.page)
-        drafts = [
-            draft
-            for index, block in enumerate(page.blocks)
-            if (page.page, index) not in furniture.removed
-            for draft in paragraphs(block, typography)
-        ]
+        drafts: list[DraftParagraph | LineBlock] = []
+        for index, block in enumerate(page.blocks):
+            if (page.page, index) in furniture.removed:
+                continue
+            if is_line_block(block, typography):
+                drafts.append(line_block(block))  # RFL-R36: kept line by line
+            else:
+                drafts.extend(paragraphs(block, typography))
         last = stream[-1] if stream else None
-        if drafts and isinstance(last, _Open) and _runs_on(last.last, drafts[0]):
+        first = drafts[0] if drafts else None
+        if (
+            isinstance(first, DraftParagraph)
+            and isinstance(last, _Open)
+            and _runs_on(last.last, first)
+        ):
             last.items.append(Join(marker))
-            last.items.extend(drafts[0].lines)
-            last.last = drafts.pop(0)
+            last.items.extend(first.lines)
+            last.last = first
+            drafts.pop(0)
         else:
             stream.append(marker)
-        stream.extend(_Open(draft, list(draft.lines)) for draft in drafts)
+        stream.extend(
+            _Open(draft, list(draft.lines)) if isinstance(draft, DraftParagraph) else draft
+            for draft in drafts
+        )
     blocks: list[Block] = [
         Paragraph(paragraph_inlines(item.items, words)) if isinstance(item, _Open) else item
         for item in stream
