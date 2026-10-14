@@ -145,6 +145,8 @@ def _read_map(path: Path) -> list[tuple[str, list[Secret]]]:
             table = tomllib.load(file)
     except OSError as error:
         raise UsageError(f"can't read the password map {path}: {error.strerror or error}") from None
+    except UnicodeDecodeError:
+        raise UsageError(f"the password map {path} isn't UTF-8 text") from None
     except tomllib.TOMLDecodeError as error:
         # The decoder's message names a position, never the file's contents.
         raise UsageError(f"the password map {path} isn't valid TOML: {error}") from None
@@ -170,11 +172,10 @@ def _read_password_file(path: Path) -> list[tuple[int, Secret]]:
         ) from None
     except UnicodeDecodeError:
         raise UsageError(f"the password file {path} isn't UTF-8 text") from None
-    return [
-        (number, Secret(line))
-        for number, line in enumerate(text.splitlines(), start=1)
-        if line.strip()
-    ]
+    # Only "\n" and "\r\n" end a line: any other character, even one str.splitlines()
+    # treats as a break, is part of the password as written.
+    lines = [line.removesuffix("\r") for line in text.split("\n")]
+    return [(number, Secret(line)) for number, line in enumerate(lines, start=1) if line.strip()]
 
 
 def _is_glob(key: str) -> bool:

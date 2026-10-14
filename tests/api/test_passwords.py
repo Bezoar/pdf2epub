@@ -243,3 +243,31 @@ def test_the_password_appears_in_no_event_report_or_log(
     for record in caplog.records:
         assert "hunter2" not in record.getMessage()
         assert "hunter2" not in caplog.text
+
+
+@pytest.mark.ac("PWD-AC15")
+def test_password_file_lines_end_only_at_line_breaks(tmp_path: Path) -> None:
+    path = tmp_path / "passwords.txt"
+    path.write_bytes(b"first\r\nsec\x0cond\n\nthird")
+
+    provider = SourcePasswordProvider(PasswordSources(password_file=path))
+
+    candidates = provider.candidates(tmp_path / "a.pdf")
+    assert [(c.secret, c.source) for c in candidates] == [
+        (Secret("first"), "file:line 1"),
+        (Secret("sec\x0cond"), "file:line 2"),
+        (Secret("third"), "file:line 4"),
+    ]
+
+
+@pytest.mark.ac("PWD-AC15")
+def test_unreadable_password_sources_are_usage_errors(tmp_path: Path) -> None:
+    bad_map = tmp_path / "map.toml"
+    bad_map.write_bytes(b'"a.pdf" = "\xff"\n')
+    bad_file = tmp_path / "passwords.txt"
+    bad_file.write_bytes(b"\xff\n")
+
+    with pytest.raises(UsageError, match=r"map\.toml"):
+        SourcePasswordProvider(PasswordSources(map_file=bad_map))
+    with pytest.raises(UsageError, match=r"passwords\.txt"):
+        SourcePasswordProvider(PasswordSources(password_file=bad_file))
