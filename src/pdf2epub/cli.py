@@ -4,17 +4,19 @@ It parses argv, builds the core inputs, calls ``plan_batch`` and ``run_batch``, 
 renders the events through a sink. It holds no batch, password or conversion rules of its
 own, and passes an option only when the user set it, so core defaults apply (CLI-R4).
 
-stdout stays empty; the report and logging go to stderr (CLI-R2).
+stdout stays empty unless ``--json`` is given, when it carries only the events, one JSON
+object per line; the human report, warnings and logging go to stderr (CLI-R2).
 """
 
 import argparse
 import logging
 import sys
 from collections.abc import Sequence
-from typing import Any, TextIO
+from pathlib import Path
+from typing import Any, BinaryIO, TextIO
 
 from pdf2epub.batch import InputSpec, plan_batch, run_batch
-from pdf2epub.events import Event
+from pdf2epub.events import Event, encode_event
 from pdf2epub.options import BatchOptions, ConversionOptions, DiscoveryOptions
 from pdf2epub.version import TOOL_VERSION
 
@@ -48,25 +50,102 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="replace EPUBs that already exist",
     )
+    reporting = parser.add_argument_group("reporting and machine output")
+    reporting.add_argument(
+        "--report",
+        metavar="FILE",
+        help="also write the final batch report to FILE as one JSON document",
+    )
+    reporting.add_argument(
+        "--json", action="store_true", help="write JSON Lines events to stdout, not the report"
+    )
+    reporting.add_argument(
+        "-v", "--verbose", action="store_true", help="log at INFO level (to stderr)"
+    )
+    reporting.add_argument("--debug", action="store_true", help="log at DEBUG level (to stderr)")
     parser.add_argument("--version", action="version", version=f"pdf2epub {TOOL_VERSION}")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.WARNING, stream=sys.stderr, format="%(levelname)s: %(message)s"
-    )
+    configure_logging(args.verbose, args.debug)
 
     batch_fields: dict[str, Any] = {}
     if "overwrite" in args:
         batch_fields["overwrite"] = args.overwrite
 
     plan = plan_batch([InputSpec(path) for path in args.inputs], DiscoveryOptions())
-    reporter = HumanReport(sys.stderr, single=plan.single)
-    report = run_batch(plan, BatchOptions(**batch_fields), ConversionOptions(), reporter)
-    reporter.render()
+    final = FinalEvent()
+    if args.json:
+        writer = JsonLinesWriter(sys.stdout.buffer)
+        report = run_batch(
+            plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(writer, final)
+        )
+    else:
+        reporter = HumanReport(sys.stderr, single=plan.single)
+        report = run_batch(
+            plan, BatchOptions(**batch_fields), ConversionOptions(), Tee(reporter, final)
+        )
+        reporter.render()
+    if args.report is not None and final.event is not None:
+        write_report(final.event, Path(args.report))
     return report.exit_code
+
+
+def configure_logging(verbose: bool, debug: bool) -> None:
+    """Send logging to stderr only: pdf2epub's own records at WARNING, INFO with ``-v``,
+    DEBUG with ``--debug`` (CLI-R8); other libraries' records at WARNING."""
+    logging.basicConfig(
+        level=logging.WARNING, stream=sys.stderr, format="%(levelname)s: %(message)s"
+    )
+    level = logging.DEBUG if debug else logging.INFO if verbose else logging.WARNING
+    logging.getLogger("pdf2epub").setLevel(level)
+
+
+class Tee:
+    """An event sink that passes each event to several sinks, in order."""
+
+    def __init__(self, *sinks: Any) -> None:
+        self._sinks = sinks
+
+    def __call__(self, event: Event) -> None:
+        for sink in self._sinks:
+            sink(event)
+
+
+class FinalEvent:
+    """An event sink that keeps the ``batch_finished`` event."""
+
+    def __init__(self) -> None:
+        self.event: Event | None = None
+
+    def __call__(self, event: Event) -> None:
+        if event["type"] == "batch_finished":
+            self.event = event
+
+
+class JsonLinesWriter:
+    """An event sink that writes each event to ``stream`` as one line of UTF-8 JSON and
+    flushes it at once (CLI-R11, API-R20)."""
+
+    def __init__(self, stream: BinaryIO) -> None:
+        self._stream = stream
+
+    def __call__(self, event: Event) -> None:
+        self._stream.write(encode_event(event).encode("utf-8"))
+        self._stream.flush()
+
+
+def write_report(event: Event, path: Path) -> None:
+    """Write the ``batch_finished`` event to ``path``, byte for byte as its ``--json`` line
+    (API-R19). A failure is logged as an error and changes nothing else (CLI-R18)."""
+    try:
+        path.write_bytes(encode_event(event).encode("utf-8"))
+    except OSError as error:
+        logging.getLogger(__name__).error(
+            "could not write the report to %s: %s", path, error.strerror or error
+        )
 
 
 class HumanReport:

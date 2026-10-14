@@ -3,6 +3,7 @@
 
 import email.parser
 import importlib.metadata as md
+import json
 import re
 import subprocess
 import sys
@@ -189,6 +190,14 @@ def test_neither_ebooklib_nor_pymupdf_is_a_runtime_dependency() -> None:
     closure = runtime_closure(md.distribution("pdf2epub").requires or [])
     assert "lxml" in closure  # the EPUB writer's own dependency is seen
     assert FORBIDDEN_EPUB_LIBRARIES.isdisjoint(closure)
+
+
+def test_wheel_ships_the_event_schema(built: Built) -> None:
+    """Local AC of #26: the JSON Schema for v1 events ships inside the package (API-R26)."""
+    with zipfile.ZipFile(built.wheel) as zf:
+        schema = json.loads(zf.read("pdf2epub/schema/events.v1.json"))
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["properties"]["v"] == {"const": 1}
 
 
 def test_package_reports_the_version_declared_in_pyproject() -> None:

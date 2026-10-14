@@ -72,8 +72,10 @@ def convert(
         assert planned.destination is not None, "a conversion that runs has a destination"
         source_path, destination = Path(planned.source), Path(planned.destination)
 
+        log.debug("conversion %d: opening %s", planned.id, source_path)
         source = open_source(source_path)
         page_count = source.page_count
+        log.debug("conversion %d: %d pages", planned.id, page_count)
         reporter.progress("open", 1, 1)
 
         pages: list[PageText] = []
@@ -89,6 +91,7 @@ def convert(
         write_atomically(write_epub(document), destination)
         output = str(destination)
         reporter.progress("write", 1, 1)
+        log.info("converted %s to %s", source_path, destination)
     except _WriteFailed as error:
         add(Issue(IssueCode.WRITE_FAILED, str(error)))
     except Exception as error:
