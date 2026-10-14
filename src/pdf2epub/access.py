@@ -8,13 +8,13 @@ with pypdf, which needs no password for it; candidates are tried with pypdf's
 
 import dataclasses
 import logging
-import re
 import zipfile
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
+from xml.parsers import expat
 
 import pypdf
 from pypdf import PasswordType
@@ -193,11 +193,34 @@ def _unsupported(detail: str) -> Issue:
     )
 
 
+def _xml_root(head: bytes) -> str | None:
+    """The root element's name, as ``<namespace> <local name>``, of the XML document
+    starting with ``head``; None when ``head`` doesn't reach a root element as
+    well-formed XML, or declares a DTD. Without a DTD there are no entities to expand, and parsing stops at
+    the root's start tag."""
+    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
+        return None  # an .acsm token has no DTD; refuse to expand anyone's entities
+    roots: list[str] = []
+
+    def start(name: str, attributes: object) -> None:
+        roots.append(name)
+        raise _RootFound
+
+    parser = expat.ParserCreate(namespace_separator=" ")
+    parser.StartElementHandler = start
+    with suppress(_RootFound, expat.ExpatError):
+        parser.Parse(head, False)
+    return roots[0] if roots else None
+
+
+class _RootFound(Exception):
+    """Stops parsing at the root element's start tag."""
+
+
 # PWD-R3: a Readium LCP package is a ZIP archive holding this licence document.
 _LCP_LICENSE = "META-INF/license.lcpl"
 # PWD-R3: an Adobe .acsm file is an XML fulfilment token in the ADEPT namespace.
-_ACSM_ROOT = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?fulfillmentToken[\s/>]")
-_ADEPT_NAMESPACE = b"http://ns.adobe.com/adept"
+_ACSM_ROOT = "http://ns.adobe.com/adept fulfillmentToken"
 _ACSM_WINDOW = 4096
 
 
@@ -209,7 +232,7 @@ def is_drm_wrapper(path: Path) -> bool:
         with path.open("rb") as file:
             head = file.read(_ACSM_WINDOW)
         if head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
-            return bool(_ACSM_ROOT.search(head)) and _ADEPT_NAMESPACE in head
+            return _xml_root(head) == _ACSM_ROOT
         if not zipfile.is_zipfile(path):
             return False
         with zipfile.ZipFile(path) as archive:

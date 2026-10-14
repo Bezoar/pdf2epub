@@ -217,9 +217,10 @@ def _natural_key(path: Path, folder: Path) -> list[tuple[int, int | str]]:
 
 def _content_issues(source: Path, explicit: bool) -> list[Issue]:
     """The planning-time issues of one file: ``not_found`` when it can't be read,
-    ``not_a_pdf`` when it fails the content check (BAT-R4). An ``explicit`` file (named,
-    or listed in a files-from list) that is a DRM wrapper passes, so that its conversion
-    refuses it as ``drm_protected`` (PWD-R3)."""
+    ``not_a_pdf`` when it fails the content check (BAT-R4). A DRM wrapper (PWD-R3) is
+    never a PDF, whatever bytes it holds: an ``explicit`` one (named, or listed in a
+    files-from list) passes, so that its conversion refuses it as ``drm_protected``; one
+    found by a folder scan is ``not_a_pdf``."""
     try:
         with source.open("rb") as file:
             head = file.read(MAGIC_WINDOW)
@@ -228,7 +229,9 @@ def _content_issues(source: Path, explicit: bool) -> list[Issue]:
     except OSError as error:
         reason = error.strerror or str(error)
         return [Issue(IssueCode.NOT_FOUND, f"Cannot read {source}: {reason}.")]
-    if PDF_MAGIC not in head and not (explicit and is_drm_wrapper(source)):
+    if is_drm_wrapper(source):
+        return [] if explicit else [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
+    if PDF_MAGIC not in head:
         return [Issue(IssueCode.NOT_A_PDF, f"{source} is not a PDF file.")]
     return []
 

@@ -398,6 +398,39 @@ def test_a_wrapper_found_by_a_folder_scan_is_still_not_a_pdf(tmp_path: Path) -> 
     assert [i.code for i in result.issues] == ["not_a_pdf"]
 
 
+def test_a_scanned_wrapper_holding_pdf_magic_is_still_not_a_pdf(tmp_path: Path) -> None:
+    # A wrapper is never a PDF, even with %PDF- in its first 1024 bytes (BAT-R4).
+    with zipfile.ZipFile(tmp_path / "book.pdf", "w") as archive:
+        archive.writestr("a.pdf", b"%PDF-1.7\n")
+        archive.writestr("META-INF/license.lcpl", b"{}")
+
+    report, _ = run([tmp_path])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
+@pytest.mark.parametrize(
+    "xml",
+    [
+        b'<?xml version="1.0"?><other xmlns:a="http://ns.adobe.com/adept">'
+        b"<a:fulfillmentToken/></other>",
+        b'<fulfillmentToken xmlns="http://example.invalid/not-adept"/>',
+        b'<?xml version="1.0"?><!DOCTYPE fulfillmentToken [<!ENTITY e "x">]>'
+        b'<fulfillmentToken xmlns="http://ns.adobe.com/adept" a="&e;"/>',
+    ],
+    ids=["nested-token", "other-namespace", "with-dtd"],
+)
+def test_xml_that_is_not_an_adept_token_is_not_a_pdf(tmp_path: Path, xml: bytes) -> None:
+    named = tmp_path / "token.acsm"
+    named.write_bytes(xml)
+
+    report, _ = run([named])
+
+    [result] = report.conversions
+    assert [i.code for i in result.issues] == ["not_a_pdf"]
+
+
 def test_a_zip_without_an_lcp_licence_is_not_a_pdf(tmp_path: Path) -> None:
     archive = tmp_path / "book.lcpdf"
     with zipfile.ZipFile(archive, "w") as zip_file:
