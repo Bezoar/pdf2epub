@@ -30,6 +30,8 @@ from pdf2epub import (
 )
 
 TYPOGRAPHY = FIXTURES / "born-digital" / "typography.pdf"
+CJK_LINES = FIXTURES / "born-digital" / "cjk-lines.pdf"
+TWO_PAGES = FIXTURES / "born-digital" / "two-pages.pdf"
 XHTML = "{http://www.w3.org/1999/xhtml}"
 EPUB_TYPE = "{http://www.idpf.org/2007/ops}type"
 OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
@@ -233,3 +235,31 @@ def test_without_a_wordlist_only_the_soft_hyphen_word_is_joined(tmp_path: Path) 
     assert "exam-ple" in paragraph and "example" not in paragraph
     assert "well-known" in paragraph
     assert "information" in paragraph
+
+
+@pytest.mark.ac("RFL-AC28")
+def test_japanese_lines_join_with_no_space_and_korean_lines_with_one(tmp_path: Path) -> None:
+    _, epub = convert(CJK_LINES, tmp_path)
+
+    book = read_book(epub)
+    # Both are prose paragraphs, not line blocks (verse or code) whose lines stay apart:
+    # full-width CJK glyphs share one advance without the font being monospace.
+    assert 'class="lines' not in book.text
+    japanese, korean = book.paragraphs
+    assert [japanese, korean] == ground_truth(CJK_LINES)
+    # Line ends in the fixture (checked by hand): Japanese breaks inside words, Korean at
+    # the spaces between words.
+    assert "窓辺の机" in japanese and "航路を指で" in japanese and "本を一冊" in japanese
+    assert " " not in japanese
+    assert "비쳐 들었고" in korean and "먼 섬들로" in korean and "조용히 넘겼다." in korean
+    assert "  " not in korean
+
+
+def test_furniture_is_removed_from_a_two_page_book(tmp_path: Path) -> None:
+    # A two-page book is too short for the usual three-page minimum; its running header
+    # and page numbers repeat on both pages and still go (RFL-R16).
+    _, epub = convert(TWO_PAGES, tmp_path)
+
+    paragraphs = read_book(epub).paragraphs
+    assert paragraphs == ground_truth(TWO_PAGES)
+    assert [p for p in paragraphs if "The Short Crossing" in p or p in {"1", "2"}] == []
