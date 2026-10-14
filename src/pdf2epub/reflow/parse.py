@@ -19,6 +19,7 @@ from types import TracebackType
 from typing import BinaryIO
 
 from pdfminer.ascii85 import ascii85decode, asciihexdecode
+from pdfminer.ccitt import ccittfaxdecode
 from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTContainer, LTImage, LTItem, LTPage
 from pdfminer.lzw import LZWDecoder
@@ -29,7 +30,11 @@ from pdfminer.pdfparser import PDFParser
 from pdfminer.pdftypes import (
     LITERALS_ASCII85_DECODE,
     LITERALS_ASCIIHEX_DECODE,
+    LITERALS_CCITTFAX_DECODE,
+    LITERALS_DCT_DECODE,
     LITERALS_FLATE_DECODE,
+    LITERALS_JBIG2_DECODE,
+    LITERALS_JPX_DECODE,
     LITERALS_LZW_DECODE,
     LITERALS_RUNLENGTH_DECODE,
     PDFStream,
@@ -39,6 +44,7 @@ from pdfminer.psexceptions import PSException
 from pdfminer.runlength import rldecode
 
 from pdf2epub.reflow.limits import (
+    MAX_STREAM_BYTES,
     ResourceLimitExceeded,
     check_image,
     check_stream_size,
@@ -125,7 +131,7 @@ def _check_stream(stream: PDFStream) -> None:
     try:
         if stream.decipher and stream.objid is not None and stream.genno is not None:
             data = stream.decipher(stream.objid, stream.genno, data, stream.attrs)
-        for name, _ in stream.get_filters():
+        for name, params in stream.get_filters():
             if name in LITERALS_FLATE_DECODE:
                 data = inflate(data)
             elif name in LITERALS_LZW_DECODE:
@@ -134,16 +140,39 @@ def _check_stream(stream: PDFStream) -> None:
                 check_stream_size(run_length_size(data))
                 data = rldecode(data)
             elif name in LITERALS_ASCII85_DECODE:
+                # Every 5 bytes make at most 4, but "z" alone makes 4 zero bytes.
+                check_stream_size(len(data) + 3 * data.count(b"z"))
                 data = ascii85decode(data)
             elif name in LITERALS_ASCIIHEX_DECODE:
                 data = asciihexdecode(data)
+            elif name in _PASSED_THROUGH:
+                pass  # pdfminer leaves the data as it is; later stages still count
+            elif name in LITERALS_CCITTFAX_DECODE:
+                check_stream_size(_ccitt_size(params))
+                data = ccittfaxdecode(data, params)
             else:
-                return
+                return  # pdfminer refuses the stream (unsupported filter): nothing to decode
             check_stream_size(len(data))
     except ResourceLimitExceeded:
         raise
     except Exception:  # a broken stage: pdfminer decodes (or rejects) it its own way
         log.debug("could not pre-check a content stream", exc_info=True)
+
+
+_PASSED_THROUGH = (*LITERALS_DCT_DECODE, *LITERALS_JBIG2_DECODE, *LITERALS_JPX_DECODE)
+
+
+def _ccitt_size(params: object) -> int:
+    """The most bytes ``/CCITTFaxDecode`` can make: one bit per pixel of the declared
+    size. Without a declared row count it can't be bounded, so it counts as too big."""
+    params = resolve1(params)
+    if not isinstance(params, dict):
+        params = {}
+    columns = _dimension(params.get("Columns", 1728))
+    rows = _dimension(params.get("Rows"))
+    if not rows:
+        return MAX_STREAM_BYTES + 1
+    return (columns + 7) // 8 * rows
 
 
 def _check_images(item: LTItem) -> None:
