@@ -243,8 +243,11 @@ def page_text(
 ) -> PageText | None:
     """``page`` with the recognised lines as its text, or None if nothing was recognised.
     Word boxes are in pixels of the cleaned image at ``dpi``, turned upright as ``frame``
-    says (by default, not turned). Lines are in reading order, in column
-    order on a page set in columns."""
+    says (by default, not turned). They are deliberately kept in that level frame, not
+    turned back by the deskew angle: there each line is level and each column's edge is
+    straight, which is what line heights (headings), gutters (columns) and reading order
+    are measured on. Turning them back would tilt every line again. Lines are in reading
+    order, in column order on a page set in columns."""
     # Words whose text normalisation leaves nothing (control characters, say) count as
     # not recognised, so such a result keeps the page's own text (OCR-R31).
     recognised = [
