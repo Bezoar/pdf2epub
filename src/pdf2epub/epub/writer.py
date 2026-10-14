@@ -9,8 +9,9 @@ Package layout (EPUB-R2, EPUB-R4)::
     OEBPS/nav.xhtml               navigation document (first in the spine, non-linear)
     OEBPS/toc.ncx                 EPUB 2 table of contents (EPUB-R6)
     OEBPS/style.css               default stylesheet (EPUB-R10)
-    OEBPS/chapter-NNN.xhtml       one file per chapter, in document order
-    OEBPS/images/...              the book's images, page images included
+    OEBPS/chapter-NNN.xhtml       each chapter, in document order; a chapter split for
+    OEBPS/chapter-NNN-P.xhtml     size (EPUB-R8) goes on in parts 2, 3, ...
+    OEBPS/images/image-NNN.png    book images and page images
 
 Output is deterministic (EPUB-R15): entries in sorted order after ``mimetype``, fixed
 timestamps, a fixed compression level, and names and ids derived from document order.
@@ -18,8 +19,11 @@ timestamps, a fixed compression level, and names and ids derived from document o
 
 import io
 import posixpath
+import re
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from html import escape
 from importlib.resources import files
 from typing import Any
 from urllib.parse import urldefrag
@@ -31,6 +35,8 @@ from pdf2epub.reflow.model import (
     Block,
     Document,
     Heading,
+    Image,
+    ImageAsset,
     Inline,
     LineBlock,
     PageBreak,
@@ -49,8 +55,10 @@ ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 COMPRESS_LEVEL = 9
 
 XHTML = "application/xhtml+xml"
-IMAGES = "images"
 MEDIA_TYPES = {".xhtml": XHTML, ".css": "text/css", ".ncx": "application/x-dtbncx+xml"}
+IMAGE_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif"}
+SPLIT_BYTES = 300_000
+"""A chapter file is split at block boundaries to stay at or below this size (EPUB-R8)."""
 
 
 class PackageCheckError(Exception):
@@ -69,8 +77,10 @@ _ENV = Environment(
 )
 
 
-def chapter_file(index: int) -> str:
-    return f"chapter-{index + 1:03d}.xhtml"
+def chapter_file(index: int, part: int = 0) -> str:
+    """The file of a chapter's ``part`` (0 for the first, or only, part)."""
+    suffix = f"-{part + 1}" if part else ""
+    return f"chapter-{index + 1:03d}{suffix}.xhtml"
 
 
 def page_id(page: int) -> str:
@@ -91,29 +101,70 @@ def write_epub(document: Document) -> bytes:
     fails a built-in check."""
     meta = document.metadata
     contents: dict[str, bytes] = {}
+    images = {
+        asset: f"images/image-{n:03d}{IMAGE_EXTENSIONS[asset.media_type]}"
+        for n, asset in enumerate(dict.fromkeys(document.images), start=1)
+    }
+    figures = iter(range(1, 1_000_000))
+    labels = {
+        marker.page: marker.label
+        for chapter in document.chapters
+        for marker in _page_breaks(chapter.blocks)
+    }
 
     page_list: list[_Nav] = []
-    labels: dict[int, str] = {}
+    chapter_files: list[list[str]] = []
+    where: dict[str, str] = {}
+    """The file each block ID is in."""
     for index, chapter in enumerate(document.chapters):
-        name = chapter_file(index)
-        breaks = _page_breaks(chapter.blocks)
-        labels.update((b.page, b.label) for b in breaks)
-        page_list.extend(_Nav(f"pt-{b.page}", b.label, f"{name}#{page_id(b.page)}") for b in breaks)
-        contents[name] = _render(
-            "chapter.xhtml.j2",
-            meta=meta,
-            title=chapter.title or meta.title,
-            stylesheet=STYLESHEET,
-            blocks=[_block(block, labels) for block in chapter.blocks],
-        )
-    for image in document.images:
-        contents[f"{IMAGES}/{image.name}"] = image.data
+        title = chapter.title or meta.title
+        shell = len(_chapter(meta, title, ""))
+        parts: list[list[tuple[Block, str]]] = [[]]
+        size = shell
+        for block in chapter.blocks:
+            markup = _block_markup(_block(block, images, figures, labels=labels))
+            oversized = len(markup.encode("utf-8")) + shell > SPLIT_BYTES
+            rendered_pieces: list[tuple[Block, str]] = [(block, markup)]
+            if oversized and isinstance(block, Paragraph):
+                rendered_pieces = [
+                    (piece, _block_markup(_block(piece, images, figures, continued=n > 0)))
+                    for n, piece in enumerate(_paragraph_pieces(block, SPLIT_BYTES - shell))
+                ]
+            elif oversized and isinstance(block, LineBlock):
+                rendered_pieces = _line_block_pieces(block, SPLIT_BYTES - shell)
+            # No file may pass the limit: a block that can't be cut small enough is a bug
+            # report, not an oversized file (EPUB-R8, EPUB-R21).
+            if any(len(m.encode("utf-8")) + shell > SPLIT_BYTES for _, m in rendered_pieces):
+                raise PackageCheckError(f"a block in chapter {index + 1} is too large to split")
+            for piece, piece_markup in rendered_pieces:
+                rendered = len(piece_markup.encode("utf-8")) + 1
+                if parts[-1] and size + rendered > SPLIT_BYTES:
+                    parts.append([])
+                    size = shell
+                parts[-1].append((piece, piece_markup))
+                size += rendered
+        names: list[str] = []
+        for part, items in enumerate(parts):
+            name = chapter_file(index, part)
+            names.append(name)
+            for block, _ in items:
+                for marker in _page_breaks([block]):
+                    page_list.append(
+                        _Nav(f"pt-{marker.page}", marker.label, f"{name}#{page_id(marker.page)}")
+                    )
+                    where[page_id(marker.page)] = name
+                if isinstance(block, Heading):
+                    where[block.anchor] = name
+            body = "\n".join(markup for _, markup in items)
+            contents[name] = _chapter(meta, title, body)
+        chapter_files.append(names)
 
     counter = iter(range(1, 1_000_000))
-    toc = [_toc_entry(entry, counter) for entry in document.toc]
+    toc = [_toc_entry(entry, counter, chapter_files, where) for entry in document.toc]
+    body_start = next((i for i, c in enumerate(document.chapters) if c.title is not None), 0)
     landmarks = [
         {"type": "toc", "href": f"{NAV}#toc", "label": "Contents"},
-        {"type": "bodymatter", "href": chapter_file(0), "label": "Start of content"},
+        {"type": "bodymatter", "href": chapter_files[body_start][0], "label": "Start of content"},
     ]
     contents[NAV] = _render(
         "nav.xhtml.j2",
@@ -127,8 +178,10 @@ def write_epub(document: Document) -> bytes:
         "toc.ncx.j2", meta=meta, toc=toc, page_list=page_list, depth=_depth(toc)
     )
     contents[STYLESHEET] = _template_source(STYLESHEET).encode("utf-8")
+    for asset, name in images.items():
+        contents[name] = asset.data
 
-    chapters = [chapter_file(i) for i in range(len(document.chapters))]
+    chapters = [name for names in chapter_files for name in names]
     manifest = (
         [
             {"id": "nav", "href": NAV, "media_type": XHTML, "properties": "nav"},
@@ -146,12 +199,12 @@ def write_epub(document: Document) -> bytes:
         ]
         + [
             {
-                "id": f"image-{index + 1}",
-                "href": f"{IMAGES}/{image.name}",
-                "media_type": image.media_type,
+                "id": posixpath.basename(name).rsplit(".", 1)[0],
+                "href": name,
+                "media_type": asset.media_type,
                 "properties": None,
             }
-            for index, image in enumerate(document.images)
+            for asset, name in images.items()
         ]
     )
     spine = [{"idref": "nav", "linear": False}] + [
@@ -164,6 +217,16 @@ def write_epub(document: Document) -> bytes:
     entries[CONTAINER] = _render("container.xml.j2", package_path=PACKAGE)
     check_package(entries)
     return _zip(entries)
+
+
+def _block_markup(node: dict[str, Any]) -> str:
+    """One block's XHTML, from the ``block`` macro."""
+    macro = getattr(_ENV.get_template("blocks.xhtml.j2").module, "block")  # noqa: B009  # Jinja exposes macros as module attributes
+    return str(macro(node))
+
+
+def _chapter(meta: Any, title: str, body: str) -> bytes:
+    return _render("chapter.xhtml.j2", meta=meta, title=title, stylesheet=STYLESHEET, body=body)
 
 
 def _render(template: str, **context: Any) -> bytes:
@@ -189,17 +252,99 @@ def _inline(inline: Inline) -> dict[str, Any]:
     return {"kind": "text", "text": inline.text, "bold": inline.bold, "italic": inline.italic}
 
 
-def _block(block: Block, labels: dict[int, str]) -> dict[str, Any]:
+# What a paragraph's wrapper (``<p class="continued">`` ... ``</p>``, indented) and each
+# word or page-break marker add to its markup, at most: a word's escaped text plus room for
+# its ``<b><i>`` ... ``</i></b>`` tags, or the marker's span.
+_WRAPPER_MARKUP, _INLINE_MARKUP, _MARKER_MARKUP = 64, 16, 160
+
+
+def _paragraph_pieces(paragraph: Paragraph, budget: int) -> list[Paragraph]:
+    """A paragraph too large for one chapter file, cut at word boundaries into pieces
+    whose markup fits within ``budget`` bytes (EPUB-R21). A single word too long for
+    a piece on its own is cut between characters."""
+    pieces: list[list[Inline]] = [[]]
+    size = _WRAPPER_MARKUP
+    for inline in paragraph.inlines:
+        tokens: list[tuple[Inline, int]]
+        if isinstance(inline, PageBreak):
+            tokens = [(inline, _MARKER_MARKUP)]
+        else:
+            tokens = [
+                (Text(chunk, inline.bold, inline.italic), _cost(chunk))
+                for word in re.findall(r"\S+\s*|\s+", inline.text)
+                for chunk in _chunks(word, budget - _WRAPPER_MARKUP)
+            ]
+        for token, cost in tokens:
+            if pieces[-1] and size + cost > budget:
+                pieces.append([])
+                size = _WRAPPER_MARKUP
+            pieces[-1].append(token)
+            size += cost
+    return [Paragraph(inlines) for inlines in pieces]
+
+
+def _line_block_pieces(block: LineBlock, budget: int) -> list[tuple[Block, str]]:
+    """A line block too large for one chapter file, cut between its lines into line blocks
+    whose markup each fits within ``budget`` bytes where a single line allows."""
+    pieces: list[tuple[Block, str]] = []
+    lines: list[list[Inline]] = []
+    for line in block.lines:
+        trial = LineBlock([*lines, line], block.monospace)
+        markup = _block_markup(_block(trial, {}, iter(())))
+        if lines and len(markup.encode("utf-8")) > budget:
+            done = LineBlock(lines, block.monospace)
+            pieces.append((done, _block_markup(_block(done, {}, iter(())))))
+            lines = []
+        lines.append(line)
+    rest = LineBlock(lines, block.monospace)
+    pieces.append((rest, _block_markup(_block(rest, {}, iter(())))))
+    return pieces
+
+
+def _cost(text: str) -> int:
+    return len(escape(text).encode("utf-8")) + _INLINE_MARKUP
+
+
+def _chunks(word: str, budget: int) -> list[str]:
+    """``word`` as one chunk, or cut between characters into chunks that each cost at most
+    ``budget``."""
+    if _cost(word) <= budget:
+        return [word]
+    chunks = [""]
+    for char in word:
+        if chunks[-1] and _cost(chunks[-1] + char) > budget:
+            chunks.append("")
+        chunks[-1] += char
+    return chunks
+
+
+def _block(
+    block: Block,
+    images: dict[ImageAsset, str],
+    figures: Iterator[int],
+    continued: bool = False,
+    labels: dict[int, str] | None = None,
+) -> dict[str, Any]:
     if isinstance(block, PageBreak):
         return _inline(block)
     if isinstance(block, PageImage):
         # EPUB-R9, EPUB-R11: a full-width figure, its alt text the page's label, and the
         # page's text in a visually hidden element.
+        label = (labels or {}).get(block.page, str(block.page))
         return {
             "kind": "page_image",
-            "src": f"{IMAGES}/{block.asset}",
-            "alt": f"Page {labels.get(block.page, str(block.page))}",
+            "src": images[block.asset],
+            "alt": f"Page {label}",
             "text": block.text,
+        }
+    if isinstance(block, Image):
+        # EPUB-R11: the caption, or "Figure <n>" numbered within the book.
+        number = next(figures)
+        return {
+            "kind": "figure",
+            "src": images[block.asset],
+            "alt": block.caption or f"Figure {number}",
+            "caption": block.caption,
         }
     if isinstance(block, Heading):
         return {
@@ -215,13 +360,23 @@ def _block(block: Block, labels: dict[int, str]) -> dict[str, Any]:
             "monospace": block.monospace,
             "lines": [[_inline(i) for i in line] for line in block.lines],
         }
-    return {"kind": "paragraph", "inlines": [_inline(i) for i in block.inlines]}
+    return {
+        "kind": "paragraph",
+        "continued": continued,
+        "inlines": [_inline(i) for i in block.inlines],
+    }
 
 
-def _toc_entry(entry: TocEntry, counter: Any) -> _Nav:
-    href = chapter_file(entry.chapter) + (f"#{entry.anchor}" if entry.anchor else "")
+def _toc_entry(
+    entry: TocEntry, counter: Iterator[int], files: list[list[str]], where: dict[str, str]
+) -> _Nav:
+    if entry.anchor is None:
+        href = files[entry.chapter][0]
+    else:
+        # An anchor no file holds keeps its fragment, so the package check catches it.
+        href = f"{where.get(entry.anchor, files[entry.chapter][0])}#{entry.anchor}"
     nav = _Nav(f"nav-{next(counter)}", entry.label, href)
-    nav.children = [_toc_entry(child, counter) for child in entry.children]
+    nav.children = [_toc_entry(child, counter, files, where) for child in entry.children]
     return nav
 
 

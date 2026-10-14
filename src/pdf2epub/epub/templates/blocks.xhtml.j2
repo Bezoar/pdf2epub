@@ -1,0 +1,34 @@
+{%- macro pagebreak(node) -%}
+<span epub:type="pagebreak" role="doc-pagebreak" id="{{ node.id }}" aria-label="{{ node.label }}"></span>
+{%- endmacro -%}
+{%- macro inlines(items) -%}
+{%- for node in items -%}
+{%- if node.kind == "pagebreak" -%}{{ pagebreak(node) }}
+{%- else -%}
+{%- if node.bold %}<b>{% endif %}{% if node.italic %}<i>{% endif -%}
+{{ node.text }}
+{%- if node.italic %}</i>{% endif %}{% if node.bold %}</b>{% endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endmacro -%}
+{%- macro block(node) -%}
+{%- if node.kind == "pagebreak" -%}
+  {{ pagebreak(node) }}
+{%- elif node.kind == "heading" -%}
+  <h{{ node.level }} id="{{ node.id }}">{{ inlines(node.inlines) }}</h{{ node.level }}>
+{%- elif node.kind == "lines" and node.monospace -%}
+  <p class="lines code"><code>
+  {%- for line in node.lines %}{% if not loop.first %}<br/>{% endif %}{{ inlines(line) }}{% endfor -%}
+  </code></p>
+{%- elif node.kind == "lines" -%}
+  <p class="lines">
+  {%- for line in node.lines %}{% if not loop.first %}<br/>{% endif %}{{ inlines(line) }}{% endfor -%}
+  </p>
+{%- elif node.kind == "page_image" -%}
+  <figure class="page-image"><img src="{{ node.src }}" alt="{{ node.alt }}"/>{% if node.text %}<div class="hidden-text">{{ node.text }}</div>{% endif %}</figure>
+{%- elif node.kind == "figure" -%}
+  <figure><img src="{{ node.src }}" alt="{{ node.alt }}"/>{% if node.caption %}<figcaption>{{ node.caption }}</figcaption>{% endif %}</figure>
+{%- else -%}
+  <p{% if node.continued %} class="continued"{% endif %}>{{ inlines(node.inlines) }}</p>
+{%- endif -%}
+{%- endmacro -%}

@@ -65,12 +65,30 @@ def is_line_block(block: TextBlock, typography: Typography) -> bool:
 
 
 def line_block(block: TextBlock) -> LineBlock:
-    """The document-model line block for ``block``, which ``is_line_block``."""
+    """The document-model line block for ``block``, which ``is_line_block``. Its lines keep
+    their bold and italic runs (RFL-R22)."""
     if not is_monospace(block):
-        return LineBlock([[Text(line.text)] for line in block.lines], monospace=False)
+        return LineBlock([list(line.styled) for line in block.lines], monospace=False)
     left = min(line.x0 for line in block.lines)
     lines: list[list[Inline]] = []
     for line in block.lines:
         indent = round((line.x0 - left) / line.advance)
-        lines.append([Text(" " * indent + line.verbatim)])
+        lines.append(list(_restyle(" " * indent + line.verbatim, line.styled)))
     return LineBlock(lines, monospace=True)
+
+
+def _restyle(text: str, runs: tuple[Text, ...]) -> list[Text]:
+    """``text`` (a line's verbatim text, with its spaces kept) styled like ``runs`` (the
+    same line with its spaces collapsed): the letters line up in order, and a space takes
+    the style of the letter before it."""
+    letters = [(run.bold, run.italic) for run in runs for c in run.text if not c.isspace()]
+    styled: list[Text] = []
+    style, n = (False, False), 0
+    for char in text:
+        if not char.isspace() and n < len(letters):
+            style, n = letters[n], n + 1
+        if styled and (styled[-1].bold, styled[-1].italic) == style:
+            styled[-1] = Text(styled[-1].text + char, *style)
+        else:
+            styled.append(Text(char, *style))
+    return styled or [Text(text)]

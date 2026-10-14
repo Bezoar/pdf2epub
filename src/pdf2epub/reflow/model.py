@@ -1,6 +1,6 @@
 """The document model (RFL-R34): reflow's output and the EPUB writer's only input.
 
-It holds no PDF objects. Book images and the cover join the model with the tickets that
+It holds no PDF objects. The cover joins the model with the tickets that
 produce them. ``page`` is always the 1-based PDF page index (unique within a
 book); ``label`` is the printed page label, for display only.
 """
@@ -42,6 +42,22 @@ class Paragraph:
 
 
 @dataclass(frozen=True)
+class ImageAsset:
+    """An image file for the book: its encoded bytes and media type."""
+
+    data: bytes
+    media_type: str
+
+
+@dataclass(frozen=True)
+class Image:
+    """A book image at its place in reading order (RFL-R26), with its caption, if any."""
+
+    asset: ImageAsset
+    caption: str | None = None
+
+
+@dataclass(frozen=True)
 class LineBlock:
     """A line block (RFL-R36): verse, code or other text whose line breaks carry meaning.
     Its lines are kept as in the source, never joined or de-hyphenated."""
@@ -52,29 +68,18 @@ class LineBlock:
 
 
 @dataclass(frozen=True)
-class ImageAsset:
-    """An image stored once in the book (RFL-R26), whatever refers to it."""
-
-    name: str
-    """Its file name in the book, e.g. ``page-3.png``: unique within the book."""
-    media_type: str
-    data: bytes
-
-
-@dataclass(frozen=True)
 class PageImage:
     """A page-image fallback (RFL-R15): a render of the whole page, with the page's text
     kept searchable."""
 
-    asset: str
-    """The ``name`` of its ``ImageAsset`` in ``Document.images``."""
+    asset: ImageAsset
     text: str | None
     """Its searchable text, one line per line of the page (in column order on a
     multi-column page); None when the page has none."""
     page: int
 
 
-Block = Heading | Paragraph | LineBlock | PageImage | PageBreak
+Block = Heading | Paragraph | LineBlock | Image | PageImage | PageBreak
 
 
 @dataclass(frozen=True)
@@ -111,4 +116,3 @@ class Document:
     chapters: list[Chapter]
     toc: list[TocEntry]
     images: list[ImageAsset] = field(default_factory=list)
-    """Every image the blocks refer to, each stored once."""
