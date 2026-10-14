@@ -133,7 +133,7 @@ Fixture names refer to the fixtures in [testing](testing.md). Unless stated, run
 
 ## Open points
 
-The owner accepted points OP10–OP17 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review). The points after OP17 were added during the build and were not part of that review.
+The owner accepted points OP10–OP17 in [#51](https://github.com/Bezoar/pdf2epub/issues/51) on 2026-10-14 (numbered as in that review). The two points after OP17 were added during the build by [#25](https://github.com/Bezoar/pdf2epub/issues/25); the owner accepted them in the same review session.
 
 - **OP10** Positional inputs come before files-from entries when both are given; the decision said only "as given".
 - **OP11** The PDF content check looks for `%PDF-` within the first 1024 bytes (the tolerance common PDF readers use).
