@@ -4,6 +4,12 @@ committed, and the encrypted fixtures carry the encryption TST-AC2 names.
 Each TST-R3 fixture is mapped to its file here by hand, from the spec's wording and the
 fixture generators' docstrings (``fixturegen/``). The encryption is read with pypdf
 straight from each file's ``/Encrypt`` dictionary.
+
+TST-AC2 stays on the pending-AC list, and these tests carry no ``ac`` marker, until the
+text-layer fixtures (``TEXT_LAYERS``) exist: #44 creates them. When they land, the
+strict xfail below fails as an unexpected pass. Then merge ``TEXT_LAYERS`` into
+``INVENTORY``, delete the xfail test, mark the tests here ``ac("TST-AC2")`` and remove
+TST-AC2 from ``tests/ac_pending.txt``.
 """
 
 from pathlib import Path
@@ -68,8 +74,8 @@ TEXT_LAYERS: dict[str, dict[str, str]] = {
         "invisible OCR layer covering half of each page": "must-reject/half-layer.pdf",
     },
 }
-"""The text-layer fixtures, which #44 (the text-layer quality check) creates. Merge them
-into ``INVENTORY`` and drop the xfail below once #44 is merged."""
+"""The text-layer fixtures, which #44 (the text-layer quality check) creates (see the
+module docstring for what to do when they land)."""
 
 
 def missing(inventory: dict[str, dict[str, str]]) -> list[str]:
@@ -81,12 +87,10 @@ def missing(inventory: dict[str, dict[str, str]]) -> list[str]:
     ]
 
 
-@pytest.mark.ac("TST-AC2")
 def test_every_tst_r3_fixture_is_committed() -> None:
     assert missing(INVENTORY) == []
 
 
-@pytest.mark.ac("TST-AC2")
 @pytest.mark.xfail(strict=True, reason="#44 creates the text-layer fixtures")
 def test_every_tst_r3_text_layer_fixture_is_committed() -> None:
     assert missing(TEXT_LAYERS) == []
@@ -115,7 +119,6 @@ def encrypt_dictionary(path: str) -> dict[str, Any]:
 EXTRACT = int(UserAccessPermissions.EXTRACT)
 
 
-@pytest.mark.ac("TST-AC2")
 @pytest.mark.parametrize(
     ("path", "revision", "version", "length", "method"),
     [
@@ -139,7 +142,6 @@ def test_standard_fixtures_have_the_expected_revision_and_algorithm(
     assert encrypt.get("/CFM") == method
 
 
-@pytest.mark.ac("TST-AC2")
 @pytest.mark.parametrize(
     ("path", "opens_with_empty_password", "extract_allowed"),
     [
@@ -163,7 +165,6 @@ def test_user_and_owner_passwords_and_permissions(
         assert permissions & int(UserAccessPermissions.all()) == int(UserAccessPermissions.all())
 
 
-@pytest.mark.ac("TST-AC2")
 def test_the_non_standard_handler_fixture_names_a_vendor_filter() -> None:
     encrypt = encrypt_dictionary("encrypted/fopn-foweb.pdf")
     assert encrypt["/Filter"] not in ("/Standard", None)

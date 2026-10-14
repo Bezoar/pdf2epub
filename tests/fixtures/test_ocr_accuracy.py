@@ -268,6 +268,20 @@ def score(pages: dict[int, Page], truth: dict[int, str]) -> Score:
     return Score(1 - distance / length if length else 0.0, scored, unscored)
 
 
+def test_fallback_pages_are_scored_on_hidden_text_and_counted_apart() -> None:
+    truth = {1: "abcdefghij", 2: "klmnopqrst", 3: "uvwxyz"}
+    pages = {
+        1: Page("abcdefghiX"),  # reflowed: 1 error in 10
+        2: Page("klmnopqrXX", image=True),  # page image with hidden text: 2 errors in 10
+        3: Page("  ", image=True),  # page image without text: not scored
+    }
+
+    figures = score(pages, truth)
+
+    assert figures.accuracy == pytest.approx(1 - 3 / 20)
+    assert (figures.fallback_scored, figures.fallback_unscored) == (1, 1)
+
+
 @pytest.mark.tesseract
 @pytest.mark.ac("TST-AC10")
 @pytest.mark.ac("MAIN-AC-G")
