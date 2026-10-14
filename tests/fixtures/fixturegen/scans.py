@@ -15,8 +15,8 @@ for ``image-only.pdf``, its paragraphs, separated by blank lines; for ``blank-pa
 the first of them.
 
 How the bytes stay the same on every platform: each page is rendered by PDFium (shipped
-inside the pinned pypdfium2 wheel) without anti-aliasing and cut to bitonal at mid-grey,
-so the image doesn't depend on any system font or rasteriser. It is stored CCITT Group 4
+inside the pinned pypdfium2 wheel) with its own built-in fonts only (never the system's),
+without anti-aliasing, and cut to bitonal at mid-grey. It is stored CCITT Group 4
 encoded (``/CCITTFaxDecode``, ``/K -1``), which is a canonical encoding: every correct
 encoder (here libtiff, through Pillow) writes the same bits for the same image. The PDF
 around the images is written by ``rawpdf``, uncompressed.
@@ -28,6 +28,7 @@ import shutil
 from pathlib import Path
 
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from PIL import Image, TiffImagePlugin
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
@@ -59,8 +60,34 @@ _SEED = 4018
 # --- Rendering and encoding -------------------------------------------------------------
 
 
+_NO_SYSTEM_FONTS: list[object] = []
+
+
+def _builtin_fonts_only() -> None:
+    """Stop PDFium from looking up fonts installed on the system: a PDF font that isn't
+    embedded (the standard 14 fonts of the born-digital fixtures) is then drawn with
+    PDFium's own built-in substitute, the same on every platform. Process-wide; the
+    callbacks are kept alive for as long as the process runs."""
+    if _NO_SYSTEM_FONTS:
+        return
+    info = pdfium_c.FPDF_SYSFONTINFO()
+    types = dict(pdfium_c.FPDF_SYSFONTINFO._fields_)
+    info.version = 1
+    info.Release = types["Release"](lambda this: None)
+    info.EnumFonts = types["EnumFonts"](lambda this, mapper: None)
+    info.MapFont = types["MapFont"](lambda this, weight, italic, charset, pitch, face, exact: None)
+    info.GetFont = types["GetFont"](lambda this, face: None)
+    info.GetFontData = types["GetFontData"](lambda this, font, table, buffer, size: 0)
+    info.GetFaceName = types["GetFaceName"](lambda this, font, buffer, size: 0)
+    info.GetFontCharset = types["GetFontCharset"](lambda this, font: 0)
+    info.DeleteFont = types["DeleteFont"](lambda this, font: None)
+    pdfium_c.FPDF_SetSystemFontInfo(info)
+    _NO_SYSTEM_FONTS.append(info)
+
+
 def _render(pdf: bytes) -> list[Image.Image]:
     """Every page of ``pdf`` as a bitonal 300 DPI image."""
+    _builtin_fonts_only()
     document = pdfium.PdfDocument(pdf)
     pages: list[Image.Image] = []
     try:
