@@ -103,6 +103,7 @@ It does **not** define what an option means or its default. The owning spec does
 <a id="cli-r7"></a>**CLI-R7**: These combinations shall be usage errors (exit 2):
 
 - `--interactive` without `--json`;
+- `--interactive` with `--files-from -` (both would read stdin);
 - `--ask-password` with `--json`;
 - `--ask-password` when stdin isn't a terminal;
 - `-q` with `-v` or `--debug`;
@@ -129,7 +130,7 @@ The epilog shall link to the README's legal section and its Tesseract install st
 
 ## 5. JSON and interactive modes
 
-<a id="cli-r11"></a>**CLI-R11**: With `--json`, the CLI shall write every event the core emits to stdout as one JSON object per line, in emission order. The last line is `batch_finished` ([api](api.md)). The human report isn't printed. Warnings ([CLI-R10](#cli-r10), [PWD-R17](passwords.md#pwd-r17)) and logging still go to stderr.
+<a id="cli-r11"></a>**CLI-R11**: With `--json`, the CLI shall write every event the core emits to stdout as one JSON object per line, in emission order. The last line is `batch_finished` ([api](api.md)), except after a usage error, which writes nothing to stdout ([batch](batch.md#bat-r25)). The human report isn't printed. Warnings ([CLI-R10](#cli-r10), [PWD-R17](passwords.md#pwd-r17)) and logging still go to stderr.
 
 <a id="cli-r12"></a>**CLI-R12**: Without `--interactive`, a `--json` run never prompts. Conversions that need a password produce `password_required` and are reported ([PWD-R22](passwords.md#pwd-r22)).
 

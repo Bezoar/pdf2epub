@@ -63,11 +63,11 @@ class Candidate(NamedTuple):
 
 class PasswordProvider(Protocol):
     def candidates(self, path: Path) -> list[Candidate]: ...
-    # optional:
-    def prompt(self, path: Path, attempt: int) -> Secret | None: ...
+    # None when this provider cannot prompt:
+    prompt: Callable[[Path, int], Secret | None] | None
 ```
 
-<a id="api-r7"></a>**API-R7**: The core shall obtain candidate passwords only through a `PasswordProvider`. `candidates(path)` returns the candidate passwords for one file, each with its password source label. `prompt(path, attempt)` is optional; when the provider has no `prompt`, or the run is not allowed to prompt, the core emits `password_required` and skips the file as defined in [passwords](passwords.md). The trial order, the 25-candidate cap, the owner-password retry and prompt deferral are core rules owned by [passwords](passwords.md); the core ships the standard provider that builds candidates from the user's password sources ([passwords: `SourcePasswordProvider`](passwords.md)).
+<a id="api-r7"></a>**API-R7**: The core shall obtain candidate passwords only through a `PasswordProvider`. `candidates(path)` returns the candidate passwords for one file, each with its password source label. `prompt` is an attribute holding either a function `(path, attempt) -> Secret | None` or `None`; when it is `None`, or the run is not allowed to prompt, the core emits `password_required` and skips the file as defined in [passwords](passwords.md). The trial order, the 25-candidate cap, the owner-password retry and prompt deferral are core rules owned by [passwords](passwords.md); the core ships the standard provider that builds candidates from the user's password sources ([passwords: `SourcePasswordProvider`](passwords.md)).
 
 <a id="api-r8"></a>**API-R8**: Every password value inside the core shall be held as a `Secret`. `str()` and `repr()` of a `Secret` shall return `***`; JSON encoding of a `Secret` (by the standard `json` module and by the event writer) shall raise `TypeError`; the value is reachable only through `reveal()`. No event, issue, result, report or log record shall carry a password value; reports name only the password source label.
 
@@ -189,14 +189,14 @@ class BatchReport:
 
 | `type` | Fields (besides `v`, `type`, `t`) | When |
 |---|---|---|
-| `batch_started` | `tool_version`, `total`, `jobs` (always `1` in v1), `planned: [{id, source, destination}]` | First event of every run. |
+| `batch_started` | `tool_version`, `total`, `jobs` (always `1` in v1), `planned: [{id, source, destination}]` | First event of every run that passes the usage checks; a usage error emits no events at all ([batch](batch.md#bat-r25)). |
 | `conversion_started` | `id` | A planned conversion begins work. |
 | `progress` | `id`, `stage`, `done`, `of`, plus stage fields ([§9](#9-progress)) | During a conversion. |
 | `issue` | `id` (`null` = batch-level), `issue` (an Issue) | As soon as an issue is known; the same issue also appears in `conversion_finished`. |
 | `password_required` | `id`, `sources_tried` (source labels only) | A password is needed and cannot be asked for now; the file is skipped and reported `missing_password`, `wrong_password`, or `restricted` (when only the owner password is missing). |
 | `password_request` | `id`, `request_id`, `attempt` (1–3) | `--interactive` only; answered on stdin ([§10](#10-stdin-messages---interactive)). |
 | `conversion_finished` | `id`, `source`, `destination`, `outcome`, `output`, `issues`, `password_source`, `pages`, `duration`, `ocr` | A conversion ends, whatever its outcome. |
-| `batch_finished` | `tool_version`, `started_at`, `totals {converted, skipped, failed}`, `interrupted`, `exit_code`, `conversions` (ConversionResult list, plan order) | Last event of every run. |
+| `batch_finished` | `tool_version`, `started_at`, `totals {converted, skipped, failed}`, `interrupted`, `exit_code`, `conversions` (ConversionResult list, plan order) | Last event of every run that emitted `batch_started`. |
 
 <a id="api-r18"></a>**API-R18**: Conversions whose fate is settled at planning time (`not_found`, `not_a_pdf`, `output_exists`, `output_collision`) shall be reported as `conversion_finished` events immediately after `batch_started`, in plan order, before any `conversion_started`. They get no `conversion_started` event.
 

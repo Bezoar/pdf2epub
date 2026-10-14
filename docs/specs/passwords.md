@@ -52,7 +52,7 @@ The `/Encrypt` dictionary is never itself encrypted, so detection needs no passw
 
 <a id="pwd-r8"></a>**PWD-R8**: A [`wrong_password`](api.md#code-wrong_password) issue shall name the **password sources** tried, as their labels ([PWD-R16](#pwd-r16)), in trial order. It shall never name the passwords themselves.
 
-<a id="pwd-r9"></a>**PWD-R9**: The library calls used to open the file shall be able to tell an owner-password match from a user-password match. pypdf's `decrypt()` returns a `PasswordType`, which is why pypdf (BSD-3-Clause) is a runtime dependency. If the library cannot tell them apart for a file, the match counts as a user-password match.
+<a id="pwd-r9"></a>**PWD-R9**: The library calls used to open the file shall be able to tell an owner-password match from a user-password match. pypdf's `decrypt()` returns a `PasswordType`, which is why pypdf (BSD-3-Clause) is a runtime dependency. If the library cannot tell them apart for a file, the match counts as a user-password match; a file with copy/extract forbidden then stays [`restricted`](api.md#code-restricted) unless another candidate is recognised as the owner password (fail closed).
 
 ## 3. Outcomes of classification (summary)
 
@@ -122,7 +122,7 @@ A map that can't be read, isn't valid TOML, or holds a value that isn't a string
 - `password_file`: path or none.
 - `prompt`: an optional prompt function `(path, attempt) -> Secret | None`.
 
-It implements the [`PasswordProvider`](api.md) protocol: its `prompt` method exists only when `PasswordSources.prompt` is set, and simply calls it. A front end only gathers the raw sources; it never orders or filters them.
+It implements the [`PasswordProvider`](api.md) protocol: its `prompt` attribute is `PasswordSources.prompt` (`None` when unset). A front end only gathers the raw sources; it never orders or filters them.
 
 ## 6. Prompting
 
@@ -134,7 +134,9 @@ It implements the [`PasswordProvider`](api.md) protocol: its `prompt` method exi
 
 Each prompt allows up to **3 attempts** for a file. Typing is not echoed.
 
-<a id="pwd-r20"></a>**PWD-R20**: A blank answer (`None`) skips the file. The conversion then fails with [`missing_password`](api.md#code-missing_password), or with [`wrong_password`](api.md#code-wrong_password) if supplied candidates had already been tried. Three failed attempts give [`wrong_password`](api.md#code-wrong_password) (or [`restricted`](api.md#code-restricted) when an owner password was being sought).
+<a id="pwd-r20"></a>**PWD-R20**: A blank answer (`None`) skips the file, and three failed attempts end prompting for it. The conversion then fails with:
+- [`restricted`](api.md#code-restricted) when the file was already open and an **owner** password was being sought ([PWD-R11](#pwd-r11)), whether the user skipped or failed three times;
+- otherwise [`missing_password`](api.md#code-missing_password) on a skip when no candidate had been tried, or [`wrong_password`](api.md#code-wrong_password) when supplied or prompted candidates had been tried.
 
 <a id="pwd-r21"></a>**PWD-R21**: In a batch, the core shall **defer** every conversion that needs a prompt until all conversions that need none have finished. Deferred conversions are prompted in input order. The batch report still lists conversions in input order ([api](api.md)).
 
@@ -157,7 +159,7 @@ Candidate values are carried only as [`Secret`](api.md), which is enforced by ty
 
 <a id="pwd-r25"></a>**PWD-R25**: Password environment variables (`PDF2EPUB_PASSWORD`) shall be removed from the environment of every child process, including conversion workers and the OCR engine. Passwords reach a worker only over its pipe ([batch](batch.md)).
 
-<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no password, and no password-derived data, to disk, and shall cache nothing between runs.
+<a id="pwd-r26"></a>**PWD-R26**: pdf2epub shall write no secret material to disk (no password, password hash, key, or record of which source opened which file) and shall cache nothing between runs. The decrypted book content written into the EPUB is the requested output and is not secret material.
 
 ## 8. Output
 
@@ -289,7 +291,7 @@ With mode `0600`, no such warning appears.
 - **when** the batch runs;
 - **then** `prompt` is called with attempts 1, 2 and 3, and the outcome is `failed` with `wrong_password` whose sources tried include `prompt`.
 
-If `prompt` returns `None` on attempt 1 instead, `prompt` is called once and the outcome is `failed` with `missing_password`.
+If `prompt` returns `None` on attempt 1 instead, `prompt` is called once and the outcome is `failed` with `missing_password`. **And given** the owner-only fixture with copy/extract forbidden and a `prompt` that returns `None`, the outcome is `failed` with `restricted`, not `wrong_password`.
 
 <a id="pwd-ac17"></a>**PWD-AC17** (covers [PWD-R21](#pwd-r21)):
 
@@ -344,6 +346,6 @@ The same holds for the worker process's environment and argv.
 - **Prompt skipped after failures ([PWD-R20](#pwd-r20)):** if supplied candidates failed and the user then skips the prompt, I assumed `wrong_password` rather than `missing_password`. It names the sources tried, which is more useful.
 - **`password_required` for owner passwords ([PWD-R22](#pwd-r22)):** I assumed the event is also emitted when only an owner password is missing (`restricted`), so a GUI can ask for it.
 - **DRM wrappers ([PWD-R3](#pwd-r3)):** I assumed `.lcpdf` and `.acsm` files are recognised only when named explicitly or listed with `--files-from`. Folder scans pick only `*.pdf` ([batch](batch.md)), so wrappers in a folder are silently not picked up.
-- **Owner/user indistinguishable ([PWD-R9](#pwd-r9)):** I assumed a match counts as a user-password match when the library can't tell, so the conversion fails closed with `restricted`.
+- **Owner/user indistinguishable ([PWD-R9](#pwd-r9)):** I assumed a match counts as a user-password match when the library can't tell, so a restricted file fails closed with `restricted` (the same behaviour PWD-R9 states).
 - **Readable-file warning ([PWD-R17](#pwd-r17)):** I assumed it is a stderr log line, not an issue, because it isn't tied to a conversion.
 - **Hint wording ([PWD-R28](#pwd-r28)):** the hints for `missing_password`, `wrong_password` and `unsupported_encryption` are my wording. Only the `restricted` and `drm_protected` hints were decided.

@@ -15,7 +15,7 @@ This spec covers how text is obtained from pages: deciding which pages need OCR,
 
 <a id="ocr-r3"></a>**OCR-R3**: Under `OcrOptions.mode = "never"`, the core shall never run the OCR engine. It still runs the text-layer quality check. A page whose text layer is rejected, and a page that would have been OCR'd directly, shall become a [page-image fallback](reflow.md) with a [`page_fallback`](api.md#code-page_fallback) issue whose reason is `bad_text_layer`. Garbage text is never emitted.
 
-<a id="ocr-r4"></a>**OCR-R4**: Each OCR'd page's `ocr` progress event shall carry `trigger`, one of `no_text_layer` (routed directly by [OCR-R1](#ocr-r1)), `text_layer_rejected` (the check rejected its layer) or `forced` ([OCR-R2](#ocr-r2)). Pages whose text layer is trusted get no `ocr` event and no issue.
+<a id="ocr-r4"></a>**OCR-R4**: Each OCR'd page's `ocr` progress event shall carry `trigger`, one of `no_text_layer` (routed directly by [OCR-R1](#ocr-r1)), `text_layer_rejected` (the check rejected its layer) or `forced` ([OCR-R2](#ocr-r2)). Under `mode = "auto"`, pages whose text layer is trusted get no `ocr` event and no issue; under `mode = "always"`, every non-blank page is OCR'd and gets its `forced` event ([OCR-R2](#ocr-r2)).
 
 ## 2. Text-layer quality check
 
@@ -34,7 +34,7 @@ Font names, Producer/Creator strings and guesses about which OCR engine made a l
 
 <a id="ocr-r9"></a>**OCR-R9**: For each conversion, rejected pages shall be reported as [`text_layer_rejected`](api.md#code-text_layer_rejected) (info), grouped as one issue per reason with a sorted page list. Reasons are `garbled` (garbage ratio), `implausible_words` (word plausibility) or `low_coverage` (text-layer coverage). If several signals fail on a page, the reason is the first in that order.
 
-<a id="ocr-r10"></a>**OCR-R10**: Under `mode = "auto"`, a rejected page shall be re-OCR'd through the [retry ladder](#4-preprocessing-acceptance-and-retry-ladder). If attempts completed but none was accepted, the page becomes a page-image fallback with reason `ocr_low_confidence`. If the ladder ended because the page budget ran out or the engine failed, the reason is set by [OCR-R22](#ocr-r22) or [OCR-R23](#ocr-r23) instead. In every case the fallback's hidden searchable text shall be whichever of the best OCR attempt and the original text layer scores better on the signals in [OCR-R7](#ocr-r7).
+<a id="ocr-r10"></a>**OCR-R10**: Under `mode = "auto"`, a rejected page shall be re-OCR'd through the [retry ladder](#4-preprocessing-acceptance-and-retry-ladder). If attempts completed but none was accepted, the page becomes a page-image fallback with reason `ocr_low_confidence`. If the ladder ended because the page budget ran out or the engine failed, the reason is set by [OCR-R22](#ocr-r22) or [OCR-R23](#ocr-r23) instead. In every case the fallback's hidden searchable text shall be whichever of the best OCR attempt and the original text layer scores better on the signals in [OCR-R7](#ocr-r7), except that a layer rejected as `garbled` is never used; if neither is usable, the page image has no hidden text.
 
 ## 3. Engine protocol and Tesseract adapter
 
@@ -119,7 +119,7 @@ The coverage threshold, the ladder's steps and the render DPI are internal const
 
 <a id="ocr-r30"></a>**OCR-R30**: Each conversion's result shall carry `ocr: {engine, engine_version, languages, quality}` when it OCR'd at least one page, and `ocr: null` otherwise. Nothing about OCR shall be written into the EPUB's metadata.
 
-<a id="ocr-r31"></a>**OCR-R31**: An empty OCR result on a page that **has** a text layer (possible under `mode = "always"`, or after the layer was rejected) shall never silently drop that text. If the layer passes the text-layer quality check ([OCR-R7](#ocr-r7)), the page keeps it as its text. Otherwise the page becomes a page-image fallback with reason `ocr_low_confidence`, with the original layer as its hidden searchable text.
+<a id="ocr-r31"></a>**OCR-R31**: An empty OCR result on a page that **has** a text layer (possible under `mode = "always"`, or after the layer was rejected) shall never silently drop that text. If the layer passes the text-layer quality check ([OCR-R7](#ocr-r7)), the page keeps it as its text. Otherwise the page becomes a page-image fallback with reason `ocr_low_confidence` and **no** hidden searchable text: the layer failed the check, so using it would reintroduce the garbage the check exists to keep out.
 
 ## 7. Acceptance criteria
 
@@ -173,7 +173,7 @@ All page images below are synthetic fixtures from [testing](testing.md) unless n
 
 <a id="ocr-ac24"></a>**OCR-AC24** (covers [OCR-R29](#ocr-r29), [OCR-R30](#ocr-r30)): **Given** a 2-page scanned fixture and the fake engine, **when** it converts, **then** exactly 2 `progress` events with stage `ocr` are emitted, each with numeric `confidence` and `coverage`, integer `attempts` ≥ 1, boolean `fell_back` and a `trigger`; the conversion result has `ocr.engine = "tesseract"`, `ocr.languages` and `ocr.quality = "balanced"`; and a born-digital conversion in the same batch has `ocr: null`. The EPUB's package metadata contains no mention of OCR or Tesseract.
 
-<a id="ocr-ac25"></a>**OCR-AC25** (covers [OCR-R31](#ocr-r31), [OCR-R17](#ocr-r17)): **Given** a fake engine that returns no words for every page, **when** a born-digital fixture with a good typeset text layer is converted with `mode = "always"`, **then** every page keeps its original text and no `page_fallback` issue is raised; **when** the must-reject garbled-layer fixture is converted with `mode = "always"`, **then** each of its pages is a page image with `page_fallback` reason `ocr_low_confidence`; **and when** a blank scanned page with no text layer is converted, **then** no issue is raised.
+<a id="ocr-ac25"></a>**OCR-AC25** (covers [OCR-R31](#ocr-r31), [OCR-R17](#ocr-r17)): **Given** a fake engine that returns no words for every page, **when** a born-digital fixture with a good typeset text layer is converted with `mode = "always"`, **then** every page keeps its original text and no `page_fallback` issue is raised; **when** the must-reject garbled-layer fixture is converted with `mode = "always"`, **then** each of its pages is a page image with `page_fallback` reason `ocr_low_confidence` and no hidden text; **and when** a blank scanned page with no text layer is converted, **then** no issue is raised.
 
 ## Open points
 

@@ -8,7 +8,7 @@ This spec covers the product's test **assets** and **measurements**: synthetic f
 
 <a id="tst-r1"></a>**TST-R1**: Synthetic fixtures shall be produced by generator scripts in the repo, and the generated files shall be committed. Generators shall be deterministic: running a generator twice with the same tool versions yields byte-identical files (fixed seeds, fixed timestamps and document IDs).
 
-<a id="tst-r2"></a>**TST-R2**: Generators shall use only dev-only dependencies: ReportLab for born-digital PDFs, Pillow (with NumPy) for scanned variants, pypdf for encrypted variants. None of these is a runtime dependency because of fixtures. Each fixture generated from text shall also commit that text as its **ground truth**.
+<a id="tst-r2"></a>**TST-R2**: Generators use ReportLab for born-digital PDFs, Pillow (with NumPy) for scanned variants and pypdf for encrypted variants. ReportLab is the only dev-only addition; Pillow, NumPy and pypdf are runtime dependencies anyway ([main](main.md#main-r13)), so fixture generation adds no runtime dependency. Each fixture generated from text shall also commit that text as its **ground truth**.
 
 <a id="tst-r3"></a>**TST-R3**: The synthetic set shall include at least:
 

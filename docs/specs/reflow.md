@@ -107,7 +107,7 @@ Heading levels are assigned by clustering the distinct heading styles, largest f
 
 ## 7. Chapters, table of contents and page labels
 
-<a id="rfl-r23"></a>**RFL-R23**: Chapters shall come from the PDF outline when it has at least 3 entries that resolve to pages. Each such entry starts a chapter at the first block at or after its destination, and nested entries become nested TOC entries. Outline titles are used as TOC labels.
+<a id="rfl-r23"></a>**RFL-R23**: Chapters shall come from the PDF outline when it has at least 3 entries that resolve to pages. Each **top-level** entry starts a chapter at the first block at or after its destination. Nested entries do not start chapters: they become nested TOC entries linking to an anchor inside their parent chapter. Outline titles are used as TOC labels.
 
 <a id="rfl-r24"></a>**RFL-R24**: Otherwise chapters shall come from detected headings. Every level-1 heading starts a chapter, and so does any heading that matches a chapter pattern:
 - `Chapter 7`, `CHAPTER SEVEN`, `Chapter VII`;

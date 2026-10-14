@@ -87,7 +87,7 @@ With no cover, neither is present.
 
 ## 6. Deterministic output
 
-<a id="epub-r15"></a>**EPUB-R15**: Converting the same source PDF bytes with the same options and the same pdf2epub version shall produce a byte-identical EPUB. To achieve this:
+<a id="epub-r15"></a>**EPUB-R15**: Converting the same source PDF bytes, under the same file name (it can supply title and author, [reflow](reflow.md)), with the same options and the same pdf2epub version shall produce a byte-identical EPUB. To achieve this:
 - zip entries are in a fixed, sorted order (with `mimetype` first);
 - every entry has the timestamp `1980-01-01 00:00:00`;
 - the compression level is fixed;
