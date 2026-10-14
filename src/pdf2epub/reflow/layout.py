@@ -5,6 +5,7 @@ The measures that the whole document shares (body size, usual line gap, left mar
 taken once, as a ``Typography``, from every page's lines.
 """
 
+import math
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -106,7 +107,7 @@ def _right(rights: list[float]) -> float:
     if not rights:
         return 0.0
     ordered = sorted(rights)
-    return ordered[min(len(ordered) - 1, int(_RIGHT_QUANTILE * len(ordered)))]
+    return ordered[max(0, math.ceil(_RIGHT_QUANTILE * len(ordered)) - 1)]
 
 
 def group_blocks(lines: list[Line], typography: Typography) -> list[TextBlock]:

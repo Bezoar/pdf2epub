@@ -11,6 +11,7 @@ more as fit in the gap.
 
 import re
 
+from pdf2epub.reflow.extract import MONO_SPREAD
 from pdf2epub.reflow.layout import TextBlock, Typography
 from pdf2epub.reflow.model import Inline, LineBlock, Text
 
@@ -19,12 +20,30 @@ _MIN_LINES = 3
 # A line ends well short when it stops at least this share of the column width before the
 # column's right edge; a ragged block has more than this share of such lines.
 _SHORT_SHARE, _RAGGED_SHARE = 0.2, 0.6
+# A block whose glyphs all share one advance is monospace, whatever its font is called,
+# when it has at least this many glyphs, of at least this many distinct characters: no
+# proportional face sets that many different letters all the same width.
+_MONO_GLYPHS, _MONO_DISTINCT = 10, 5
 # A line ending in a hyphen after a letter breaks a word, as wrapped prose does.
 _WORD_BREAK = re.compile(r"[^\W\d_][-\u2010]$")
 
 
+def is_monospace(block: TextBlock) -> bool:
+    """Every line of ``block`` is set in one monospace font: one named as monospace, or
+    one whose glyphs all share an advance. Checked over the whole block, so short lines
+    such as ``}`` count too."""
+    lines = block.lines
+    if all(line.monospace and line.advance > 0 for line in lines):
+        return True
+    advance = lines[0].advance
+    if advance <= 0 or any(abs(line.advance - advance) > MONO_SPREAD * advance for line in lines):
+        return False
+    glyphs = "".join(line.text for line in lines).replace(" ", "")
+    return len(glyphs) >= _MONO_GLYPHS and len(set(glyphs)) >= _MONO_DISTINCT
+
+
 def is_line_block(block: TextBlock, typography: Typography) -> bool:
-    if all(line.monospace for line in block.lines):
+    if is_monospace(block):
         return True
     if len(block.lines) < _MIN_LINES or typography.is_display(block.size):
         return False
@@ -39,11 +58,11 @@ def is_line_block(block: TextBlock, typography: Typography) -> bool:
 
 def line_block(block: TextBlock) -> LineBlock:
     """The document-model line block for ``block``, which ``is_line_block``."""
-    if not all(line.monospace for line in block.lines):
+    if not is_monospace(block):
         return LineBlock([[Text(line.text)] for line in block.lines], monospace=False)
     left = min(line.x0 for line in block.lines)
     lines: list[list[Inline]] = []
     for line in block.lines:
-        indent = round((line.x0 - left) / line.advance) if line.advance > 0 else 0
+        indent = round((line.x0 - left) / line.advance)
         lines.append([Text(" " * indent + line.verbatim)])
     return LineBlock(lines, monospace=True)
