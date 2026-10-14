@@ -7,7 +7,8 @@ were chosen from and the margins they leave. Run it after changing a signal, a t
 or a fixture.
 
 Usage: ``uv run python scripts/calibrate_text_layer.py [--pages]`` (``--pages`` prints one
-row per page; by default one row per fixture, with each signal's worst value).
+row per page; by default one row per fixture, with the range (lowest to highest) of each
+signal over its pages).
 """
 
 from __future__ import annotations
