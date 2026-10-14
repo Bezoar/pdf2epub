@@ -93,7 +93,11 @@ def test_the_default_cover_is_a_render_of_page_one(tmp_path: Path) -> None:
     assert max(difference.mean) < 4
 
     # EPUB-R12: a cover page showing it comes first in the spine.
-    first = epub.spine[0]
+    package = epub.xml("content.opf")
+    hrefs = {i.get("id"): str(i.get("href")) for i in manifest(epub)}
+    itemref = package.find("opf:spine/opf:itemref", OPF_NS)
+    assert itemref is not None
+    first = hrefs[itemref.get("idref")]
     images = list(epub.xml(first).iter(f"{XHTML}img"))
     assert [(img.get("src"), img.get("alt")) for img in images] == [(href, "Cover")]
     landmarks = epub.nav("landmarks")
