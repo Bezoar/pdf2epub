@@ -19,9 +19,11 @@ timestamps, a fixed compression level, and names and ids derived from document o
 
 import io
 import posixpath
+import re
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from html import escape
 from importlib.resources import files
 from typing import Any
 from urllib.parse import urldefrag
@@ -114,21 +116,31 @@ def write_epub(document: Document) -> bytes:
         size = shell
         for block in chapter.blocks:
             markup = _block_markup(_block(block, images, figures))
-            rendered = len(markup.encode("utf-8")) + 1
-            if parts[-1] and size + rendered > SPLIT_BYTES:
-                parts.append([])
-                size = shell
-            parts[-1].append((block, markup))
-            size += rendered
+            if isinstance(block, Paragraph) and len(markup.encode("utf-8")) + shell > SPLIT_BYTES:
+                pieces = _paragraph_pieces(block, SPLIT_BYTES - shell)
+                rendered_pieces: list[tuple[Block, str]] = [
+                    (piece, _block_markup(_block(piece, images, figures, continued=n > 0)))
+                    for n, piece in enumerate(pieces)
+                ]
+            else:
+                rendered_pieces = [(block, markup)]
+            for piece, piece_markup in rendered_pieces:
+                rendered = len(piece_markup.encode("utf-8")) + 1
+                if parts[-1] and size + rendered > SPLIT_BYTES:
+                    parts.append([])
+                    size = shell
+                parts[-1].append((piece, piece_markup))
+                size += rendered
         names: list[str] = []
         for part, items in enumerate(parts):
             name = chapter_file(index, part)
             names.append(name)
             for block, _ in items:
-                page_list.extend(
-                    _Nav(f"pt-{b.page}", b.label, f"{name}#{page_id(b.page)}")
-                    for b in _page_breaks([block])
-                )
+                for marker in _page_breaks([block]):
+                    page_list.append(
+                        _Nav(f"pt-{marker.page}", marker.label, f"{name}#{page_id(marker.page)}")
+                    )
+                    where[page_id(marker.page)] = name
                 if isinstance(block, Heading):
                     where[block.anchor] = name
             body = "\n".join(markup for _, markup in items)
@@ -226,7 +238,43 @@ def _inline(inline: Inline) -> dict[str, Any]:
     return {"kind": "text", "text": inline.text, "bold": inline.bold, "italic": inline.italic}
 
 
-def _block(block: Block, images: dict[ImageAsset, str], figures: Iterator[int]) -> dict[str, Any]:
+# What a word or a page-break marker adds to a paragraph's markup, at most: its escaped
+# text plus room for its <b> and <i> tags, or the marker's span.
+_INLINE_MARKUP, _MARKER_MARKUP = 16, 160
+
+
+def _paragraph_pieces(paragraph: Paragraph, budget: int) -> list[Paragraph]:
+    """A paragraph too large for one chapter file, cut at word boundaries into pieces
+    whose markup fits within ``budget`` bytes (EPUB-R8)."""
+    pieces: list[list[Inline]] = [[]]
+    size = _INLINE_MARKUP
+    for inline in paragraph.inlines:
+        tokens: list[tuple[Inline, int]]
+        if isinstance(inline, PageBreak):
+            tokens = [(inline, _MARKER_MARKUP)]
+        else:
+            tokens = [
+                (
+                    Text(word, inline.bold, inline.italic),
+                    len(escape(word).encode()) + _INLINE_MARKUP,
+                )
+                for word in re.findall(r"\S+\s*|\s+", inline.text)
+            ]
+        for token, cost in tokens:
+            if pieces[-1] and size + cost > budget:
+                pieces.append([])
+                size = _INLINE_MARKUP
+            pieces[-1].append(token)
+            size += cost
+    return [Paragraph(inlines) for inlines in pieces]
+
+
+def _block(
+    block: Block,
+    images: dict[ImageAsset, str],
+    figures: Iterator[int],
+    continued: bool = False,
+) -> dict[str, Any]:
     if isinstance(block, PageBreak):
         return _inline(block)
     if isinstance(block, Image):
@@ -245,16 +293,21 @@ def _block(block: Block, images: dict[ImageAsset, str], figures: Iterator[int]) 
             "id": block.anchor,
             "inlines": [_inline(i) for i in block.inlines],
         }
-    return {"kind": "paragraph", "inlines": [_inline(i) for i in block.inlines]}
+    return {
+        "kind": "paragraph",
+        "continued": continued,
+        "inlines": [_inline(i) for i in block.inlines],
+    }
 
 
 def _toc_entry(
     entry: TocEntry, counter: Iterator[int], files: list[list[str]], where: dict[str, str]
 ) -> _Nav:
-    if entry.anchor is not None and entry.anchor in where:
-        href = f"{where[entry.anchor]}#{entry.anchor}"
-    else:
+    if entry.anchor is None:
         href = files[entry.chapter][0]
+    else:
+        # An anchor no file holds keeps its fragment, so the package check catches it.
+        href = f"{where.get(entry.anchor, files[entry.chapter][0])}#{entry.anchor}"
     nav = _Nav(f"nav-{next(counter)}", entry.label, href)
     nav.children = [_toc_entry(child, counter, files, where) for child in entry.children]
     return nav

@@ -19,6 +19,7 @@ from pdf2epub.issues import Issue, IssueCode, derive_outcome
 from pdf2epub.options import ConversionOptions
 from pdf2epub.reflow.build import build_document
 from pdf2epub.reflow.extract import PageText, read_pages
+from pdf2epub.reflow.images import read_images
 from pdf2epub.reflow.limits import ResourceLimitExceeded
 from pdf2epub.reflow.parse import ParsedPdf
 from pdf2epub.reflow.source import CorruptPdf, open_source
@@ -99,15 +100,16 @@ def convert(
                 pages.append(page)
                 reporter.progress("analyse", len(pages), page_count, page=page.page)
 
+        images = read_images(source_path)
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
-        # so empty_document is the only one. Until book images join the model, a page's
-        # content is its text.
-        if not any(page.lines for page in pages):
+        # so empty_document is the only one. A page's content is its text and its book
+        # images.
+        if not any(page.lines for page in pages) and not images:
             raise _Empty("No page of the PDF has any text or image.")
         if repaired:
             add(Issue(IssueCode.REPAIRED_PDF, _REPAIRED))
 
-        document, found = build_document(source, pages, options)
+        document, found = build_document(source, pages, images, options)
         for issue in found:
             add(issue)
         reporter.progress("reflow", 1, 1)

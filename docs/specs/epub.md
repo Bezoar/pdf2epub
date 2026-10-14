@@ -173,6 +173,13 @@ A failed check is a bug: the conversion fails with [`internal_error`](api.md#cod
 - the `page-list` has 4 entries with those labels, linking to `#page-1` … `#page-4`;
 - epubcheck reports zero errors.
 
+<a id="epub-r21"></a>**EPUB-R21**: A single paragraph whose markup alone is larger than the split size of [EPUB-R8](#epub-r8) shall be cut at word boundaries into consecutive `<p>` elements, which [EPUB-R8](#epub-r8) then places in files like any others, so no file is larger than about 300 KB. Every part after the first carries `class="continued"`, which the stylesheet sets with no first-line indent, so the paragraph reads on.
+
+<a id="epub-ac15"></a>**EPUB-AC15** (covers [EPUB-R21](#epub-r21)): **Given** a fixture whose single paragraph holds about 400 KB of text, **when** it is converted, **then**:
+- the chapter is split into at least 2 XHTML files, each at most about 300 KB;
+- the text of its `<p>` elements, in order and joined with spaces, is the paragraph;
+- every `<p>` after the first has `class="continued"`.
+
 ## Open points
 
 - `dcterms:modified` is derived from the PDF's dates so output is deterministic, rather than using the conversion time.

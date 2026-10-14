@@ -39,6 +39,7 @@ def registry() -> list[Fixture]:
         not_a_pdf,
         novel,
         oversized,
+        structure,
         typography,
     )
 
@@ -61,6 +62,18 @@ def registry() -> list[Fixture]:
         ),
         Fixture(headings.PATH, headings.GROUND_TRUTH, headings.build),
         Fixture(oversized.PATH, oversized.GROUND_TRUTH, oversized.build),
+        Fixture(oversized.GIANT, oversized.GIANT_TRUTH, oversized.build_giant),
+        Fixture(structure.IMAGE_ONLY, None, structure.build_image_only),
+        Fixture(
+            structure.IMAGE_BETWEEN_LINES,
+            structure.IMAGE_BETWEEN_LINES_TRUTH,
+            structure.build_image_between_lines,
+        ),
+        Fixture(
+            structure.OUTLINE_TO_PAGE,
+            structure.OUTLINE_TO_PAGE_TRUTH,
+            structure.build_outline_to_page,
+        ),
     ]
 
 

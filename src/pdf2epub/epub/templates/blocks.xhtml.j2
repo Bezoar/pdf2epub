@@ -19,6 +19,6 @@
 {%- elif node.kind == "figure" -%}
   <figure><img src="{{ node.src }}" alt="{{ node.alt }}"/>{% if node.caption %}<figcaption>{{ node.caption }}</figcaption>{% endif %}</figure>
 {%- else -%}
-  <p>{{ inlines(node.inlines) }}</p>
+  <p{% if node.continued %} class="continued"{% endif %}>{{ inlines(node.inlines) }}</p>
 {%- endif -%}
 {%- endmacro -%}

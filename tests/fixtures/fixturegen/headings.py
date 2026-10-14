@@ -137,16 +137,22 @@ def _lines(runs: list[Run]) -> list[list[tuple[str, str]]]:
     return lines
 
 
-def _image(canvas: Canvas, x: float, y: float, shade: int) -> None:
-    """A 16 x 8 RGB inline image, hex-encoded, drawn FIGURE_WIDTH wide at (x, y)."""
+def inline_image(
+    canvas: Canvas,
+    x: float,
+    y: float,
+    shade: int,
+    width: float = FIGURE_WIDTH,
+    height: float = FIGURE_HEIGHT,
+) -> None:
+    """A 16 x 8 RGB inline image, hex-encoded, drawn ``width`` x ``height`` at (x, y)."""
     pixels = bytearray()
     for row in range(8):
         for column in range(16):
             pixels += bytes((shade, (column * 16) % 256, (row * 32) % 256))
     data = pixels.hex() + ">"
     canvas._code.append(  # ReportLab has no uncompressed image API; raw operators do it
-        f"q {FIGURE_WIDTH} 0 0 {FIGURE_HEIGHT} {x} {y} cm "
-        f"BI /W 16 /H 8 /BPC 8 /CS /RGB /F /AHx ID {data} EI Q"
+        f"q {width} 0 0 {height} {x} {y} cm BI /W 16 /H 8 /BPC 8 /CS /RGB /F /AHx ID {data} EI Q"
     )
 
 
@@ -193,7 +199,7 @@ def build(out_dir: Path) -> None:
                 truth.append("".join(f"{MARKS[s]}{t}{MARKS[s]}" for t, s in content))
             else:
                 y -= LEADING + FIGURE_HEIGHT
-                _image(canvas, MARGIN_X + 40, y, shade)
+                inline_image(canvas, MARGIN_X + 40, y, shade)
                 shade += 120
                 if content is not None:
                     y -= CAPTION_SIZE + 4

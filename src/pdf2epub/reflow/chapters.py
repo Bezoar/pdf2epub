@@ -71,6 +71,8 @@ class _Node:
     """Index of the block it points to."""
     starts: bool
     """It starts a chapter."""
+    anchor: str | None = None
+    """Where it links inside its chapter, unless it starts one."""
     children: list["_Node"] = field(default_factory=list)
 
 
@@ -89,7 +91,14 @@ def _from_outline(
             continue  # it points past the last block
         while stack and stack[-1][0] >= entry.level:
             stack.pop()
-        node = _Node(entry.title or f"Page {entry.page}", target, starts=not stack)
+        block = blocks[target]
+        if isinstance(block, Heading) and positions[target][0] == entry.page:
+            anchor = block.anchor
+        else:
+            # Not at a heading on its page: link to the start of that page, whose
+            # page-break marker has this ID (EPUB-R19).
+            anchor = f"page-{entry.page}"
+        node = _Node(entry.title or f"Page {entry.page}", target, not stack, anchor)
         (stack[-1][1].children if stack else roots).append(node)
         stack.append((entry.level, node))
     if not roots:
@@ -113,7 +122,7 @@ def _from_headings(blocks: list[Block]) -> tuple[list[Chapter], list[TocEntry]] 
             continue  # a heading in the front matter: no TOC entry
         while stack[-1][0] >= block.level:
             stack.pop()
-        node = _Node(label, index, starts=False)
+        node = _Node(label, index, starts=False, anchor=block.anchor)
         stack[-1][1].children.append(node)
         stack.append((block.level, node))
     if not roots:
@@ -140,10 +149,7 @@ def _assemble(blocks: list[Block], roots: list[_Node]) -> tuple[list[Chapter], l
 
     def entry(node: _Node) -> TocEntry:
         chapter = chapter_of(node.target)
-        block = blocks[node.target]
-        anchor = None
-        if not node.starts and isinstance(block, Heading):
-            anchor = block.anchor
+        anchor = None if node.starts else node.anchor
         return TocEntry(node.label, chapter, anchor, [entry(child) for child in node.children])
 
     return chapters, [entry(node) for node in roots]

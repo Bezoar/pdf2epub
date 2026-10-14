@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta, timezone
+from itertools import pairwise
 
 from pdf2epub.issues import Issue, IssueCode
 from pdf2epub.options import ConversionOptions
@@ -25,7 +26,7 @@ from pdf2epub.reflow.chapters import Position, make_chapters
 from pdf2epub.reflow.extract import Line, PageText, normalise
 from pdf2epub.reflow.furniture import PageBlocks, find_furniture
 from pdf2epub.reflow.headings import heading_levels
-from pdf2epub.reflow.images import PlacedImage, read_images
+from pdf2epub.reflow.images import PlacedImage
 from pdf2epub.reflow.layout import (
     DraftParagraph,
     TextBlock,
@@ -61,11 +62,14 @@ _PDF_DATE = re.compile(
 
 
 def build_document(
-    source: SourcePdf, pages: list[PageText], options: ConversionOptions
+    source: SourcePdf,
+    pages: list[PageText],
+    images: dict[int, list[PlacedImage]],
+    options: ConversionOptions,
 ) -> tuple[Document, list[Issue]]:
-    """The document model for ``source``, and the issues found while building it."""
+    """The document model for ``source`` from its pages' text and images, and the issues
+    found while building it."""
     metadata, issues = _metadata(source, options)
-    images = read_images(source.path)
     blocks, positions = _body(source, pages, images, wordlist(metadata.language))
     outline = [replace(entry, title=normalise(entry.title).strip()) for entry in source.outline]
     chapters, toc = make_chapters(blocks, positions, outline, metadata.title)
@@ -132,8 +136,9 @@ def _body(
                 found.append((block.top, _Heading(block.lines, level)))
             else:
                 found.extend(
-                    (draft.lines[0].top, _Open(draft, list(draft.lines)))
+                    (part.lines[0].top, _Open(part, list(part.lines)))
                     for draft in paragraphs(block, typography)
+                    for part in _split_at_images(draft, images.get(page.page, []))
                 )
         found.sort(key=lambda entry: entry[0])
         first_text = next(
@@ -168,6 +173,29 @@ def _body(
         else:
             blocks.append(item)
     return blocks, [position for _, position in stream]
+
+
+# Points of slack when deciding that an image sits in the gap between two lines.
+_GAP_SLACK = 1.0
+
+
+def _split_at_images(draft: DraftParagraph, images: list[PlacedImage]) -> list[DraftParagraph]:
+    """Split a paragraph's lines where an image sits in the gap between two of them, so
+    the image keeps its place in reading order."""
+    parts = [[draft.lines[0]]]
+    for above, below in pairwise(draft.lines):
+        if any(
+            image.top >= above.bottom - _GAP_SLACK
+            and image.bottom <= below.top + _GAP_SLACK
+            and min(image.x1, below.x1) > max(image.x0, below.x0)
+            for image in images
+        ):
+            parts.append([])
+        parts[-1].append(below)
+    return [
+        replace(draft, lines=lines, indented=draft.indented and n == 0)
+        for n, lines in enumerate(parts)
+    ]
 
 
 def _place_images(

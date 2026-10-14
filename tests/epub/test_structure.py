@@ -304,3 +304,63 @@ def test_novel_converts_cleanly_with_its_chapter_toc(
     assert [b.text for b in blocks if b.tag != f"{XHTML}p"] == [
         entry for entry in truth if entry in titles
     ]
+
+
+GIANT = BORN_DIGITAL / "giant-paragraph.pdf"
+IMAGE_ONLY = BORN_DIGITAL / "image-only.pdf"
+IMAGE_BETWEEN_LINES = BORN_DIGITAL / "image-between-lines.pdf"
+OUTLINE_TO_PAGE = BORN_DIGITAL / "outline-to-page.pdf"
+
+
+@pytest.mark.ac("EPUB-AC15")
+def test_a_paragraph_too_large_for_one_file_is_cut_at_word_boundaries(tmp_path: Path) -> None:
+    _, path = convert(GIANT, tmp_path)
+    epub = open_epub(path)
+    [paragraph] = ground_truth(GIANT)
+    assert len(paragraph.encode()) > 300 * 1024  # the fixture is what it claims
+
+    assert len(epub.spine) >= 2
+    parts: list[etree._Element] = []
+    for name in epub.spine:
+        assert len(epub.archive.read(f"OEBPS/{name}")) <= 300 * 1024
+        parts.extend(epub.xml(name).iter(f"{XHTML}p"))
+    assert " ".join(text_of(p) for p in parts) == paragraph
+    assert parts[0].get("class") is None
+    assert [p.get("class") for p in parts[1:]] == ["continued"] * (len(parts) - 1)
+
+
+def test_a_page_with_only_an_image_is_content(tmp_path: Path) -> None:
+    # RFL-R35: a kept book image is content, so this is no empty_document.
+    _, path = convert(IMAGE_ONLY, tmp_path)
+    epub = open_epub(path)
+
+    images = [img for name in epub.spine for img in epub.xml(name).iter(f"{XHTML}img")]
+    assert [img.get("alt") for img in images] == ["Figure 1"]
+    assert epub.resolves(str(images[0].get("src")))
+
+
+def test_an_image_between_two_lines_keeps_its_place(tmp_path: Path) -> None:
+    _, path = convert(IMAGE_BETWEEN_LINES, tmp_path)
+    epub = open_epub(path)
+    before, after = ground_truth(IMAGE_BETWEEN_LINES)
+
+    [name] = epub.spine
+    body = epub.xml(name).find(f"{XHTML}body")
+    assert body is not None
+    order = [
+        (etree.QName(e).localname, text_of(e)) for e in body if e.get(EPUB_TYPE) != "pagebreak"
+    ]
+    assert order == [("p", before), ("figure", ""), ("p", after)]
+
+
+def test_a_nested_outline_entry_without_a_heading_links_to_its_page(tmp_path: Path) -> None:
+    _, path = convert(OUTLINE_TO_PAGE, tmp_path)
+    epub = open_epub(path)
+
+    toc = epub.toc()
+    assert [entry.label for entry in toc] == ["One", "Two", "Four"]
+    [three] = toc[1].children
+    assert three.label == "Three"
+    file, fragment = urldefrag(three.href)
+    assert file == toc[1].href and fragment == "page-3"
+    assert epub.resolves(three.href)
