@@ -15,12 +15,14 @@ _LAST_WORD = re.compile(r"([^\W\d_]+)[-\u2010]$")
 _FIRST_WORD = re.compile(r"^[^\W\d_]+")
 _TERMINAL = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]\u00bb]*$")
 # Chinese and Japanese, whose lines join with no space: Han ideographs (including the
-# supplementary planes' extensions and compatibility ideographs), Hiragana and Katakana,
-# and CJK and full-width punctuation. Korean (Hangul) separates words with spaces, so it
-# is not here: its lines join with a space, like Latin text.
+# supplementary planes' extensions and compatibility ideographs), Hiragana and Katakana
+# (with the supplementary kana blocks), and CJK, vertical and full-width punctuation.
+# Korean (Hangul) separates words with spaces, so it is not here: its lines join with a
+# space, like Latin text.
 _NO_SPACE = re.compile(
     "[\u2e80-\u2fdf\u3000-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
-    "\uff00-\uff9f\uffe0-\uffef\U00020000-\U0003134f]"
+    "\ufe10-\ufe1f\ufe30-\ufe4f\uff00-\uff9f\uffe0-\uffef"
+    "\U0001aff0-\U0001b16f\U00020000-\U0003134f]"
 )
 
 
