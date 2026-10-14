@@ -9,6 +9,12 @@ The agent can't do these steps; the owner (@Bezoar) does them once, in the web U
 - [ ] Personal Copilot settings → Code review → **Review effort level = Lite**.
 - [ ] Repo Settings → Copilot → Code review → **Review effort level = Lite**. Setting both is the most robust option, because defaults cascade enterprise → org → repo → personal.
 - [ ] "Automatic Copilot code review" and "Review new pushes" stay **off**; the agent requests reviews itself.
+- [ ] Repo Settings → Copilot → Code review → **Auto-approval** (public preview, off by default):
+  - turn on **Allow Copilot to approve pull requests**;
+  - turn on **Allow Copilot approvals to count toward merge requirements**;
+  - leave **File paths** blank, so approvals count for every file.
+
+  The repo is user-owned, so there are no organisation or enterprise levels to set.
 - [ ] The `needs-owner` label exists (`gh label create needs-owner --color B60205` if not).
 - [ ] `.github/CODEOWNERS` (`* @Bezoar`) lands in ticket 0. Until then, the code-owner rule has nothing to resolve.
 
@@ -53,7 +59,9 @@ Run these steps in order. A **round** is one Copilot review request. There are a
    - Check the review body's `Review effort:` line. If it isn't `Lite`, carry on, and add a note to the PR body under the template's review-effort section.
    - Count the findings marked `High`, `Medium` or `Low` severity in the open-findings and "previously missed" sections. Ignore the "resolved since last review" section.
    - Copilot has no Critical level; High is the highest.
+   - Read the review's **approval assessment** in the overview, and its review state: `APPROVED` means Copilot approved; `COMMENTED` means it didn't.
    - If the review body can't be parsed but unresolved Copilot threads exist, escalate (fail closed).
+   - If Copilot approved but the review still lists an open High or Medium finding, treat it as unparseable and escalate (fail closed).
 6. **Act on findings.**
    - **High and Medium:** you must fix every one.
    - **Low:** fix it if the fix is small. Otherwise reply in the thread with a one-line reason.
@@ -67,11 +75,19 @@ Run these steps in order. A **round** is one Copilot review request. There are a
    - no High or Medium finding is open or disputed;
    - the ticket isn't `hitl`.
 
-   Then:
-   ```sh
-   gh pr merge N --squash --admin --delete-branch --match-head-commit <head-sha>
-   ```
-   The `main-protection` ruleset requires a code-owner approval that Copilot's comment review doesn't provide, so the agent merges through admin bypass. You must not use `--auto`.
+   Copilot's approval is **not** part of this gate. If it didn't approve but no High or Medium finding remains, still merge, and note the assessment in the PR body under the template's review-effort section.
+
+   Merge in this order:
+   1. If Copilot's latest review is `APPROVED` **on the head commit** (a new push dismisses its approval), try a normal merge first:
+      ```sh
+      gh pr merge N --squash --delete-branch --match-head-commit <head-sha>
+      ```
+   2. If that is refused (the ruleset's code-owner review isn't satisfied, because Copilot isn't in `CODEOWNERS`), or Copilot didn't approve, merge through admin bypass:
+      ```sh
+      gh pr merge N --squash --admin --delete-branch --match-head-commit <head-sha>
+      ```
+
+   You must not use `--auto`. Note in the PR's final comment which path merged it.
 9. **After merging:** check that the ticket closed (via `Closes #NNN`), then pull `main`.
 
 ## 5. Escalation
