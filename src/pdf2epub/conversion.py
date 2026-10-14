@@ -59,6 +59,10 @@ class Reporter(Protocol):
     def temporary(self, path: Path) -> None:
         """The conversion is about to write its EPUB to the temporary file ``path``."""
 
+    def commit(self) -> bool:
+        """The EPUB is complete in its temporary file: whether to rename it over the
+        destination now. False abandons the conversion as cancelled."""
+
 
 class _WriteFailed(Exception):
     pass
@@ -137,7 +141,9 @@ def convert(
             add(issue)
         progress("reflow", 1, 1)
 
-        write_atomically(write_epub(document), destination, cancel, reporter.temporary)
+        write_atomically(
+            write_epub(document), destination, cancel, reporter.temporary, reporter.commit
+        )
         output = str(destination)
         reporter.progress("write", 1, 1)
         log.info("converted %s to %s", source_path, destination)
@@ -182,12 +188,14 @@ def write_atomically(
     destination: Path,
     cancel: CancelToken | None = None,
     on_temporary: Callable[[Path], None] | None = None,
+    may_commit: Callable[[], bool] | None = None,
 ) -> None:
     """Write ``data`` to a hidden temporary file beside ``destination``, then rename it
     over the destination (BAT-R13), unless ``cancel`` is set by then. The temporary file
     never outlives a failure or a cancellation, and an existing destination is untouched
     by either (BAT-R14). ``on_temporary`` is told the temporary file's path as soon as it
-    exists, so that whoever kills this process can delete it."""
+    exists, so that whoever kills this process can delete it; ``may_commit``, when given,
+    has the last word on whether the rename happens."""
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(
@@ -204,6 +212,8 @@ def write_atomically(
             file.flush()
             os.fsync(file.fileno())
         if cancel is not None and cancel.cancelled:
+            raise _Cancelled
+        if may_commit is not None and not may_commit():
             raise _Cancelled
         os.replace(temporary, destination)
     except OSError as error:

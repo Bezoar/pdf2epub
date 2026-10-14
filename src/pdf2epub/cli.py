@@ -80,6 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace EPUBs that already exist",
     )
     parser.add_argument(
+        "--timeout",
+        metavar="SECONDS",
+        type=positive_integer,
+        default=argparse.SUPPRESS,
+        help="stop a conversion that runs longer than this (default: 1800)",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         default=argparse.SUPPRESS,
@@ -111,6 +118,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def positive_integer(text: str) -> int:
+    """An argparse type: a whole number above zero (CLI-R7)."""
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive whole number, not {text!r}")
+    return value
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -119,7 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging(args.verbose, args.debug)
 
     batch_fields: dict[str, Any] = {
-        name: getattr(args, name) for name in ("overwrite", "strict") if name in args
+        name: getattr(args, name) for name in ("overwrite", "timeout", "strict") if name in args
     }
 
     discovery_fields: dict[str, Any] = {

@@ -32,8 +32,9 @@ def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         (["--files-from", "missing-list.txt"], "missing-list.txt"),
         (["a.pdf", "b.pdf", "-o", "existing.txt"], "existing.txt"),
         ([], "no inputs"),
+        (["--timeout", "0", "a.pdf"], "--timeout"),
     ],
-    ids=["unknown-flag", "missing-files-from", "output-is-a-file", "no-inputs"],
+    ids=["unknown-flag", "missing-files-from", "output-is-a-file", "no-inputs", "timeout-0"],
 )
 @pytest.mark.parametrize("mode", [[], ["--json"]], ids=["human", "json"])
 def test_usage_error_exits_2_with_a_reason_and_converts_nothing(

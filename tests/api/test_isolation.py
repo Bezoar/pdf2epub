@@ -261,3 +261,28 @@ def test_cancelling_during_a_slow_worker_stops_it_promptly(
         Outcome.SKIPPED,
     ]
     assert report.exit_code == 130
+
+
+@pytest.mark.ac("BAT-AC11")
+def test_a_cancel_just_before_the_rename_leaves_no_epub(tmp_path: Path) -> None:
+    """The worker finishes its EPUB right after the last ``reflow`` progress event. The
+    sink cancels on that event, then holds the parent for a while, as a busy parent might
+    be held, so that the worker reaches the rename before the parent acts on the cancel.
+    The EPUB must still not appear at its destination."""
+    [pdf] = copies(NOVEL, tmp_path, "a.pdf")
+    epub = pdf.with_suffix(".epub")
+    cancel = CancelToken()
+
+    def sink(event: dict[str, Any]) -> None:
+        if event["type"] == "progress" and event["stage"] == "reflow":
+            cancel.cancel()
+            deadline = time.monotonic() + 3
+            while not epub.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+
+    report = run([pdf], "subprocess", sink, cancel=cancel)
+
+    [result] = report.conversions
+    assert [issue.code for issue in result.issues] == [IssueCode.NOT_ATTEMPTED]
+    assert not epub.exists()
+    assert leftovers(tmp_path) == []

@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +68,19 @@ def run_in_worker(
         env=env,
     )
     assert worker.stdin is not None and worker.stdout is not None
-    session = _Session(reporter)
+
+    def may_commit() -> bool:
+        return not (cancel is not None and cancel.cancelled) and time.monotonic() < deadline
+
+    def answer(reply: bytes) -> None:
+        assert worker.stdin is not None
+        try:
+            worker.stdin.write(reply)
+            worker.stdin.flush()
+        except BrokenPipeError:
+            pass  # it died: reported as a crash
+
+    session = _Session(reporter, may_commit, answer)
     stopped = False
     try:
         try:
@@ -117,8 +130,18 @@ def run_in_worker(
 class _Session:
     """What the parent has learnt from one worker's messages so far."""
 
-    def __init__(self, reporter: Reporter) -> None:
+    def __init__(
+        self,
+        reporter: Reporter,
+        may_commit: Callable[[], bool],
+        answer: Callable[[bytes], None],
+    ) -> None:
         self.reporter = reporter
+        self._may_commit = may_commit
+        self._answer = answer
+        self.committed = False
+        """True once the worker was told to rename its EPUB over the destination: from
+        then on it is left to finish, cancelled or not."""
         self.issues: list[Issue] = []
         self.pages: int | None = None
         self.temporary: Path | None = None
@@ -144,6 +167,9 @@ class _Session:
             self.reporter.issue(issue)
         elif type_ == "temporary":
             self.temporary = Path(message["path"])
+        elif type_ == "commit":
+            self.committed = self._may_commit()
+            self._answer(b"y" if self.committed else b"n")
         elif type_ == "log":
             record = logging.makeLogRecord(
                 {
@@ -172,15 +198,16 @@ def _read_until_done(
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_READ)
         while True:
-            if cancel is not None and cancel.cancelled:
+            if session.committed:
+                pass  # the EPUB is being renamed into place: let the worker finish
+            elif cancel is not None and cancel.cancelled:
                 raise _Stopped(
                     Issue(
                         IssueCode.NOT_ATTEMPTED,
                         "The batch was interrupted during this conversion.",
                     )
                 )
-            left = deadline - time.monotonic()
-            if left <= 0:
+            elif time.monotonic() >= deadline:
                 raise _Stopped(
                     Issue(
                         IssueCode.TIMEOUT,
@@ -188,7 +215,7 @@ def _read_until_done(
                         "seconds and was stopped.",
                     )
                 )
-            if not selector.select(min(POLL_INTERVAL, left)):
+            if not selector.select(POLL_INTERVAL):
                 continue
             data = os.read(fd, 65536)
             if not data:

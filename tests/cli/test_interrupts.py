@@ -112,3 +112,27 @@ def test_a_second_sigint_exits_at_once_without_a_report(tmp_path: Path) -> None:
     assert proc.returncode == 130, stderr
     assert time.monotonic() - stopped < 4, "it waited out the worker's grace period"
     assert "Converted:" not in stderr
+
+
+def test_timeout_flag_stops_a_hung_conversion(tmp_path: Path) -> None:
+    """``--timeout`` sets ``BatchOptions.timeout`` (the cli spec's flag table)."""
+    shutil.copyfile(NOVEL, tmp_path / "a.pdf")
+    rules = {"a.pdf": {"action": "sleep", "seconds": 60}}
+
+    started = time.monotonic()
+    proc = subprocess.run(
+        [str(PDF2EPUB), "--json", "--timeout", "1", "a.pdf"],
+        cwd=tmp_path,
+        env=worker_hooks.environment(rules),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=WAIT,
+        check=False,
+    )
+
+    assert proc.returncode == 1, proc.stderr
+    assert time.monotonic() - started < 15
+    last = json.loads(proc.stdout.splitlines()[-1])
+    [conversion] = last["conversions"]
+    assert [issue["code"] for issue in conversion["issues"]] == ["timeout"]

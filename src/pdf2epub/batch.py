@@ -262,6 +262,9 @@ class _Reporter:
     def temporary(self, path: Path) -> None:
         pass  # this process deletes its own temporary file
 
+    def commit(self) -> bool:
+        return True  # convert itself checks the cancel token first
+
 
 def run_batch(
     plan: BatchPlan,

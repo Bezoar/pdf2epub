@@ -16,6 +16,11 @@ turns into events and log records:
 - ``{"type": "progress", "stage", "done", "of", ...}`` and ``{"type": "issue", "issue"}``,
   as the conversion's ``Reporter`` receives them;
 - ``{"type": "temporary", "path"}``, before the EPUB's temporary file is written;
+- ``{"type": "commit"}``, when the EPUB is complete in that file: the worker then waits for
+  one byte on stdin, ``y`` to rename it over the destination or ``n`` to abandon the
+  conversion. The parent answers ``n`` once the batch is cancelled or the time limit has
+  run out, and never stops a worker it has answered ``y``, so an EPUB is never left at
+  its destination by a conversion reported as stopped (BAT-R13, BAT-R17);
 - ``{"type": "log", "name", "level", "message"}``, for each log record;
 - ``{"type": "result", "result"}``, last: the ``ConversionResult`` wire form.
 
@@ -29,6 +34,7 @@ import json
 import logging
 import os
 import pickle
+import queue
 import signal
 import sys
 import threading
@@ -70,6 +76,14 @@ class _PipeReporter:
     def temporary(self, path: Path) -> None:
         self._channel.send("temporary", path=str(path))
 
+    def commit(self) -> bool:
+        self._channel.send("commit")
+        return _ANSWERS.get() == b"y"
+
+
+# The parent's one-byte answers, read from stdin by the watcher thread.
+_ANSWERS: "queue.SimpleQueue[bytes]" = queue.SimpleQueue()
+
 
 class _PipeHandler(logging.Handler):
     """Sends each log record to the parent, which logs it through its own handlers."""
@@ -89,12 +103,14 @@ def _terminate(signum: int, frame: FrameType | None) -> None:
     raise SystemExit(TERMINATED)
 
 
-def _exit_when_parent_goes(fd: int) -> None:
-    """Wait for end of stdin, which comes only when the parent closes it or exits, then
-    end this process at once. It reads the file descriptor, not ``sys.stdin``, so it holds
-    no lock that would stop the interpreter from shutting down while it waits."""
-    while os.read(fd, 65536):
-        pass
+def _watch_stdin(fd: int) -> None:
+    """Queue each byte the parent sends, until end of stdin, which comes only when the
+    parent closes it or exits; then end this process at once. It reads the file
+    descriptor, not ``sys.stdin``, so it holds no lock that would stop the interpreter
+    from shutting down while it waits."""
+    while data := os.read(fd, 65536):
+        for answer in data:
+            _ANSWERS.put(bytes([answer]))
     os._exit(1)
 
 
@@ -108,7 +124,7 @@ def main() -> int:
     stdin = sys.stdin.buffer
     request: dict[str, Any] = pickle.load(stdin)
     # The parent writes nothing after the request, so the buffer holds nothing more.
-    watcher = threading.Thread(target=_exit_when_parent_goes, args=(stdin.fileno(),))
+    watcher = threading.Thread(target=_watch_stdin, args=(stdin.fileno(),))
     watcher.daemon = True
     watcher.start()
 
