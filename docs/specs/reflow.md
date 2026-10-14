@@ -320,7 +320,7 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 ## Open points
 
 - Assumed `mode = "reflow"` disables only the `complex` fallback. Multi-column pages still fall back, because "never interleave" is absolute.
-- Lists, block quotes and preformatted text are rendered as paragraphs in v1, since the scope decision doesn't mention them. _(Owner review in [#51](https://github.com/Bezoar/pdf2epub/issues/51), OP26: changed. Verse and code become line blocks ([RFL-R36](#rfl-r36), added by [#52](https://github.com/Bezoar/pdf2epub/issues/52)); lists and block quotes stay paragraphs in v1.)_
+- Lists and block quotes are rendered as paragraphs in v1, since the scope decision doesn't mention them. _(Owner review in [#51](https://github.com/Bezoar/pdf2epub/issues/51), OP26: changed. The assumption first covered preformatted text too; verse and code are now line blocks ([RFL-R36](#rfl-r36), added by [#52](https://github.com/Bezoar/pdf2epub/issues/52)).)_
 - The PDF's declared language (`/Lang` or XMP) is used before defaulting to `en`. The scope decision says "`--language`, else `en`"; using declared metadata is consistent with the metadata precedence and the OCR language order.
 - Which wordlists ship in v1 isn't decided. Assumed at least English; other languages get soft-hyphen-only joining.
 - Assumed: a page join never crosses a page-image fallback page, and images between two joined paragraphs move after the joined paragraph.

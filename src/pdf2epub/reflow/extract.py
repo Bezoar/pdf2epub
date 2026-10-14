@@ -161,10 +161,11 @@ def _merge(row: list[Line]) -> Line:
         advance = 0.0
     verbatim = ""
     if advance > 0:
-        # Keep the gaps between pieces of an equal-advance line as spaces.
+        # Keep the gaps between pieces of an equal-advance line as spaces (none when the
+        # pieces touch).
         verbatim = row[0].verbatim
         for left, right in pairwise(row):
-            spaces = max(1, round((right.x0 - left.x1) / advance))
+            spaces = max(0, round((right.x0 - left.x1) / advance))
             verbatim += " " * spaces + right.verbatim
     return Line(
         text=" ".join(line.text for line in row),
