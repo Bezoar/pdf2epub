@@ -159,12 +159,13 @@ must_trust = true
 
 [[entries]]
 id = "S14"
-role = "Malformed, unrecoverable"
+role = "Malformed, recoverable (text inside its cross-reference entries)"
 file = "qpdf bad-xref.pdf"
 url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/bad-xref.pdf"
 sha256 = "5895dfedf978f600b12e29643617dbb111869b60526d957878e349571e1467d1"
 license = "Apache-2.0"
-expect = { outcome = "failed", issues = ["corrupt_pdf"] }
+expect = { outcome = "converted", issues = ["repaired_pdf"] }
+must_trust = true
 
 [[entries]]
 id = "S15"
