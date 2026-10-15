@@ -12,7 +12,12 @@ And the permission fixtures, all AES-256 (R6):
 - ``encrypted/owner-only-all-permissions.pdf``: owner password only, every permission
   granted;
 - ``encrypted/user-owner-restricted.pdf``: a user and an owner password, copy/extract
-  forbidden.
+  forbidden;
+- ``encrypted/owner-only-padded.pdf``: as ``owner-only-restricted.pdf``, but its ``/O``
+  and ``/U`` strings are zero-padded from 48 to 127 bytes, as qpdf's
+  ``enc-XI-R6,V5,O=master.pdf`` (smoke entry S11) has them. Readers use only the first
+  48 bytes, but pdfminer.six hashed the whole ``/U`` into the owner-password check, so
+  the owner password was refused (#87).
 
 Each has its own user and owner passwords (below); the owner-only ones have an empty
 user password. They are published test passwords,
@@ -32,6 +37,7 @@ from unittest import mock
 
 import pypdf
 from pypdf.constants import UserAccessPermissions
+from pypdf.generic import ByteStringObject, NameObject
 
 from fixturegen import twopage
 
@@ -47,6 +53,8 @@ OWNER_ALL = "encrypted/owner-only-all-permissions.pdf"
 OWNER_ALL_TRUTH = "encrypted/owner-only-all-permissions.txt"
 USER_OWNER_RESTRICTED = "encrypted/user-owner-restricted.pdf"
 USER_OWNER_RESTRICTED_TRUTH = "encrypted/user-owner-restricted.txt"
+OWNER_PADDED = "encrypted/owner-only-padded.pdf"
+OWNER_PADDED_TRUTH = "encrypted/owner-only-padded.txt"
 
 # (user password, owner password) of each fixture.
 PASSWORDS = {
@@ -56,6 +64,7 @@ PASSWORDS = {
     OWNER_RESTRICTED: ("", "restricted-owner"),
     OWNER_ALL: ("", "permissive-owner"),
     USER_OWNER_RESTRICTED: ("locked-user", "locked-owner"),
+    OWNER_PADDED: ("", "padded-owner"),
 }
 ALGORITHMS = {
     AES256: "AES-256",
@@ -64,10 +73,17 @@ ALGORITHMS = {
     OWNER_RESTRICTED: "AES-256",
     OWNER_ALL: "AES-256",
     USER_OWNER_RESTRICTED: "AES-256",
+    OWNER_PADDED: "AES-256",
 }
 # Copy/extract forbidden: every permission but bit 5 (PWD-R10).
 NO_EXTRACT = UserAccessPermissions.all() & ~UserAccessPermissions.EXTRACT
-PERMISSIONS = {OWNER_RESTRICTED: NO_EXTRACT, USER_OWNER_RESTRICTED: NO_EXTRACT}
+PERMISSIONS = {
+    OWNER_RESTRICTED: NO_EXTRACT,
+    USER_OWNER_RESTRICTED: NO_EXTRACT,
+    OWNER_PADDED: NO_EXTRACT,
+}
+# The length qpdf pads ``/O`` and ``/U`` to in an AES-256 file (ISO 32000-2 gives 48).
+PADDED_LENGTH = 127
 
 
 def build_aes256(out_dir: Path) -> None:
@@ -94,7 +110,11 @@ def build_user_owner_restricted(out_dir: Path) -> None:
     _build(out_dir, USER_OWNER_RESTRICTED, USER_OWNER_RESTRICTED_TRUTH)
 
 
-def _build(out_dir: Path, path: str, truth: str) -> None:
+def build_owner_padded(out_dir: Path) -> None:
+    _build(out_dir, OWNER_PADDED, OWNER_PADDED_TRUTH, pad_to=PADDED_LENGTH)
+
+
+def _build(out_dir: Path, path: str, truth: str, pad_to: int | None = None) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         twopage.build(Path(scratch))
         plain = Path(scratch) / twopage.PATH
@@ -108,11 +128,24 @@ def _build(out_dir: Path, path: str, truth: str) -> None:
             permissions_flag=PERMISSIONS.get(path, UserAccessPermissions.all()),
             algorithm=ALGORITHMS[path],
         )
+        if pad_to is not None:
+            _pad_hashes(writer, pad_to)
         pdf_path = out_dir / path
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         with pdf_path.open("wb") as file:
             writer.write(file)
     (out_dir / truth).write_bytes(ground_truth)
+
+
+def _pad_hashes(writer: pypdf.PdfWriter, length: int) -> None:
+    """Zero-pad the Encrypt dictionary's ``/O`` and ``/U`` strings to ``length`` bytes.
+    The key is already derived, so only what the file says changes."""
+    entry = writer._encrypt_entry
+    assert entry is not None
+    for key in ("/O", "/U"):
+        value = entry[key]
+        assert isinstance(value, ByteStringObject)
+        entry[NameObject(key)] = ByteStringObject(bytes(value).ljust(length, b"\0"))
 
 
 @contextmanager
