@@ -165,8 +165,11 @@ class GlyphNames:
                     if number in self._pages:
                         named[number] = {}
                         _named_codes(page.resources, named[number], set(), 0)
-        except Exception:  # unreadable fonts name nothing: their map errors stay garbage
+        except Exception:
+            # Fail closed: with any font unread, no font names anything, so every map
+            # error stays garbage (a partial read could break the all-fonts rule).
             log.debug("the fonts' glyph names can't be read", exc_info=True)
+            return {}
         return named
 
 
