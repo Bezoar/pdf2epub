@@ -2,7 +2,7 @@
 the Python API (OCR-R3, OCR-R5 to OCR-R10, OCR-R31).
 
 The must-trust set (OCR-AC3) is every born-digital fixture with a text layer and every
-scan with a good invisible OCR layer; the must-reject set is the three fixtures under
+scan with a good invisible OCR layer; the must-reject set is the fixtures under
 ``tests/fixtures/must-reject/`` (TST-R3, TST-R4). What each fixture is comes from its
 generator (``fixturegen/textlayers.py`` for the new ones), never from pdf2epub.
 """
@@ -44,6 +44,9 @@ MUST_REJECT = FIXTURES / "must-reject"
 NO_TOUNICODE = MUST_REJECT / "no-tounicode.pdf"
 GARBLED_LAYER = MUST_REJECT / "garbled-layer.pdf"
 HALF_LAYER = MUST_REJECT / "half-layer.pdf"
+# The half-page layer again, on scans with a dark film border: the border is not text, so
+# it must neither count against the layer nor hide the half it misses.
+HALF_LAYER_BORDER = MUST_REJECT / "half-layer-border.pdf"
 ALL_PAGES = [1, 2, 3, 4]
 # The born-digital fixtures with no text layer at all are not must-trust text layers.
 _NO_TEXT_LAYER = {"image-only.pdf", "blank-pages.pdf"}
@@ -51,6 +54,10 @@ MUST_TRUST = [
     *sorted(p for p in BORN_DIGITAL.glob("*.pdf") if p.name not in _NO_TEXT_LAYER),
     SCANNED / "ocr-layer.pdf",
     *sorted(SCANNED.glob("page-numbers-*.pdf")),
+    # Good layers on scans whose ink is not all text, or whose boxes sit low (#90):
+    SCANNED / "low-boxes-layer.pdf",
+    SCANNED / "dark-border.pdf",
+    SCANNED / "illustrated.pdf",
 ]
 # Characters that are never text: Private Use Area code points and U+FFFD.
 GARBAGE = re.compile("[-\U000f0000-\U0010ffff�]")
@@ -140,12 +147,13 @@ def test_a_font_with_no_tounicode_map_is_rejected_as_garbled_on_every_page(
 
 
 @pytest.mark.ac("OCR-AC5")
+@pytest.mark.parametrize("source", [HALF_LAYER, HALF_LAYER_BORDER], ids=lambda path: path.name)
 def test_a_half_page_invisible_layer_is_rejected_as_low_coverage(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install(monkeypatch, FakeEngine(one_line))
 
-    report, sink = convert(HALF_LAYER, tmp_path)
+    report, sink = convert(source, tmp_path)
 
     assert rejections(report) == {"low_coverage": ALL_PAGES}
     assert [(e["page"], e["trigger"]) for e in ocr_events(sink)] == [

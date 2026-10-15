@@ -15,8 +15,8 @@ Three signals (OCR-R7), each against a threshold below:
 2. word plausibility: the share of word tokens in the language's wordlist, or that look
    like words when it has none (``signals.plausibility``); only judged on a page with at
    least ``MIN_TOKENS`` tokens;
-3. coverage, for prior OCR layers only: the share of the rendered page's ink inside the
-   layer's character boxes (OCR-R16's metric).
+3. coverage, for prior OCR layers only: the coverage of the rendered page's text-like
+   ink by the layer's character boxes (OCR-R16's metric, ``ocr.coverage``).
 
 A page is rejected when any signal crosses its threshold; the reason reported is the first
 failing one in the order garbled, implausible_words, low_coverage (OCR-R9, OP36).
@@ -30,7 +30,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
-from pdf2epub.ocr.ladder import ink_coverage
+from pdf2epub.ocr.coverage import Coverage, measure
 from pdf2epub.ocr.signals import is_garbage, plausibility
 from pdf2epub.passwords import Secret
 from pdf2epub.reflow.extract import PageText
@@ -53,8 +53,8 @@ MIN_PLAUSIBILITY = 0.50
 MIN_TOKENS = 20
 """Word plausibility is judged only on a page with at least this many word tokens."""
 MIN_LAYER_COVERAGE = 0.70
-"""A prior OCR layer whose character boxes hold a smaller share of the page's ink is
-``low_coverage``."""
+"""A prior OCR layer whose character boxes have a lower coverage of the page's text-like
+ink is ``low_coverage``."""
 
 # --- Other constants --------------------------------------------------------------------
 
@@ -76,6 +76,9 @@ class LayerCheck:
     tokens: int
     coverage: float | None
     """None for a typeset layer, where coverage is not a signal."""
+    ink: Coverage | None = None
+    """What coverage was computed from (its share and uncovered text-like ink); None for a
+    typeset layer."""
 
     @property
     def reason(self) -> str | None:
@@ -160,16 +163,16 @@ def _check(
     finally:
         pdf_page.close()
     share_plausible, count = plausibility(text, words)
-    coverage = None
+    ink = None
     if prior_ocr:
-        image = render_grey(document, page.page, CHECK_DPI)
-        coverage = ink_coverage(image, boxes)
+        ink = measure(render_grey(document, page.page, CHECK_DPI), boxes)
     return LayerCheck(
         prior_ocr=prior_ocr,
         garbage=garbage / len(counted) if counted else 0.0,
         plausibility=share_plausible,
         tokens=count,
-        coverage=coverage,
+        coverage=None if ink is None else ink.value,
+        ink=ink,
     )
 
 

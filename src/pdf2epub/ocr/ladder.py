@@ -25,14 +25,13 @@ no confidence) and the ladder goes on; one that runs out of budget ends the ladd
 """
 
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-import cv2
-import numpy as np
 from PIL import Image
 
 from pdf2epub.ocr.cleanup import Binarisation, Frame, prepare, variant_image
+from pdf2epub.ocr.coverage import measure
 from pdf2epub.ocr.engine import (
     Attempt,
     DetectsOrientation,
@@ -47,8 +46,8 @@ from pdf2epub.options import OcrOptions
 from pdf2epub.reflow.build import OCR_FAILED, OCR_LOW_CONFIDENCE, OCR_TIMEOUT
 
 C_MIN = 0.8
-"""An attempt whose words' boxes hold less than this share of the page's ink has dropped
-text (OCR-R16, OCR-R19)."""
+"""An attempt whose words' boxes have a lower coverage of the page's text-like ink has
+dropped text (OCR-R16, OCR-R19)."""
 P_MIN = 0.7
 """The page confidence an attempt needs to be accepted, unless ``min_confidence`` is set
 (OCR-R19). Tesseract gives a clean 300 DPI page about 0.96."""
@@ -194,25 +193,6 @@ def attempt(engine: OcrEngine, request: OcrRequest, variant: str = "baseline") -
 
 
 def coverage(image: Image.Image, result: OcrPageResult) -> float:
-    """The share of the image's ink (dark pixels after Otsu binarisation) inside the boxes
-    of the recognised words (OCR-R16); 1 for an image with no ink."""
-    return ink_coverage(image, [(w.x0, w.top, w.x1, w.bottom) for w in result.words])
-
-
-def ink_coverage(image: Image.Image, boxes: Iterable[tuple[float, float, float, float]]) -> float:
-    """The share of the image's ink (dark pixels after Otsu binarisation) inside
-    ``boxes``, each ``(left, top, right, bottom)`` in pixels; 1 for an image with no ink."""
-    grey = np.asarray(image.convert("L"), dtype=np.uint8)
-    _, binary = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ink = binary == 0
-    total = int(ink.sum())
-    if total == 0 or ink.all():
-        return 1.0 if total == 0 else 0.0
-    inside = np.zeros_like(ink)
-    rows, columns = ink.shape
-    for left, top, right, bottom in boxes:
-        y0, y1 = max(int(top), 0), min(int(np.ceil(bottom)), rows)
-        x0, x1 = max(int(left), 0), min(int(np.ceil(right)), columns)
-        if y1 > y0 and x1 > x0:  # a box off the image covers nothing (no wrap-around)
-            inside[y0:y1, x0:x1] = True
-    return int((ink & inside).sum()) / total
+    """The coverage of the image's text-like ink by the recognised words' boxes (OCR-R16,
+    ``ocr.coverage``)."""
+    return measure(image, [(w.x0, w.top, w.x1, w.bottom) for w in result.words]).value
