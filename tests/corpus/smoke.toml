@@ -21,13 +21,13 @@
 [[entries]]
 id = "S1"
 role = "Novel, born-digital"
-file = "Little Brother, Cory Doctorow (134 pp)"
-url = "https://craphound.com/littlebrother/Cory_Doctorow_-_Little_Brother.pdf"
-sha256 = "f90e8dfe9778a6859a817a598c557c8c9963ac75a49ca2d7987ca386ad8f3700"
-license = "CC BY-NC-SA 3.0 (fetch only)"
+file = "Homeland, Cory Doctorow (292 pp, single column)"
+url = "https://craphound.com/homeland/Cory_Doctorow_-_Homeland.pdf"
+sha256 = "13385ccf9de0691331a0fd075a6386a0626f0a382dacdf04c5f24b4b3929a36e"
+license = "CC BY-NC-ND 3.0 (fetch only)"
 expect = { outcome = "converted" }
 must_trust = true
-check_by_eye = "chapter TOC; no running headers (Cory Doctorow/Little Brother/NN) or page numbers in text"
+check_by_eye = "chapter TOC; no running headers (Homeland) or page numbers in text"
 
 [[entries]]
 id = "S2"
@@ -159,9 +159,9 @@ must_trust = true
 [[entries]]
 id = "S14"
 role = "Malformed, unrecoverable"
-file = "qpdf bad-xref.pdf"
-url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/bad-xref.pdf"
-sha256 = "5895dfedf978f600b12e29643617dbb111869b60526d957878e349571e1467d1"
+file = "qpdf issue-99b.pdf (763 bytes; no /Root dictionary survives xref reconstruction)"
+url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/issue-99b.pdf"
+sha256 = "1447d572b23a80a7f7a55eb7da9205b6710ca9e30b1aaf780cad88fec341761d"
 license = "Apache-2.0"
 expect = { outcome = "failed", issues = ["corrupt_pdf"] }
 
