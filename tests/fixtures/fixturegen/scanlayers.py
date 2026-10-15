@@ -2,7 +2,7 @@
 OCR-AC3, OCR-AC5, OCR-R16), the causes found on the Internet Archive scans S7 and S9
 ([#90](https://github.com/Bezoar/pdf2epub/issues/90)).
 
-The first three are must-trust scans of the 4-page book in ``textlayers``, each with a good
+The first four are must-trust scans of the 4-page book in ``textlayers``, each with a good
 layer that misses no text; the last one is must-reject:
 
 - ``scanned/low-boxes-layer.pdf``: the scans under a layer whose every line sits 0.3 of
@@ -21,6 +21,11 @@ layer that misses no text; the last one is must-reject:
      don't): more of the page's text-like ink than the title's, but far less than the
      coverage allowance (OCR-R16);
   4. an endpaper: rows of large ornaments, with two lines of text below;
+- ``scanned/inset-picture.pdf``: one page of text (a paragraph above, one below) whose
+  scan leaves the middle of the page blank, under a layer of the text, with a separate
+  picture image (a black plate, as on ``illustrated.pdf``'s page 2) placed over that
+  blank middle: a scan with a smaller illustration of its own, a book image to keep
+  ([#107](https://github.com/Bezoar/pdf2epub/issues/107));
 - ``must-reject/half-layer-border.pdf``: the dark-border scans under ``half-layer.pdf``'s
   layer (the lines in the top half of each page only);
 - ``must-reject/half-layer-negative.pdf``: the scans as a negative (white print on a black
@@ -41,7 +46,7 @@ from numpy.typing import NDArray
 from PIL import Image
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from fixturegen import prose, scans
+from fixturegen import prose, rawpdf, scans
 from fixturegen.textlayers import (
     BODY_BOTTOM,
     BODY_FONT,
@@ -54,8 +59,12 @@ from fixturegen.textlayers import (
     TEXT_WIDTH,
     _book,
     _break_lines,
+    _catalog,
+    _font_objects,
     _layered,
+    _page,
     _Run,
+    _text_stream,
     _typeset,
     _write,
 )
@@ -66,6 +75,8 @@ DARK_BORDER = "scanned/dark-border.pdf"
 DARK_BORDER_TRUTH = "scanned/dark-border.txt"
 ILLUSTRATED = "scanned/illustrated.pdf"
 ILLUSTRATED_TRUTH = "scanned/illustrated.txt"
+INSET_PICTURE = "scanned/inset-picture.pdf"
+INSET_PICTURE_TRUTH = "scanned/inset-picture.txt"
 HALF_LAYER_BORDER = "must-reject/half-layer-border.pdf"
 HALF_LAYER_BORDER_TRUTH = "must-reject/half-layer-border.txt"
 HALF_LAYER_NEGATIVE = "must-reject/half-layer-negative.pdf"
@@ -76,6 +87,9 @@ LOW_BY = 0.3
 """How far below its line each layer line sits, as a share of its font size."""
 BORDER = (120, 150, 100, 140)
 """The film border's depth in pixels: top, bottom, left, right."""
+INSET = (MARGIN_X, 250.0, PAGE_WIDTH - MARGIN_X, 420.0)
+"""Where the inset picture lies, in points from the page's top-left: left, top, right,
+bottom."""
 _SEED = 9090
 
 Pixels = NDArray[np.bool_]
@@ -228,3 +242,44 @@ def build_illustrated(out_dir: Path) -> None:
         images.append(_image(ink))
     truth = "\n\n".join(paragraphs) + "\n"
     _write(out_dir, ILLUSTRATED, ILLUSTRATED_TRUTH, _layered(images, layers), truth)
+
+
+# --- The scan with an inset picture -----------------------------------------------------
+
+
+def _bitonal(image: Image.Image) -> bytes:
+    """A bitonal image XObject, CCITT Group 4 encoded."""
+    return rawpdf.stream(
+        b"/Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray"
+        b" /BitsPerComponent 1 /Filter /CCITTFaxDecode"
+        b" /DecodeParms << /K -1 /Columns %d /Rows %d /BlackIs1 false >>"
+        % (image.width, image.height, image.width, image.height),
+        scans.group4(image),
+    )
+
+
+def build_inset_picture(out_dir: Path) -> None:
+    layers, _, paragraphs = _illustrated()
+    runs = layers[1]  # the text page: a paragraph above the middle, one below
+    [scan] = _scans([runs])
+    left, top, right, bottom = INSET
+    ink = np.zeros((_px(bottom - top), _px(right - left)), dtype=np.bool_)
+    _plate(ink, 0.0, 0.0, right - left, bottom - top)
+    objects = _catalog(1, per_page=4)
+    objects.extend(_font_objects(4))
+    resources = b"/Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Im0 8 0 R /Im1 9 0 R >>"
+    objects.append(_page(7, resources))
+    content = b"q %g 0 0 %g 0 0 cm /Im0 Do Q\nq %g 0 0 %g %g %g cm /Im1 Do Q\n" % (
+        PAGE_WIDTH,
+        PAGE_HEIGHT,
+        right - left,
+        bottom - top,
+        left,
+        PAGE_HEIGHT - bottom,
+    )
+    objects.append(rawpdf.stream(b"", content + _text_stream(runs, invisible=True)))
+    objects.append(_bitonal(scan))
+    objects.append(_bitonal(_image(ink)))
+    truth = "\n\n".join(paragraphs[1:3]) + "\n"
+    pdf = rawpdf.document(objects, info=3)
+    _write(out_dir, INSET_PICTURE, INSET_PICTURE_TRUTH, pdf, truth)

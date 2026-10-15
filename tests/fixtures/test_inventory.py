@@ -26,6 +26,7 @@ INVENTORY: dict[str, dict[str, str]] = {
         "blank page": "born-digital/blank-page.pdf",
         "italic and bold runs": "born-digital/headings.pdf",
         "verse-and-code sample": "born-digital/verse-and-code.pdf",
+        "a page that a photograph fills, under a visible caption": "images/full-page-photo.pdf",
     },
     "Scanned": {
         "the novel at 300 DPI (clean)": "scanned/novel-clean.pdf",
@@ -38,6 +39,9 @@ INVENTORY: dict[str, dict[str, str]] = {
         "the same with the layer's lines set low": "scanned/low-boxes-layer.pdf",
         "the same scan with a dark film border": "scanned/dark-border.pdf",
         "an illustrated scan with a good layer of its text": "scanned/illustrated.pdf",
+        "a scan with an inset picture under a good layer of its text": (
+            "scanned/inset-picture.pdf"
+        ),
     },
     "Encrypted": {
         "AES-256 (R6) user password": "encrypted/aes256-user.pdf",
