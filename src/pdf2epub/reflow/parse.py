@@ -144,7 +144,19 @@ class _SecurityHandlerV5(PDFStandardSecurityHandlerV5):
 
     def init_params(self) -> None:
         super().init_params()
+        # Recompute every part the base class cut from the untruncated strings: R5 hashes
+        # the whole key salt, so the padding must not reach it.
         self.o, self.u = self.o[:48], self.u[:48]
+        self.o_hash, self.o_validation_salt, self.o_key_salt = (
+            self.o[:32],
+            self.o[32:40],
+            self.o[40:],
+        )
+        self.u_hash, self.u_validation_salt, self.u_key_salt = (
+            self.u[:32],
+            self.u[32:40],
+            self.u[40:],
+        )
 
 
 class _Document(PDFDocument):

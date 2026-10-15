@@ -17,7 +17,9 @@ And the permission fixtures, all AES-256 (R6):
   and ``/U`` strings are zero-padded from 48 to 127 bytes, as qpdf's
   ``enc-XI-R6,V5,O=master.pdf`` (smoke entry S11) has them. Readers use only the first
   48 bytes, but pdfminer.six hashed the whole ``/U`` into the owner-password check, so
-  the owner password was refused (#87).
+  the owner password was refused (#87);
+- ``encrypted/owner-only-padded-r5.pdf``: the same with AES-256 R5 (the deprecated
+  revision), whose key salts pdfminer.six hashes whole.
 
 Each has its own user and owner passwords (below); the owner-only ones have an empty
 user password. They are published test passwords,
@@ -55,6 +57,8 @@ USER_OWNER_RESTRICTED = "encrypted/user-owner-restricted.pdf"
 USER_OWNER_RESTRICTED_TRUTH = "encrypted/user-owner-restricted.txt"
 OWNER_PADDED = "encrypted/owner-only-padded.pdf"
 OWNER_PADDED_TRUTH = "encrypted/owner-only-padded.txt"
+OWNER_PADDED_R5 = "encrypted/owner-only-padded-r5.pdf"
+OWNER_PADDED_R5_TRUTH = "encrypted/owner-only-padded-r5.txt"
 
 # (user password, owner password) of each fixture.
 PASSWORDS = {
@@ -65,6 +69,7 @@ PASSWORDS = {
     OWNER_ALL: ("", "permissive-owner"),
     USER_OWNER_RESTRICTED: ("locked-user", "locked-owner"),
     OWNER_PADDED: ("", "padded-owner"),
+    OWNER_PADDED_R5: ("", "padded-r5-owner"),
 }
 ALGORITHMS = {
     AES256: "AES-256",
@@ -74,6 +79,7 @@ ALGORITHMS = {
     OWNER_ALL: "AES-256",
     USER_OWNER_RESTRICTED: "AES-256",
     OWNER_PADDED: "AES-256",
+    OWNER_PADDED_R5: "AES-256-R5",
 }
 # Copy/extract forbidden: every permission but bit 5 (PWD-R10).
 NO_EXTRACT = UserAccessPermissions.all() & ~UserAccessPermissions.EXTRACT
@@ -81,6 +87,7 @@ PERMISSIONS = {
     OWNER_RESTRICTED: NO_EXTRACT,
     USER_OWNER_RESTRICTED: NO_EXTRACT,
     OWNER_PADDED: NO_EXTRACT,
+    OWNER_PADDED_R5: NO_EXTRACT,
 }
 # The length qpdf pads ``/O`` and ``/U`` to in an AES-256 file (ISO 32000-2 gives 48).
 PADDED_LENGTH = 127
@@ -112,6 +119,10 @@ def build_user_owner_restricted(out_dir: Path) -> None:
 
 def build_owner_padded(out_dir: Path) -> None:
     _build(out_dir, OWNER_PADDED, OWNER_PADDED_TRUTH, pad_to=PADDED_LENGTH)
+
+
+def build_owner_padded_r5(out_dir: Path) -> None:
+    _build(out_dir, OWNER_PADDED_R5, OWNER_PADDED_R5_TRUTH, pad_to=PADDED_LENGTH)
 
 
 def _build(out_dir: Path, path: str, truth: str, pad_to: int | None = None) -> None:
