@@ -89,7 +89,7 @@ PERMISSIONS = {
     OWNER_PADDED: NO_EXTRACT,
     OWNER_PADDED_R5: NO_EXTRACT,
 }
-# The length qpdf pads ``/O`` and ``/U`` to in an AES-256 file (ISO 32000-2 gives 48).
+# ``/O`` and ``/U`` are 48 bytes in ISO 32000-2; qpdf pads both to 127 bytes in AES-256 files.
 PADDED_LENGTH = 127
 
 
