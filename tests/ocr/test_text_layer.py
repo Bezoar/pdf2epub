@@ -47,6 +47,9 @@ HALF_LAYER = MUST_REJECT / "half-layer.pdf"
 # The half-page layer again, on scans with a dark film border: the border is not text, so
 # it must neither count against the layer nor hide the half it misses.
 HALF_LAYER_BORDER = MUST_REJECT / "half-layer-border.pdf"
+# ...and on a negative scan (white print on a black ground): the print is the text, not
+# the ground, so the half the layer misses is still missed.
+HALF_LAYER_NEGATIVE = MUST_REJECT / "half-layer-negative.pdf"
 ALL_PAGES = [1, 2, 3, 4]
 # The born-digital fixtures with no text layer at all are not must-trust text layers.
 _NO_TEXT_LAYER = {"image-only.pdf", "blank-pages.pdf"}
@@ -147,7 +150,9 @@ def test_a_font_with_no_tounicode_map_is_rejected_as_garbled_on_every_page(
 
 
 @pytest.mark.ac("OCR-AC5")
-@pytest.mark.parametrize("source", [HALF_LAYER, HALF_LAYER_BORDER], ids=lambda path: path.name)
+@pytest.mark.parametrize(
+    "source", [HALF_LAYER, HALF_LAYER_BORDER, HALF_LAYER_NEGATIVE], ids=lambda path: path.name
+)
 def test_a_half_page_invisible_layer_is_rejected_as_low_coverage(
     source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -175,6 +175,11 @@ def registry() -> list[Fixture]:
             scanlayers.build_half_layer_border,
         ),
         Fixture(
+            scanlayers.HALF_LAYER_NEGATIVE,
+            scanlayers.HALF_LAYER_NEGATIVE_TRUTH,
+            scanlayers.build_half_layer_negative,
+        ),
+        Fixture(
             textlayers.NO_TOUNICODE, textlayers.NO_TOUNICODE_TRUTH, textlayers.build_no_tounicode
         ),
         # A must-trust page that reproduces a real-world rejection (#89).

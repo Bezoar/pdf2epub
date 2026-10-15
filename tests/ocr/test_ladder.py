@@ -204,15 +204,45 @@ def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print(halftone: 
     assert recognition.reason == "ocr_low_confidence"
 
 
-def test_a_picture_only_page_read_as_no_words_has_full_coverage() -> None:
-    # A plate and no text: with no words there are no boxes to measure text height by,
-    # but the plate is still no text, so nothing is missed.
-    image = Image.new("L", (1800, 2700), 255)
-    ImageDraw.Draw(image).rectangle((300, 600, 1499, 2099), fill=0)
+def no_words(call: int, request: OcrRequest) -> OcrPageResult:
+    return OcrPageResult(lines=())
 
-    recognition = run(FakeEngine(lambda call, request: OcrPageResult(lines=())), image)
+
+@pytest.mark.parametrize(
+    "picture",
+    [(300, 600, 1499, 2099), (50, 1300, 1749, 1399)],
+    ids=["plate", "banner"],
+)
+def test_a_picture_only_page_read_as_no_words_has_full_coverage(
+    picture: tuple[int, int, int, int],
+) -> None:
+    # A picture and no text, a plate or a thin banner across the page: with no words there
+    # are no boxes to measure text height by, but a picture is still no text, so nothing
+    # is missed.
+    image = Image.new("L", (1800, 2700), 255)
+    ImageDraw.Draw(image).rectangle(picture, fill=0)
+
+    recognition = run(FakeEngine(no_words), image)
 
     assert recognition.result.coverage == 1.0
+
+
+def test_a_noisy_text_page_read_as_no_words_has_no_coverage() -> None:
+    # page()'s text with 1 px specks every 20 px between its lines and around it (more
+    # specks than glyphs): read as no words, all the text is missed.
+    image = page()
+    draw = ImageDraw.Draw(image)
+    for top in range(10, 2690, 20):
+        if not any(
+            LINE_TOP + line * LINE_STEP - 5 <= top < LINE_TOP + line * LINE_STEP + 35
+            for line in range(LINES)
+        ):
+            for left in range(10, 1790, 20):
+                draw.point((left, top), fill=0)
+
+    recognition = run(FakeEngine(no_words), image, quality="fast")
+
+    assert recognition.result.coverage == 0.0
 
 
 def test_a_word_box_off_the_image_covers_no_ink() -> None:

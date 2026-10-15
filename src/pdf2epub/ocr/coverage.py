@@ -12,10 +12,11 @@ to pass:
    connected to the image's edge (a border) is set aside and Otsu runs again on the rest,
    so a black border doesn't set the threshold that faint print must pass.
 2. The scale is the **box height**: the median height of the boxes (with no boxes, of the
-   ink components that could be lines of text). A **unit** of ink is the area of a square
-   one box height across.
+   ink components that could be letters: not specks, not pictures). A **unit** of ink is
+   the area of a square one box height across.
 3. A connected ink component is text-like when it doesn't touch the image's edge, is at
-   most ``TEXT_HEIGHT`` box heights tall and ``TEXT_WIDTH`` wide, is larger than a speck,
+   most ``TEXT_HEIGHT`` box heights tall and ``TEXT_WIDTH`` wide (and no wider than half
+   the image), is larger than a speck,
    and its centre is not in a **picture region**: the box (widened by one box height on
    each side) of a larger component at least ``PICTURE_FILL`` ink.
 4. A text-like component is covered when any of its pixels is inside a box: boxes that sit
@@ -55,7 +56,10 @@ smaller than ``MIN_SPECK`` pixels)."""
 MIN_SPECK = 3
 TEXT_LINES = 20
 """With no boxes, ink taller than this share of the page (1 / ``TEXT_LINES``) is not taken
-for a line of text when estimating the text height."""
+for a letter when estimating the text height..."""
+SPECK_LINES = 300
+"""...nor ink shorter than 1 / ``SPECK_LINES`` of it: a speck (9 px on a 9 in page at 300
+DPI, 3 px at 100 DPI)."""
 PICTURE_FILL = 0.2
 """A component too large to be text is a picture when at least this share of its box is
 ink (a thin ring or frame is not)."""
@@ -143,14 +147,21 @@ def _edge(stats: NDArray[np.int32], shape: tuple[int, ...]) -> NDArray[np.bool_]
 
 def _text_height(stats: NDArray[np.int32], shape: tuple[int, ...]) -> float:
     """With no boxes to measure, the median height of the components off the edge that
-    could be lines of text (at most ``1 / TEXT_LINES`` of the image's height); with none,
-    that height itself."""
-    tallest = shape[0] / TEXT_LINES
+    could be letters: at least ``1 / SPECK_LINES`` of the image's height (not specks), at
+    most ``1 / TEXT_LINES`` of it, and no wider than half the image (not pictures). With
+    none, ``1 / TEXT_LINES`` of its height."""
+    rows, columns = shape[0], shape[1]
+    tallest = rows / TEXT_LINES
     inner = ~_edge(stats, shape)
     inner[0] = False
-    heights = stats[inner, cv2.CC_STAT_HEIGHT]
-    heights = heights[heights <= tallest]
-    return float(np.median(heights)) if heights.size else tallest
+    heights = stats[:, cv2.CC_STAT_HEIGHT]
+    letters = (
+        inner
+        & (heights >= rows / SPECK_LINES)
+        & (heights <= tallest)
+        & (2 * stats[:, cv2.CC_STAT_WIDTH] <= columns)
+    )
+    return float(np.median(heights[letters])) if letters.any() else tallest
 
 
 def _text_like(stats: NDArray[np.int32], shape: tuple[int, ...], scale: float) -> NDArray[np.bool_]:
@@ -159,7 +170,7 @@ def _text_like(stats: NDArray[np.int32], shape: tuple[int, ...], scale: float) -
     w, h = stats[:, cv2.CC_STAT_WIDTH], stats[:, cv2.CC_STAT_HEIGHT]
     area = stats[:, cv2.CC_STAT_AREA]
     edge = _edge(stats, shape)
-    large = (h > TEXT_HEIGHT * scale) | (w > TEXT_WIDTH * scale)
+    large = (h > TEXT_HEIGHT * scale) | (w > TEXT_WIDTH * scale) | (2 * w > columns)
     speck = area < max(MIN_SPECK, (SPECK * scale) ** 2)
     pictures = np.zeros((rows, columns), dtype=bool)
     reach = max(round(scale), 1)

@@ -22,7 +22,9 @@ layer that misses no text; the last one is must-reject:
      coverage allowance (OCR-R16);
   4. an endpaper: rows of large ornaments, with two lines of text below;
 - ``must-reject/half-layer-border.pdf``: the dark-border scans under ``half-layer.pdf``'s
-  layer (the lines in the top half of each page only).
+  layer (the lines in the top half of each page only);
+- ``must-reject/half-layer-negative.pdf``: the scans as a negative (white print on a black
+  ground, as a microfilm negative is), under the same half layer.
 
 Each ground truth is the text the layer holds (and the scan shows), without header and
 page numbers: its paragraphs, separated by blank lines. The bytes stay the same on every
@@ -66,6 +68,8 @@ ILLUSTRATED = "scanned/illustrated.pdf"
 ILLUSTRATED_TRUTH = "scanned/illustrated.txt"
 HALF_LAYER_BORDER = "must-reject/half-layer-border.pdf"
 HALF_LAYER_BORDER_TRUTH = "must-reject/half-layer-border.txt"
+HALF_LAYER_NEGATIVE = "must-reject/half-layer-negative.pdf"
+HALF_LAYER_NEGATIVE_TRUTH = "must-reject/half-layer-negative.txt"
 
 DPI = 300
 LOW_BY = 0.3
@@ -122,6 +126,14 @@ def build_half_layer_border(out_dir: Path) -> None:
     layers = [[run for run in runs if run.y >= PAGE_HEIGHT / 2] for runs in pages]
     pdf = _layered(images, layers)
     _write(out_dir, HALF_LAYER_BORDER, HALF_LAYER_BORDER_TRUTH, pdf, truth)
+
+
+def build_half_layer_negative(out_dir: Path) -> None:
+    pages, truth = _book()
+    images = [_image(~_ink(image)) for image in _scans(pages)]
+    layers = [[run for run in runs if run.y >= PAGE_HEIGHT / 2] for runs in pages]
+    pdf = _layered(images, layers)
+    _write(out_dir, HALF_LAYER_NEGATIVE, HALF_LAYER_NEGATIVE_TRUTH, pdf, truth)
 
 
 # --- The illustrated scan ---------------------------------------------------------------

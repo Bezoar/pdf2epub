@@ -52,6 +52,7 @@ INVENTORY: dict[str, dict[str, str]] = {
         "garbled invisible OCR layer": "must-reject/garbled-layer.pdf",
         "invisible OCR layer covering half of each page": "must-reject/half-layer.pdf",
         "the same on a scan with a dark film border": "must-reject/half-layer-border.pdf",
+        "the same on a negative scan": "must-reject/half-layer-negative.pdf",
     },
     "Damaged": {
         "truncated file": "damaged/truncated.pdf",
