@@ -44,7 +44,7 @@ jobs:
           if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
           uv run python scripts/smoke.py run "${args[@]}"
       # Only the batch report is kept: some smoke-set books may not be redistributed
-      # (S1 is CC BY-NC-SA), so the EPUBs are not uploaded.
+      # (S1 is CC BY-NC-ND, which forbids derivatives), so the EPUBs are not uploaded.
       - name: Keep the batch report
         if: always()
         uses: actions/upload-artifact@v7
