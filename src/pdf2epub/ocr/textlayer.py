@@ -136,42 +136,46 @@ class GlyphNames:
     """The characters that the fonts on some pages of a PDF name their glyphs after, by
     character code: standard glyph names in their encodings' ``/Differences``, read with
     pdfminer the first time they are asked for. Fonts are told apart by base name (a font
-    with none is ``""``), as PDFium reports it."""
+    with none is ``""``), as PDFium reports it; where several fonts on a page share a
+    base name, a code counts as named only if every one of them names it alike."""
 
     def __init__(self, path: Path, password: Secret | None, pages: Collection[int]) -> None:
         self._path = path
         self._password = password
         self._pages = frozenset(pages)
-        self._named: dict[int, dict[str, dict[int, set[str]]]] | None = None
+        self._named: dict[int, dict[str, list[dict[int, str]]]] | None = None
 
     def named(self, page: int, font: str, code: int, character: str) -> bool:
         """Whether a font whose base name is ``font``, on ``page``, names the glyph of
-        ``code`` after ``character``."""
+        ``code`` after ``character``, and no other font of that name on the page names
+        it otherwise or not at all."""
         if self._named is None:
             self._named = self._read()
-        return character in self._named.get(page, {}).get(font, {}).get(code, set())
+        fonts = self._named.get(page, {}).get(font, [])
+        return bool(fonts) and all(names.get(code) == character for names in fonts)
 
-    def _read(self) -> dict[int, dict[str, dict[int, set[str]]]]:
-        named: dict[int, dict[str, dict[int, set[str]]]] = {}
+    def _read(self) -> dict[int, dict[str, list[dict[int, str]]]]:
+        named: dict[int, dict[str, list[dict[int, str]]]] = {}
+        last = max(self._pages, default=0)
         try:
             with ParsedPdf(self._path, self._password) as pdf:
                 for number, page in enumerate(pdf.pages(), start=1):
+                    if number > last:
+                        break
                     if number in self._pages:
                         named[number] = {}
                         _named_codes(page.resources, named[number], set(), 0)
-                    if number >= max(self._pages):
-                        break
         except Exception:  # unreadable fonts name nothing: their map errors stay garbage
             log.debug("the fonts' glyph names can't be read", exc_info=True)
         return named
 
 
 def _named_codes(
-    resources: object, fonts: dict[str, dict[int, set[str]]], seen: set[int], depth: int
+    resources: object, fonts: dict[str, list[dict[int, str]]], seen: set[int], depth: int
 ) -> None:
-    """Add to ``fonts`` (by base name) the characters each font in ``resources`` names its
-    glyphs after, by code (``_differences``), searching the resources of form XObjects
-    and Type 3 fonts too."""
+    """Add to ``fonts`` (by base name, one entry per font) the characters each font in
+    ``resources`` names its glyphs after, by code (``_differences``), searching the
+    resources of form XObjects and Type 3 fonts too."""
     resources = resolve1(resources)
     if not isinstance(resources, dict) or depth > _MAX_NESTING:
         return
@@ -180,9 +184,7 @@ def _named_codes(
             continue
         base = resolve1(font.get("BaseFont"))
         name = str(base.name) if isinstance(base, PSLiteral) else ""
-        named = fonts.setdefault(name, {})
-        for code, character in _differences(font.get("Encoding")).items():
-            named.setdefault(code, set()).add(character)
+        fonts.setdefault(name, []).append(_differences(font.get("Encoding")))
         _named_codes(font.get("Resources"), fonts, seen, depth + 1)
     for xobject in _values(resources.get("XObject"), seen):
         if isinstance(xobject, PDFStream):
