@@ -285,3 +285,41 @@ def test_no_file_written_during_a_run_holds_the_password_or_its_label(tmp_path: 
         assert secret not in text
     for value in flag_values:
         assert not re.search(rf"(?<![\w-]){re.escape(value)}(?!\d)", text), value
+
+
+# The owner-only restricted fixtures with /O and /U zero-padded to 127 bytes, as qpdf
+# writes smoke entry S11 (#87), and their owner passwords, from tests/fixtures/fixturegen.
+OWNER_PADDED = {
+    "R6": (FIXTURES / "encrypted" / "owner-only-padded.pdf", "padded-owner"),
+    "R5": (FIXTURES / "encrypted" / "owner-only-padded-r5.pdf", "padded-r5-owner"),
+}
+
+
+@pytest.mark.ac("PWD-AC8")
+@pytest.mark.parametrize("revision", OWNER_PADDED)
+def test_owner_password_opens_an_owner_only_file_with_padded_hash_strings(
+    tmp_path: Path, revision: str
+) -> None:
+    fixture, owner_password = OWNER_PADDED[revision]
+    # As scripts/smoke.py runs it: a folder of inputs, a password map keyed by path and
+    # an output folder.
+    (tmp_path / "inputs").mkdir()
+    shutil.copyfile(fixture, tmp_path / "inputs" / "book.pdf")
+    password_map = tmp_path / "passwords.toml"
+    password_map.write_text(f'"inputs/book.pdf" = "{owner_password}"\n', encoding="utf-8")
+    password_map.chmod(0o600)
+
+    proc = run(
+        ["--json", "--password-map", str(password_map), "-o", "epub", "inputs"],
+        tmp_path,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    [finished] = [e for e in events_of(proc.stdout) if e["type"] == "conversion_finished"]
+    assert finished["outcome"] == "converted", finished["issues"]
+    assert [(i["code"], i["severity"]) for i in finished["issues"]] == [
+        ("owner_password_used", "info")
+    ]
+    assert finished["password_source"] == 'map:"inputs/book.pdf"'
+    # The text comes from the decrypted file (the two-page book's first sentence).
+    assert "The ferry left the harbour before dawn" in epub_text(tmp_path / "epub" / "book.epub")
