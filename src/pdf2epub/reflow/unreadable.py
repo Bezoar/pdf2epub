@@ -47,7 +47,7 @@ def unreadable_pages(
     numbers = unreadable_page_numbers(source, found)
     rendered = {n for n in numbers if n <= source.page_count and n not in source.unloadable}
     texts = page_text(source.path, rendered, password)
-    pages = {}
+    pages: dict[int, UnreadablePage] = {}
     for number in sorted(numbers):
         if number in rendered:
             text = _lines(texts[number].splitlines())

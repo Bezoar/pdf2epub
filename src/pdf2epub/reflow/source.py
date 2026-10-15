@@ -105,7 +105,7 @@ def page_text(path: Path, pages: Collection[int], password: Secret | None = None
         return {}
     document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
     try:
-        texts = {}
+        texts: dict[int, str] = {}
         for number in sorted(pages):
             page = document[number - 1]
             try:
@@ -170,7 +170,7 @@ _CORRUPT = (
 def _unloadable_pages(document: pdfium.PdfDocument) -> frozenset[int]:
     """The 1-based pages in the page count that pdfium can't find: no later stage may ask
     pdfium to render or read them."""
-    unloadable = set()
+    unloadable: set[int] = set()
     for index in range(len(document)):
         try:
             document.get_page_size(index)  # finds the page as loading it does
