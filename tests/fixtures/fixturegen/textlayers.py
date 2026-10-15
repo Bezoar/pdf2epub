@@ -35,6 +35,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import Image
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from fixturegen import pagenumbers, prose, rawpdf, scans
@@ -271,14 +272,24 @@ def _glyphs(characters: list[str]) -> list[Image.Image]:
     return scans._render(rawpdf.document(objects, info=3), dpi=72)
 
 
-def _no_tounicode(pages: list[list[_Run]]) -> bytes:
+def _no_tounicode(pages: list[list[_Run]], standard_names: bool = False) -> bytes:
     """The book typeset in one Type 3 bitmap font with no ``/ToUnicode``: code 32 is the
     space (named ``/space``), every other character gets a code from 33 up, named
     ``/g<code>``. Objects: 1-3 catalog, pages, Info; 4 the font; 5 its glyph procedures'
-    resources; then each glyph's procedure and bitmap, then each page and its content."""
+    resources; then each glyph's procedure and bitmap, then each page and its content.
+
+    With ``standard_names``, each character keeps its WinAnsi code instead and its glyph
+    is named by that encoding's standard glyph name (``/a``, ``/comma``), as Matplotlib
+    writes the fonts of the figures it saves as PDF, and the font gets a ``/BaseFont``."""
     characters = sorted({c for runs in pages for run in runs for c in run.text} - {" "})
     codes = {c: 33 + index for index, c in enumerate(characters)}
+    if standard_names:
+        codes = {c: c.encode("cp1252")[0] for c in characters}
     codes[" "] = 32
+    glyph = {c: b"g%d" % codes[c] for c in characters}
+    if standard_names:
+        winansi = pdfmetrics.getEncoding("WinAnsiEncoding").vector
+        glyph = {c: winansi[codes[c]].encode("ascii") for c in characters}
     bitmaps = _glyphs(characters)
     first_glyph = 6
     first_page = first_glyph + 2 * len(characters)
@@ -288,19 +299,24 @@ def _no_tounicode(pages: list[list[_Run]]) -> bytes:
         b"<< /Type /Pages /Kids [%s] /Count %d >>" % (kids, len(pages)),
         b"<< /Title (%s) >>" % TITLE.encode("ascii"),
     ]
-    last = 32 + len(characters)
-    names = b" ".join(b"/g%d" % codes[c] for c in characters)
-    widths = b" ".join(b"%d" % round(stringWidth(c, BODY_FONT, 1000)) for c in [" ", *characters])
+    last = max(codes.values())
+    names = b" ".join(b"%d /%s" % (codes[c], glyph[c]) for c in characters)
+    if not standard_names:  # consecutive codes: one run of names
+        names = b" ".join(b"/" + glyph[c] for c in characters)
+    advances = {codes[c]: round(stringWidth(c, BODY_FONT, 1000)) for c in [" ", *characters]}
+    widths = b" ".join(b"%d" % advances.get(code, 0) for code in range(32, last + 1))
     procs = b" ".join(
-        b"/g%d %d 0 R" % (codes[c], first_glyph + 2 * i) for i, c in enumerate(characters)
+        b"/%s %d 0 R" % (glyph[c], first_glyph + 2 * i) for i, c in enumerate(characters)
     )
     space_proc = first_page + 2 * len(pages)
+    # Matplotlib names its Type 3 fonts; the no-ToUnicode fixture's font has no name.
+    base = b" /BaseFont /HarbourTimes" if standard_names else b""
     objects.append(
-        b"<< /Type /Font /Subtype /Type3 /FontBBox [%d %d %d %d]"
+        b"<< /Type /Font /Subtype /Type3%s /FontBBox [%d %d %d %d]"
         b" /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /space %d 0 R %s >>"
         b" /Encoding << /Type /Encoding /Differences [32 /space %s] >>"
         b" /FirstChar 32 /LastChar %d /Widths [%s] /Resources 5 0 R >>"
-        % (_CELL_LEFT, _CELL_BOTTOM, 1100, _CELL_TOP, space_proc, procs, names, last, widths)
+        % (base, _CELL_LEFT, _CELL_BOTTOM, 1100, _CELL_TOP, space_proc, procs, names, last, widths)
     )
     xobjects = b" ".join(
         b"/B%d %d 0 R" % (codes[c], first_glyph + 2 * i + 1) for i, c in enumerate(characters)

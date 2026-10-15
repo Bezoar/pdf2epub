@@ -21,7 +21,7 @@ This spec covers the product's test **assets** and **measurements**: synthetic f
 | Damaged | a truncated file; a file with a broken cross-reference table that a parser can repair; a non-PDF file with a `.pdf` name; a zero-page document; an image that exceeds the decompression limits |
 | Page numbers | a scanned book with one printed page missing and one printed page repeated, plus roman-numeral front matter and an unnumbered chapter opener |
 
-<a id="tst-r4"></a>**TST-R4**: The **must-trust** set for the text-layer quality check ([ocr](ocr.md#ocr-r8)) shall be every born-digital page of the smoke set plus the existing text layers of the Internet Archive scans in it (S7, S9). The **must-reject** set shall be the must-reject fixtures in [TST-R3](#tst-r3). Both are regression tests; the smoke-set part runs in the smoke job ([§3](#3-real-world-smoke-set)), the synthetic part in every CI run.
+<a id="tst-r4"></a>**TST-R4**: The **must-trust** set for the text-layer quality check ([ocr](ocr.md#ocr-r8)) shall be every born-digital page of the smoke set, except entries whose text is filler (such as Lorem Ipsum) rather than words of the book's language, plus the existing text layers of the Internet Archive scans in it (S7, S9). The **must-reject** set shall be the must-reject fixtures in [TST-R3](#tst-r3). Both are regression tests; the smoke-set part runs in the smoke job ([§3](#3-real-world-smoke-set)), the synthetic part in every CI run.
 
 ## 2. Public-domain sample
 
@@ -89,7 +89,7 @@ S10–S12 run in the batch with their passwords (`view`, `master`, `openpassword
 
 <a id="tst-ac2"></a>**TST-AC2** (covers [TST-R3](#tst-r3)): **Given** the committed synthetic fixtures, **when** the fixture inventory test runs, **then** each group and fixture listed in TST-R3 exists, and the encrypted fixtures report the expected handler, revision and algorithm when inspected with pypdf (AES-256 R6, RC4-128 R3, owner-only with copy/extract forbidden, owner-only with all permissions, non-Standard filter).
 
-<a id="tst-ac3"></a>**TST-AC3** (covers [TST-R4](#tst-r4)): **Given** the synthetic must-reject fixtures, **when** they convert under `auto`, **then** every one of their text pages is rejected; **and given** the smoke set in the smoke job, **then** no born-digital page and no page of S7 or S9 is rejected.
+<a id="tst-ac3"></a>**TST-AC3** (covers [TST-R4](#tst-r4)): **Given** the synthetic must-reject fixtures, **when** they convert under `auto`, **then** every one of their text pages is rejected; **and given** the smoke set in the smoke job, **then** no page of the smoke set's must-trust entries (born-digital entries other than filler, S7 and S9) is rejected.
 
 <a id="tst-ac4"></a>**TST-AC4** (covers [TST-R5](#tst-r5), [TST-R6](#tst-r6), [TST-R7](#tst-r7), [TST-R8](#tst-r8)): **Given** the repository, **when** the provenance test runs, **then** every file under `tests/fixtures/public-domain/` has a PROVENANCE.md row with a URL, a public-domain basis, a matching SHA-256 and a page range; the folder totals ≤ 30 MB; no file is an LFS pointer; and no PDF anywhere under `tests/` is listed in the smoke manifest except by URL.
 

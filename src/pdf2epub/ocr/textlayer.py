@@ -11,7 +11,10 @@ Three signals (OCR-R7), each against a threshold below:
 
 1. garbage ratio: the share of non-space characters that are Unicode-map errors or
    garbage (``signals.is_garbage``: U+FFFD, Private Use Area, C0/C1 controls, letters of a
-   script the OCR language doesn't use);
+   script the OCR language doesn't use). A Unicode-map error is not counted when the
+   font's encoding names the character's glyph with a standard glyph name (``/a``,
+   ``/comma``, ``/uni00E9``): the name says which character it is (ISO 32000-2 §9.10.2),
+   though PDFium doesn't read it for Type 3 fonts, the kind Matplotlib writes;
 2. word plausibility: the share of word tokens in the language's wordlist, or that look
    like words when it has none (``signals.plausibility``); only judged on a page with at
    least ``MIN_TOKENS`` tokens;
@@ -22,20 +25,28 @@ A page is rejected when any signal crosses its threshold; the reason reported is
 failing one in the order garbled, implausible_words, low_coverage (OCR-R9, OP36).
 """
 
+import contextlib
 import ctypes
+import logging
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
+from pdfminer.encodingdb import name2unicode
+from pdfminer.pdftypes import PDFObjRef, PDFStream, resolve1
+from pdfminer.psparser import PSLiteral
 
 from pdf2epub.ocr.coverage import Coverage, measure
 from pdf2epub.ocr.signals import is_garbage, plausibility
 from pdf2epub.passwords import Secret
 from pdf2epub.reflow.extract import PageText
 from pdf2epub.reflow.images import PlacedImage
+from pdf2epub.reflow.parse import ParsedPdf
 from pdf2epub.reflow.render import render_grey
+
+log = logging.getLogger(__name__)
 
 GARBLED, IMPLAUSIBLE_WORDS, LOW_COVERAGE = "garbled", "implausible_words", "low_coverage"
 REASONS = (GARBLED, IMPLAUSIBLE_WORDS, LOW_COVERAGE)
@@ -63,6 +74,7 @@ CHECK_DPI = 100
 FULL_PAGE = 0.9
 """An image covering at least this share of the page is a full-page scan."""
 _INVISIBLE = (3, 7)  # text render modes that draw nothing
+_MAX_NESTING = 8  # how deep form XObjects and Type 3 fonts are searched for fonts
 
 
 @dataclass(frozen=True)
@@ -113,13 +125,112 @@ def check_layers(
     if not pages:
         return {}
     document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
+    names = GlyphNames(path, password, {page.page for page in pages})
     try:
         return {
-            page.page: _check(document, page, images.get(page.page, []), scripts, words)
+            page.page: _check(document, page, images.get(page.page, []), scripts, words, names)
             for page in pages
         }
     finally:
         document.close()
+
+
+class GlyphNames:
+    """The characters that the fonts on some pages of a PDF name their glyphs after, by
+    character code: standard glyph names in their encodings' ``/Differences``, read with
+    pdfminer the first time they are asked for. Fonts are told apart by base name (a font
+    with none is ``""``), as PDFium reports it; where several fonts on a page share a
+    base name, a code counts as named only if every one of them names it alike."""
+
+    def __init__(self, path: Path, password: Secret | None, pages: Collection[int]) -> None:
+        self._path = path
+        self._password = password
+        self._pages = frozenset(pages)
+        self._named: dict[int, dict[str, list[dict[int, str]]]] | None = None
+
+    def named(self, page: int, font: str, code: int, character: str) -> bool:
+        """Whether a font whose base name is ``font``, on ``page``, names the glyph of
+        ``code`` after ``character``, and no other font of that name on the page names
+        it otherwise or not at all."""
+        if self._named is None:
+            self._named = self._read()
+        fonts = self._named.get(page, {}).get(font, [])
+        return bool(fonts) and all(names.get(code) == character for names in fonts)
+
+    def _read(self) -> dict[int, dict[str, list[dict[int, str]]]]:
+        named: dict[int, dict[str, list[dict[int, str]]]] = {}
+        last = max(self._pages, default=0)
+        try:
+            with ParsedPdf(self._path, self._password) as pdf:
+                for number, page in enumerate(pdf.pages(), start=1):
+                    if number > last:
+                        break
+                    if number in self._pages:
+                        named[number] = {}
+                        _named_codes(page.resources, named[number], set(), 0)
+        except Exception:
+            # Fail closed: with any font unread, no font names anything, so every map
+            # error stays garbage (a partial read could break the all-fonts rule).
+            log.debug("the fonts' glyph names can't be read", exc_info=True)
+            return {}
+        return named
+
+
+def _named_codes(
+    resources: object, fonts: dict[str, list[dict[int, str]]], seen: set[int], depth: int
+) -> None:
+    """Add to ``fonts`` (by base name, one entry per font) the characters each font in
+    ``resources`` names its glyphs after, by code (``_differences``), searching the
+    resources of form XObjects and Type 3 fonts too."""
+    resources = resolve1(resources)
+    if not isinstance(resources, dict) or depth > _MAX_NESTING:
+        return
+    for font in _values(resources.get("Font"), seen):
+        if not isinstance(font, dict):
+            continue
+        base = resolve1(font.get("BaseFont"))
+        name = str(base.name) if isinstance(base, PSLiteral) else ""
+        fonts.setdefault(name, []).append(_differences(font.get("Encoding")))
+        _named_codes(font.get("Resources"), fonts, seen, depth + 1)
+    for xobject in _values(resources.get("XObject"), seen):
+        if isinstance(xobject, PDFStream):
+            _named_codes(xobject.attrs.get("Resources"), fonts, seen, depth + 1)
+
+
+def _values(entries: object, seen: set[int]) -> list[object]:
+    """The resolved values of a resource dictionary, skipping objects already searched."""
+    entries = resolve1(entries)
+    if not isinstance(entries, dict):
+        return []
+    found = []
+    for value in entries.values():
+        if isinstance(value, PDFObjRef):
+            if value.objid in seen:
+                continue
+            seen.add(value.objid)
+        found.append(resolve1(value))
+    return found
+
+
+def _differences(encoding: object) -> dict[int, str]:
+    """The character each code's glyph is named after in an encoding's ``/Differences``
+    array, for the codes given a standard glyph name."""
+    encoding = resolve1(encoding)
+    if not isinstance(encoding, dict):
+        return {}
+    differences = resolve1(encoding.get("Differences"))
+    codes: dict[int, str] = {}
+    code = 0
+    for item in differences if isinstance(differences, list) else []:
+        item = resolve1(item)
+        if isinstance(item, int):
+            code = item
+        elif isinstance(item, PSLiteral):
+            # A name that is no standard glyph name says nothing about the glyph.
+            with contextlib.suppress(KeyError, ValueError):
+                codes[code] = name2unicode(str(item.name))
+            code += 1
+    return codes
 
 
 def _check(
@@ -128,6 +239,7 @@ def _check(
     images: Sequence[PlacedImage],
     scripts: frozenset[str] | None,
     words: Collection[str] | None,
+    names: GlyphNames,
 ) -> LayerCheck:
     pdf_page = document[page.page - 1]
     try:
@@ -144,8 +256,12 @@ def _check(
                 if character.isspace() or pdfium_c.FPDFText_IsGenerated(raw, index) == 1:
                     continue
                 counted.append(index)
-                if pdfium_c.FPDFText_HasUnicodeMapError(raw, index) == 1 or is_garbage(
-                    character, scripts
+                if is_garbage(character, scripts) or (
+                    pdfium_c.FPDFText_HasUnicodeMapError(raw, index) == 1
+                    # With no Unicode, PDFium gives the character code as the character.
+                    and not names.named(
+                        page.page, _font_name(raw, index), ord(character), character
+                    )
                 ):
                     garbage += 1
                 obj = pdfium_c.FPDFText_GetTextObject(raw, index)
@@ -174,6 +290,14 @@ def _check(
         coverage=None if ink is None else ink.value,
         ink=ink,
     )
+
+
+def _font_name(textpage: object, index: int) -> str:
+    """The base name of character ``index``'s font."""
+    size = pdfium_c.FPDFText_GetFontInfo(textpage, index, None, 0, None)
+    buffer = ctypes.create_string_buffer(max(size, 1))
+    pdfium_c.FPDFText_GetFontInfo(textpage, index, buffer, size, None)
+    return buffer.value.decode("utf-8", "replace")
 
 
 def _box(textpage: object, index: int, top: float) -> tuple[float, float, float, float]:
