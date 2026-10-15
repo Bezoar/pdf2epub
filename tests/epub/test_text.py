@@ -32,6 +32,7 @@ from pdf2epub import (
 TYPOGRAPHY = FIXTURES / "born-digital" / "typography.pdf"
 CJK_LINES = FIXTURES / "born-digital" / "cjk-lines.pdf"
 TWO_PAGES = FIXTURES / "born-digital" / "two-pages.pdf"
+HEADER_ROW = FIXTURES / "born-digital" / "header-row.pdf"
 XHTML = "{http://www.w3.org/1999/xhtml}"
 EPUB_TYPE = "{http://www.idpf.org/2007/ops}type"
 OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
@@ -263,3 +264,15 @@ def test_furniture_is_removed_from_a_two_page_book(tmp_path: Path) -> None:
     paragraphs = read_book(epub).paragraphs
     assert paragraphs == ground_truth(TWO_PAGES)
     assert [p for p in paragraphs if "The Short Crossing" in p or p in {"1", "2"}] == []
+
+
+def test_a_three_part_header_row_is_removed_whole(tmp_path: Path) -> None:
+    # Each page's header row is "Ada Marsh", the page number and "Lanternfall", three
+    # pieces of text side by side on one baseline (an OpenOffice-style layout). All three
+    # are furniture on every page, the title included (RFL-R16, #96).
+    _, epub = convert(HEADER_ROW, tmp_path)
+
+    book = read_book(epub)
+    assert book.paragraphs == ground_truth(HEADER_ROW)
+    assert [b.text for b in book.blocks if "Lanternfall" in b.text or "Ada Marsh" in b.text] == []
+    assert [m.label for m in book.markers] == ["1", "2", "3", "4", "5", "6"]
