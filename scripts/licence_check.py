@@ -62,6 +62,7 @@ ALLOWED_CLASSIFIERS = frozenset(
         "License :: OSI Approved :: Apache Software License",
         "License :: OSI Approved :: ISC License (ISCL)",
         "License :: OSI Approved :: Python Software Foundation License",
+        "License :: OSI Approved :: Python License",
         "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
         "License :: OSI Approved :: Historical Permission Notice and Disclaimer (HPND)",
     }

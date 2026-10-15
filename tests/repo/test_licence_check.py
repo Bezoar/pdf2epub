@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
@@ -67,8 +68,18 @@ def test_todays_runtime_dependencies_pass() -> None:
         assert canonicalize_name(Requirement(dependency).name) in listed
 
 
-def test_the_pr_workflow_runs_the_licence_check() -> None:
-    assert "uv run python scripts/licence_check.py" in PR_WORKFLOW.read_text(encoding="utf-8")
+def test_the_pr_workflow_runs_the_licence_check_wherever_the_tests_run() -> None:
+    # Requirement markers can differ by platform and Python, so the check must cover every
+    # combination the test matrix covers.
+    jobs = yaml.safe_load(PR_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    checks = [
+        job
+        for job in jobs.values()
+        if any(step.get("run") == "uv run python scripts/licence_check.py" for step in job["steps"])
+    ]
+    assert len(checks) == 1
+    assert checks[0]["strategy"]["matrix"] == jobs["test"]["strategy"]["matrix"]
+    assert checks[0]["runs-on"] == "${{ matrix.os }}"
 
 
 @pytest.mark.parametrize(
@@ -81,6 +92,7 @@ def test_the_pr_workflow_runs_the_licence_check() -> None:
         ({"expression": "MIT-CMU"}, True),
         ({"licence": "PSF-2.0"}, True),
         ({"classifiers": ["License :: OSI Approved :: BSD License"]}, True),
+        ({"classifiers": ["License :: OSI Approved :: Python License"]}, True),
         # PyMuPDF's licence: the case the check exists for.
         ({"expression": "AGPL-3.0-only"}, False),
         ({"expression": "MIT AND GPL-2.0-or-later"}, False),
