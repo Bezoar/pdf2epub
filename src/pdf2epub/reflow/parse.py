@@ -17,7 +17,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
 from types import TracebackType
-from typing import BinaryIO
+from typing import BinaryIO, ClassVar
 
 from pdfminer.ascii85 import ascii85decode, asciihexdecode
 from pdfminer.ccitt import ccittfaxdecode
@@ -25,7 +25,12 @@ from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTChar, LTContainer, LTImage, LTItem, LTPage
 from pdfminer.lzw import LZWDecoder
 from pdfminer.pdfcolor import PDFColorSpace
-from pdfminer.pdfdocument import PDFDocument, PDFXRefFallback
+from pdfminer.pdfdocument import (
+    PDFDocument,
+    PDFStandardSecurityHandler,
+    PDFStandardSecurityHandlerV5,
+    PDFXRefFallback,
+)
 from pdfminer.pdffont import PDFFont
 from pdfminer.pdfinterp import PDFGraphicState, PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
@@ -68,7 +73,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
     def __init__(self, path: Path, password: Secret | None = None) -> None:
         self._file: BinaryIO = path.open("rb")
         try:
-            self._document = PDFDocument(
+            self._document = _Document(
                 PDFParser(self._file), password=password.reveal() if password is not None else ""
             )
         except PSException as error:
@@ -129,6 +134,36 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         traceback: TracebackType | None,
     ) -> None:
         self._file.close()
+
+
+class _SecurityHandlerV5(PDFStandardSecurityHandlerV5):
+    """The AES-256 (R5, R6) Standard security handler, reading only the first 48 bytes of
+    ``/O`` and ``/U``, the length ISO 32000-2 gives them. Some writers pad both to 127
+    bytes (qpdf's test files among them); pdfminer.six hashed the whole ``/U`` into the
+    owner-password check, so it refused the right owner password (#87)."""
+
+    def init_params(self) -> None:
+        super().init_params()
+        # Recompute every part the base class cut from the untruncated strings: R5 hashes
+        # the whole key salt, so the padding must not reach it.
+        self.o, self.u = self.o[:48], self.u[:48]
+        self.o_hash, self.o_validation_salt, self.o_key_salt = (
+            self.o[:32],
+            self.o[32:40],
+            self.o[40:],
+        )
+        self.u_hash, self.u_validation_salt, self.u_key_salt = (
+            self.u[:32],
+            self.u[32:40],
+            self.u[40:],
+        )
+
+
+class _Document(PDFDocument):
+    security_handler_registry: ClassVar[dict[int, type[PDFStandardSecurityHandler]]] = {
+        **PDFDocument.security_handler_registry,
+        5: _SecurityHandlerV5,
+    }
 
 
 # Font flags (PDF 32000-1 9.8.2) and font-name style suffixes (RFL-R22).
