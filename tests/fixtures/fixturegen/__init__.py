@@ -50,6 +50,7 @@ def registry() -> list[Fixture]:
         scans,
         structure,
         textlayers,
+        trusted,
         twopage,
         typography,
         verse,
@@ -167,6 +168,8 @@ def registry() -> list[Fixture]:
         Fixture(
             textlayers.NO_TOUNICODE, textlayers.NO_TOUNICODE_TRUTH, textlayers.build_no_tounicode
         ),
+        # A must-trust page that reproduces a real-world rejection (#89).
+        Fixture(trusted.TYPE3_NAMES, trusted.TYPE3_NAMES_TRUTH, trusted.build_type3_names),
     ]
 
 
