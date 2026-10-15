@@ -22,6 +22,12 @@ normally. Each rule is a dict:
 - ``{"action": "record", "path": PATH}``: the process's argv and environment are written
   to ``PATH`` as JSON (``{"argv": [...], "env": {...}}``), then the conversion goes on
   normally.
+
+A separate hook captures the options the CLI hands the core (CLI-AC3): with
+``PDF2EPUB_TEST_CAPTURE`` set to a file path (see ``capture_environment``), the CLI
+process pickles the options objects it passes to ``plan_batch`` and ``run_batch`` to that
+file, as ``{"discovery": ..., "batch": ..., "conversion": ...}``, and exits with code 0
+instead of running the batch.
 """
 
 import json
@@ -34,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 VARIABLE = "PDF2EPUB_TEST_HOOKS"
+CAPTURE_VARIABLE = "PDF2EPUB_TEST_CAPTURE"
 HERE = Path(__file__).resolve().parent
 
 Rules = Mapping[str, Mapping[str, Any]]
@@ -45,6 +52,15 @@ def environment(rules: Rules, base: Mapping[str, str] | None = None) -> dict[str
     env = dict(os.environ if base is None else base)
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(HERE), env.get("PYTHONPATH")]))
     env[VARIABLE] = json.dumps(rules)
+    return env
+
+
+def capture_environment(path: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """A copy of ``base`` (default ``os.environ``) under which the CLI writes the options
+    it passes to the core to ``path`` and stops before running the batch."""
+    env = environment({}, base)
+    del env[VARIABLE]
+    env[CAPTURE_VARIABLE] = str(path)
     return env
 
 
@@ -62,6 +78,9 @@ def wrap(open_source: Callable[..., Any], rules: Rules) -> Callable[..., Any]:
 
 def install_from_environment() -> None:
     """Apply the rules in ``PDF2EPUB_TEST_HOOKS``, if set, to this process's conversions."""
+    capture = os.environ.get(CAPTURE_VARIABLE)
+    if capture:
+        _install_capture(Path(capture))
     text = os.environ.get(VARIABLE)
     if not text:
         return
@@ -70,6 +89,30 @@ def install_from_environment() -> None:
 
     # pdf2epub.conversion looks open_source up each time it converts a PDF.
     setattr(conversion, "open_source", wrap(open_source, json.loads(text)))  # noqa: B010
+
+
+def _install_capture(path: Path) -> None:
+    """Make the CLI record the options objects it passes to the core, then stop."""
+    import pickle
+
+    from pdf2epub import cli
+
+    captured: dict[str, Any] = {}
+    real_plan_batch = getattr(cli, "plan_batch")  # noqa: B009 - imported, not exported
+
+    def plan_batch(inputs: Any, options: Any) -> Any:
+        captured["discovery"] = options
+        return real_plan_batch(inputs, options)
+
+    def run_batch(plan: Any, options: Any, conversion_options: Any, *args: Any, **kw: Any) -> Any:
+        captured["batch"] = options
+        captured["conversion"] = conversion_options
+        path.write_bytes(pickle.dumps(captured))
+        raise SystemExit(0)
+
+    # pdf2epub.cli looks both names up each time it runs.
+    setattr(cli, "plan_batch", plan_batch)  # noqa: B010
+    setattr(cli, "run_batch", run_batch)  # noqa: B010
 
 
 def _apply(rule: Mapping[str, Any]) -> None:

@@ -10,6 +10,7 @@ object per line; the human report, warnings and logging go to stderr (CLI-R2).
 
 import argparse
 import logging
+import math
 import os
 import signal
 import sys
@@ -93,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         type=positive_integer,
         default=argparse.SUPPRESS,
-        help="stop a conversion that runs longer than this (default: 1800)",
+        help=f"stop a conversion that runs longer than this (default: {BatchOptions().timeout})",
     )
     parser.add_argument(
         "--strict",
@@ -101,7 +102,91 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="exit with code 1 when any conversion has a warning (EPUBs are still written)",
     )
+    content = parser.add_argument_group("content and metadata")
+    content.add_argument(
+        "--mode",
+        choices=["auto", "reflow"],
+        default=argparse.SUPPRESS,
+        help="reflow: keep complex pages (tables, figures, maths) as text instead of page "
+        f"images; multi-column and OCR fallbacks still apply (default: "
+        f"{ConversionOptions().mode})",
+    )
+    content.add_argument(
+        "--title",
+        metavar="TEXT",
+        default=argparse.SUPPRESS,
+        help="the book's title (default: from the PDF's metadata or file name)",
+    )
+    content.add_argument(
+        "--author",
+        metavar="TEXT",
+        dest="authors",
+        action="append",
+        default=argparse.SUPPRESS,
+        help="an author of the book (repeatable, in order; default: from the PDF)",
+    )
+    content.add_argument(
+        "--language",
+        metavar="TAG",
+        default=argparse.SUPPRESS,
+        help="the book's language as a BCP 47 tag, e.g. en or de (default: from the PDF)",
+    )
+    content.add_argument(
+        "--cover",
+        metavar="PATH|none",
+        type=cover,
+        default=argparse.SUPPRESS,
+        help="an image file to use as the cover, or none for no cover (default: a render "
+        "of the first page)",
+    )
     ocr = parser.add_argument_group("OCR")
+    ocr.add_argument(
+        "--ocr",
+        dest="ocr_mode",
+        choices=["auto", "always", "never"],
+        default=argparse.SUPPRESS,
+        help=f"when to OCR pages (default: {OcrOptions().mode})",
+    )
+    ocr.add_argument(
+        "--ocr-lang",
+        metavar="LANGS",
+        dest="languages",
+        default=argparse.SUPPRESS,
+        help="the Tesseract languages, e.g. eng or fra+eng (default: from the book's "
+        "language, else eng)",
+    )
+    ocr.add_argument(
+        "--ocr-quality",
+        dest="quality",
+        choices=["fast", "balanced", "best"],
+        default=argparse.SUPPRESS,
+        help=f"how hard to try on difficult pages (default: {OcrOptions().quality})",
+    )
+    ocr.add_argument(
+        "--ocr-page-timeout",
+        metavar="SECONDS",
+        dest="page_timeout",
+        type=positive_integer,
+        default=argparse.SUPPRESS,
+        help=f"give up OCR on a page after this long (default: {OcrOptions().page_timeout})",
+    )
+    ocr.add_argument(
+        "--ocr-min-confidence",
+        metavar="NUMBER",
+        dest="min_confidence",
+        type=confidence,
+        default=argparse.SUPPRESS,
+        help="the lowest page confidence, from 0 to 1, at which OCR text is accepted "
+        "(default: built in)",
+    )
+    ocr.add_argument(
+        "--tessdata-dir",
+        metavar="PATH",
+        dest="tessdata_dir",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="the folder of Tesseract language data (default: Tesseract's own)",
+    )
     ocr.add_argument(
         "--tesseract",
         metavar="PATH",
@@ -190,6 +275,22 @@ def positive_integer(text: str) -> int:
     return value
 
 
+def confidence(text: str) -> float:
+    """An argparse type: a number from 0 to 1 (CLI-R7)."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not 0 <= value <= 1:  # NaN fails too
+        raise argparse.ArgumentTypeError(f"must be a number from 0 to 1, not {text!r}")
+    return value
+
+
+def cover(text: str) -> Path | None:
+    """An argparse type: ``none`` (no cover) or the path of an image file (CLI §2.3)."""
+    return None if text == "none" else Path(text)
+
+
 def engine_option(text: str) -> tuple[str, str]:
     """An argparse type: ``tesseract.KEY=VALUE`` as ``(KEY, VALUE)``; the engine prefix
     is required (CLI §2.5)."""
@@ -216,14 +317,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         name: getattr(args, name) for name in ("overwrite", "timeout", "strict") if name in args
     }
 
-    ocr_fields: dict[str, Any] = {}
+    ocr_fields: dict[str, Any] = {
+        name: getattr(args, name)
+        for name in ("languages", "quality", "page_timeout", "min_confidence", "tessdata_dir")
+        if name in args
+    }
+    if "ocr_mode" in args:
+        ocr_fields["mode"] = args.ocr_mode
     # CLI-R5: the flag wins over the variable; with neither, the core searches PATH.
     tesseract = getattr(args, "tesseract", None) or os.environ.get(TESSERACT_ENV) or None
     if tesseract is not None:
         ocr_fields["tesseract_path"] = Path(tesseract)
     if "ocr_engine_opt" in args:
         ocr_fields["engine_options"] = dict(args.ocr_engine_opt)
-    conversion = ConversionOptions(ocr=OcrOptions(**ocr_fields))
+    conversion_fields: dict[str, Any] = {
+        name: getattr(args, name)
+        for name in ("mode", "title", "authors", "language", "cover")
+        if name in args
+    }
+    conversion = ConversionOptions(**conversion_fields, ocr=OcrOptions(**ocr_fields))
 
     discovery_fields: dict[str, Any] = {
         name: getattr(args, name) for name in ("recursive", "output") if name in args
