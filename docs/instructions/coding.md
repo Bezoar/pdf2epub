@@ -26,6 +26,7 @@ These rules apply to every change in this repository. They are instructions, not
 | Run one test (`-n 0`: in one process, without starting workers) | `uv run pytest -n 0 tests/api/test_passwords.py::test_wrong_password` |
 | Tests with branch coverage | `uv run coverage run -m pytest && uv run coverage report` |
 | Run the CLI from the checkout | `uv run pdf2epub --help` |
+| Check runtime dependency licences ([§9](#9-dependencies)) | `uv run python scripts/licence_check.py` |
 | Fetch the real-world smoke set | `uv run python scripts/smoke.py fetch` |
 | Fetch, convert and check the smoke set (hours: the scans are OCR'd; `--only S4,S15` picks entries, pdf2epub options go after `--`) | `uv run python scripts/smoke.py run` |
 
@@ -114,4 +115,7 @@ The specs are normative; tickets and PRs are not.
 3. **Dev-only** dependencies follow the same list, except that LGPL is allowed, because dev dependencies are never distributed.
 4. Name every new runtime dependency, with its licence, in the PR body.
 5. Add dependencies with `uv add` (or `uv add --dev`), so `pyproject.toml` and `uv.lock` change together.
-6. There is no automated licence checker in v1. Check the licence on the package's PyPI page and in its repository.
+6. Check the licence on the package's PyPI page and in its repository, then run `uv run python scripts/licence_check.py`. The **Dependency licences** CI job runs the same script on every PR. It walks every runtime dependency, direct or transitive (never the dev group), lists each one's declared licence and fails on any licence outside the allowlist:
+   - SPDX identifiers `MIT`, `MIT-0`, `MIT-CMU`, `HPND`, `0BSD`, `BSD-2-Clause`, `BSD-3-Clause`, `Apache-2.0`, `ISC`, `PSF-2.0`, `Python-2.0` and `MPL-2.0`. An SPDX expression passes when it can be satisfied with these alone: every part of an `AND`, at least one side of an `OR`.
+   - For a package with no SPDX expression, the matching `License :: OSI Approved :: …` trove classifiers.
+7. A package that passes neither way (its licence is unknown or unclear, it has no valid SPDX expression and no allowlisted classifier, or its SPDX expression also needs a permissive licence that is not on the list, such as NumPy's `Zlib`) needs an **exception**: an entry in `EXCEPTIONS` in `scripts/licence_check.py` giving the exact licence text the package declares and a comment saying what the package and anything it bundles are licensed under, and why that is MIT-compatible. An exception covers only that text, so a release that declares a different licence fails the check again. Adding or changing an exception follows rules 1 and 2: name it in the PR body, and escalate anything outside the list in rule 1.
