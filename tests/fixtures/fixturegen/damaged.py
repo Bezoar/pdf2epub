@@ -40,6 +40,13 @@ And two kinds of unreadable page among readable ones (#98, RFL-AC30):
 - ``untyped-page.pdf``: two pages, the second without ``/Type /Page``: pdfium takes it
   for a page, pdfminer doesn't, even after repair.
 
+And a page pdfminer can't parse among readable ones (#103, RFL-AC30):
+
+- ``unparseable-page.pdf``: the same three pages, the second drawing its text and then a
+  chain of nested form XObjects, each drawing the next, too deep for pdfminer to lay out
+  (it recurses once per level); pdfium stops at its own nesting limit and renders the
+  page.
+
 Their text, where they have any, is the novel's or a single word, so none has ground
 truth of its own.
 """
@@ -64,8 +71,12 @@ OBJSTM_ROOT_LOOP = "damaged/objstm-root-loop.pdf"
 UNLOADABLE_PAGE = "damaged/unloadable-page.pdf"
 UNTYPED_PAGE = "damaged/untyped-page.pdf"
 UNLOADABLE_FIRST_PAGE = "damaged/unloadable-first-page.pdf"
+UNPARSEABLE_PAGE = "damaged/unparseable-page.pdf"
 
 SEED = 2902
+FORM_CHAIN = 1000
+"""The nested form XObjects on the unparseable page: four times the depth that first
+exhausts pdfminer's recursion (about 250 under Python's default limit of 1000 frames)."""
 BOMB_SIDE = 40000
 STREAM_BOMB_BYTES = 1 << 30
 
@@ -252,9 +263,32 @@ def build_unloadable_first_page(out_dir: Path) -> None:
     _write(out_dir, UNLOADABLE_FIRST_PAGE, _point_at_next(_three_pages(), 3))
 
 
+def build_unparseable_page(out_dir: Path) -> None:
+    objects = _three_page_objects()
+    objects[4] = (
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 432 648] /Contents 6 0 R "
+        b"/Resources << /Font << /F1 9 0 R >> /XObject << /X 10 0 R >> >> >>"
+    )
+    objects[5] = rawpdf.stream(b"", b"BT /F1 18 Tf 72 560 Td (The unparsed page.) Tj ET /X Do")
+    for level in range(FORM_CHAIN):  # objects 10 onwards, each drawing the next
+        last = level == FORM_CHAIN - 1
+        resources = b"<< >>" if last else b"<< /XObject << /X %d 0 R >> >>" % (11 + level)
+        objects.append(
+            rawpdf.stream(
+                b"/Type /XObject /Subtype /Form /BBox [0 0 432 648] /Resources " + resources,
+                b"" if last else b"/X Do",
+            )
+        )
+    _write(out_dir, UNPARSEABLE_PAGE, rawpdf.document(objects))
+
+
 def _three_pages() -> bytes:
     """Three pages, each object followed by its content stream (objects 3-8)."""
-    objects = [
+    return rawpdf.document(_three_page_objects())
+
+
+def _three_page_objects() -> list[bytes]:
+    return [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>",
         _one_page(2, 4, 9),
@@ -265,7 +299,6 @@ def _three_pages() -> bytes:
         _words(b"The last page."),
         _FONT,
     ]
-    return rawpdf.document(objects)
 
 
 def build_untyped_page(out_dir: Path) -> None:

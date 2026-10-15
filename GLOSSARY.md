@@ -49,7 +49,7 @@ Embedding a page as a picture of itself, with its text kept searchable, because 
 _Avoid_: rasterising, image mode
 
 **Unreadable page**:
-A page of a damaged PDF that one parser can't load or doesn't have. It keeps its place in the book with a visible notice and whatever could be recovered of it.
+A page of a damaged PDF that one parser can't load or parse, or doesn't have. It keeps its place in the book with a visible notice and whatever could be recovered of it.
 _Avoid_: missing page, lost page
 
 **Furniture**:

@@ -175,8 +175,9 @@ def normalise(text: str) -> str:
 
 
 def read_pages(pdf: ParsedPdf) -> Iterator[PageText]:
-    """Yield each page's text lines, one page at a time."""
-    for number, layout in enumerate(pdf.layouts(LAParams()), start=1):
+    """Yield each page's text lines, one page at a time, skipping the pages ``pdf`` can't
+    parse (``ParsedPdf.unparseable``)."""
+    for number, layout in pdf.layouts(LAParams()):
         items = [
             item
             for element in layout
