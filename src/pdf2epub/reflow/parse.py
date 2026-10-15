@@ -86,6 +86,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         self._file: BinaryIO = path.open("rb")
         self.page_count: int | None = None
         """The pages read here, when ``page_count`` was given; else None."""
+        self._unparseable: set[int] = set()
         try:
             self._document = self._open(password, rebuild=False)
             if page_count is None:
@@ -150,9 +151,10 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         except (PSException, RecursionError) as error:
             raise CorruptPdf(f"The PDF's page tree can't be read: {error}") from error
 
-    def layouts(self, laparams: LAParams) -> Iterator[LTPage]:
-        """Each page's layout, in order. Raises ``ResourceLimitExceeded`` naming the page
-        where a limit is hit, and ``CorruptPdf`` if a page can't be parsed."""
+    def layouts(self, laparams: LAParams) -> Iterator[tuple[int, LTPage]]:
+        """Each page's 1-based index and layout, in order. A page that can't be parsed
+        is skipped and added to ``unparseable`` (RFL-R37); the pages after it are still
+        read. Raises ``ResourceLimitExceeded`` naming the page where a limit is hit."""
         manager = PDFResourceManager(caching=True)
         device = _StyledAggregator(manager, laparams=laparams)
         interpreter = _GuardedInterpreter(manager, device)
@@ -163,10 +165,21 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
                 _check_images(layout)
             except ResourceLimitExceeded as error:
                 raise error.on_page(number) from None
-            # pdfminer catches zlib.error today; RecursionError: damage that loops (RFL-R37)
+            # pdfminer catches zlib.error today; RecursionError: damage that loops or
+            # nests too deep (RFL-R37)
             except (PSException, RecursionError, zlib.error) as error:
-                raise CorruptPdf(f"Page {number} can't be parsed: {error}") from error
-            yield layout
+                log.debug("page %d can't be parsed: %s", number, error)
+                self._unparseable.add(number)
+                # A page given up part-way may leave the device mid-page: start afresh.
+                device = _StyledAggregator(manager, laparams=laparams)
+                interpreter = _GuardedInterpreter(manager, device)
+                continue
+            yield number, layout
+
+    @property
+    def unparseable(self) -> frozenset[int]:
+        """The 1-based pages ``layouts`` has found it can't parse so far (RFL-R37)."""
+        return frozenset(self._unparseable)
 
     def __exit__(
         self,

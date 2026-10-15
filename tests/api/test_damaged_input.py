@@ -342,7 +342,13 @@ def book_pages(epub: Path) -> list[str]:
 def test_unreadable_pages_are_disclosed_in_the_book(
     tmp_path: Path, sink: RecordingSink, isolation: str
 ) -> None:
-    names = ["unloadable-page", "untyped-page", "unmatched-pages", "unloadable-first-page"]
+    names = [
+        "unloadable-page",
+        "untyped-page",
+        "unmatched-pages",
+        "unloadable-first-page",
+        "unparseable-page",
+    ]
     inputs = []
     for name in names:
         shutil.copyfile(DAMAGED / f"{name}.pdf", tmp_path / f"{name}.pdf")
@@ -387,6 +393,24 @@ def test_unreadable_pages_are_disclosed_in_the_book(
     notice = markup.index(NOTICE.format(2))
     image = markup.index('alt="Page 2"')
     assert markup.index("The typed page.") < notice < image < markup.index("The untyped page.")
+
+    # pdfminer can't parse page 2 (too deep to lay out); pdfium renders it as a page image
+    # after the notice, and page 3 is read as usual (#103).
+    assert results["unparseable-page"]["pages"] == 3
+    fallbacks = [i for i in results["unparseable-page"]["issues"] if i["code"] == "page_fallback"]
+    assert [(i["reason"], i["pages"]) for i in fallbacks] == [("unreadable", [2])]
+    book = tmp_path / "unparseable-page.epub"
+    assert book_pages(book) == ["1", "2", "3"]
+    with zipfile.ZipFile(book) as epub:
+        markup = "".join(
+            epub.read(name).decode() for name in epub.namelist() if name.endswith(".xhtml")
+        )
+    notice = markup.index(NOTICE.format(2))
+    image = markup.index('alt="Page 2"')
+    hidden = markup.index("The unparsed page.")
+    assert (
+        markup.index("The first page.") < notice < image < hidden < markup.index("The last page.")
+    )
 
     # Only pdfminer has page 2 (the page tree read wrongly): its text follows the notice.
     assert results["unmatched-pages"]["pages"] == 2

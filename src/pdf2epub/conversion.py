@@ -147,17 +147,24 @@ def convert(
 
             pages: list[PageText] = []
             recovered: dict[int, PageText] = {}
+            analysed = 0
             for page in read_pages(pdf):
+                # API-R21: one event per page of the book, in page order, the pages
+                # pdfminer can't parse (skipped by read_pages) too.
+                for number in range(analysed + 1, page.page):
+                    progress("analyse", number, page_count, page=number)
                 if page.page in unreadable_numbers:
                     recovered[page.page] = page
                 else:
                     pages.append(page)
                 progress("analyse", page.page, page_count, page=page.page)
-            # API-R21: one event per page of the book, the pages only pdfium has too.
-            for number in range(found + 1, page_count + 1):
+                analysed = page.page
+            # ... and the pages after the last one read, only pdfium has some of them.
+            for number in range(analysed + 1, page_count + 1):
                 progress("analyse", number, page_count, page=number)
+            unparseable = pdf.unparseable
 
-        unreadable = unreadable_pages(source, found, recovered, access.password)
+        unreadable = unreadable_pages(source, found, recovered, access.password, unparseable)
         source = with_page_count(source, page_count)
         images = read_images(source_path, access.password, skip=unreadable.keys())
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
