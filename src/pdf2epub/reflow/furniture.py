@@ -1,11 +1,13 @@
 """Furniture removal (RFL-R16): running headers, running footers and page numbers.
 
 The top and bottom bands of the pages are compared across the document. The candidates
-on each page are the single-line blocks nearest its top and bottom edges, in body size or
-smaller. Candidates are clustered by their distance from the edge; a cluster that appears
-on enough pages is furniture when most of its blocks either repeat (with any number
-masked) on several pages, or look like a page number. Every candidate in such a cluster
-is removed, so a running header that changes with the chapter goes too.
+on each page are the single-line blocks, in body size or smaller, in the rows nearest its
+top and bottom edges; a row is every block set on one line, so a header set as author,
+page number and title is one row whichever of its parts repeat. Candidates are clustered
+by their distance from the edge; a cluster that appears on enough pages is furniture when
+most of its blocks either repeat (with any number masked) on several pages, or look like
+a page number. Every candidate in such a cluster is removed, so a running header that
+changes with the chapter goes too.
 
 Page numbers found this way are kept, by page, for page sequence gaps (RFL-R29).
 """
@@ -19,7 +21,8 @@ from pdf2epub.reflow.layout import TextBlock, Typography
 
 # Share of the page height, from each edge, in which furniture can sit.
 _BAND = 0.15
-# At most this many candidates per edge of a page (e.g. a header and a page number).
+# At most this many rows of candidates per edge of a page (e.g. a header and a page number
+# below it). A row is every block set side by side on one line, such as "Author  12  Title".
 _PER_EDGE = 2
 # A cluster must appear on at least this many pages (fewer in a book that short, but never
 # one), and on this share of the pages.
@@ -82,16 +85,33 @@ def _candidates(page: PageBlocks, typography: Typography) -> list[_Candidate]:
     found: dict[int, _Candidate] = {}
     indexed = list(enumerate(page.blocks))
     for edge, order in (("top", indexed), ("bottom", indexed[::-1])):
-        for index, block in order[:_PER_EDGE]:
-            distance = block.top if edge == "top" else page.height - block.bottom
-            if (
+        for row in _rows(order)[:_PER_EDGE]:
+            distances = [
+                block.top if edge == "top" else page.height - block.bottom for _, block in row
+            ]
+            if any(
                 len(block.lines) != 1
                 or distance > _BAND * page.height
                 or typography.is_display(block.size)
+                for (_, block), distance in zip(row, distances, strict=True)
             ):
                 break
-            found.setdefault(index, _Candidate(page.page, index, edge, distance, block.text))
+            for (index, block), distance in zip(row, distances, strict=True):
+                found.setdefault(index, _Candidate(page.page, index, edge, distance, block.text))
     return list(found.values())
+
+
+def _rows(blocks: list[tuple[int, TextBlock]]) -> list[list[tuple[int, TextBlock]]]:
+    """Consecutive blocks grouped into rows: a block that overlaps the previous one
+    vertically sits beside it (like a header's author, page number and title)."""
+    rows: list[list[tuple[int, TextBlock]]] = []
+    for item in blocks:
+        _, block = item
+        if rows and block.top < rows[-1][-1][1].bottom and rows[-1][-1][1].top < block.bottom:
+            rows[-1].append(item)
+        else:
+            rows.append([item])
+    return rows
 
 
 def _clusters(candidates: list[_Candidate]) -> list[list[_Candidate]]:
