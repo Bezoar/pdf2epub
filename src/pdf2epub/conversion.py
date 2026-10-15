@@ -131,7 +131,7 @@ def convert(
         source = open_source(source_path, access.password)
         page_count = source.page_count
         log.debug("conversion %d: %d pages", planned.id, page_count)
-        with ParsedPdf(source_path, access.password) as pdf:
+        with ParsedPdf(source_path, access.password, page_count) as pdf:
             repaired = pdf.repaired
             source = replace(source, xmp=pdf.xmp())
             progress("open", 1, 1)
