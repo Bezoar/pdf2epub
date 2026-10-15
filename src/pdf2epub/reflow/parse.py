@@ -26,15 +26,19 @@ from pdfminer.layout import LAParams, LTChar, LTContainer, LTImage, LTItem, LTPa
 from pdfminer.lzw import LZWDecoder
 from pdfminer.pdfcolor import PDFColorSpace
 from pdfminer.pdfdocument import (
+    PDFBaseXRef,
     PDFDocument,
+    PDFNoValidXRef,
     PDFStandardSecurityHandler,
     PDFStandardSecurityHandlerV5,
+    PDFXRef,
     PDFXRefFallback,
+    PDFXRefStream,
 )
 from pdfminer.pdffont import PDFFont
 from pdfminer.pdfinterp import PDFGraphicState, PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfparser import PDFParser, PDFSyntaxError
 from pdfminer.pdftypes import (
     LITERALS_ASCII85_DECODE,
     LITERALS_ASCIIHEX_DECODE,
@@ -46,9 +50,10 @@ from pdfminer.pdftypes import (
     LITERALS_LZW_DECODE,
     LITERALS_RUNLENGTH_DECODE,
     PDFStream,
+    int_value,
     resolve1,
 )
-from pdfminer.psexceptions import PSException
+from pdfminer.psexceptions import PSEOF, PSException
 from pdfminer.runlength import rldecode
 from pdfminer.utils import Matrix
 
@@ -70,18 +75,44 @@ log = logging.getLogger(__name__)
 class ParsedPdf(AbstractContextManager["ParsedPdf"]):
     """An open PDF, ready to be laid out page by page."""
 
-    def __init__(self, path: Path, password: Secret | None = None) -> None:
+    def __init__(
+        self, path: Path, password: Secret | None = None, page_count: int | None = None
+    ) -> None:
+        """Open ``path``. With ``page_count``, the number of pages pdfium found, a page
+        tree that reads differently here is damage: the cross-reference table is rebuilt
+        by scanning the file, and if the two still disagree the PDF is corrupt."""
         self._file: BinaryIO = path.open("rb")
         try:
-            self._document = _Document(
-                PDFParser(self._file), password=password.reveal() if password is not None else ""
-            )
-        except PSException as error:
-            self._file.close()
-            raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
+            self._document = self._open(password, rebuild=False)
+            if page_count is not None and not self._has_pages(page_count):
+                if not self.repaired:
+                    self._document = self._open(password, rebuild=True)
+                found = sum(1 for _ in self.pages())
+                if found != page_count:
+                    raise CorruptPdf(
+                        f"The PDF's page tree can't be read, even with repair: {found} pages "
+                        f"found where the renderer finds {page_count}"
+                    )
         except BaseException:
             self._file.close()
             raise
+
+    def _open(self, password: Secret | None, rebuild: bool) -> "_Document":
+        try:
+            return _Document(
+                PDFParser(self._file),
+                password=password.reveal() if password is not None else "",
+                rebuild=rebuild,
+            )
+        except (PSException, RecursionError) as error:
+            raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
+
+    def _has_pages(self, count: int) -> bool:
+        """True when the page tree reads as ``count`` pages."""
+        try:
+            return sum(1 for _ in self.pages()) == count
+        except CorruptPdf:
+            return False
 
     @property
     def repaired(self) -> bool:
@@ -107,7 +138,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
     def pages(self) -> Iterator[PDFPage]:
         try:
             yield from PDFPage.create_pages(self._document)
-        except PSException as error:
+        except (PSException, RecursionError) as error:
             raise CorruptPdf(f"The PDF's page tree can't be read: {error}") from error
 
     def layouts(self, laparams: LAParams) -> Iterator[LTPage]:
@@ -123,7 +154,8 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
                 _check_images(layout)
             except ResourceLimitExceeded as error:
                 raise error.on_page(number) from None
-            except (PSException, zlib.error) as error:  # pdfminer catches zlib.error today
+            # pdfminer catches zlib.error today; RecursionError: damage that loops (RFL-R37)
+            except (PSException, RecursionError, zlib.error) as error:
                 raise CorruptPdf(f"Page {number} can't be parsed: {error}") from error
             yield layout
 
@@ -160,10 +192,75 @@ class _SecurityHandlerV5(PDFStandardSecurityHandlerV5):
 
 
 class _Document(PDFDocument):
+    """pdfminer's document, guarded against damage that would otherwise recurse without
+    end (#94): a chain of cross-reference sections that loops back on itself is rebuilt
+    by scanning the file (RFL-R3), and an object stored inside itself is not found.
+    ``rebuild`` skips the cross-reference table and rebuilds it straight away."""
+
     security_handler_registry: ClassVar[dict[int, type[PDFStandardSecurityHandler]]] = {
         **PDFDocument.security_handler_registry,
         5: _SecurityHandlerV5,
     }
+
+    def __init__(self, parser: PDFParser, password: str = "", rebuild: bool = False) -> None:
+        self._rebuild = rebuild
+        self._resolving: set[int] = set()
+        """The objects being read, each inside the one before (an object stream holds
+        its objects): one asked for again while it is still being read is a loop."""
+        super().__init__(parser, password=password)
+
+    def read_xref_from(self, parser: PDFParser, start: int, xrefs: list[PDFBaseXRef]) -> None:
+        """Read the section at ``start`` and every section it leads to, in pdfminer's
+        order (a section's ``/XRefStm`` before its ``/Prev``), with a loop instead of
+        recursion, so no chain of incremental updates can exhaust the stack. A section
+        reached twice is damage: ``PDFNoValidXRef`` makes pdfminer rebuild the table."""
+        if self._rebuild:
+            raise PDFNoValidXRef("the cross-reference table is rebuilt by scanning the file")
+        pending, seen = [start], set()
+        while pending:
+            position = pending.pop()
+            if position in seen:
+                raise PDFNoValidXRef(f"the cross-reference sections loop back to {position}")
+            seen.add(position)
+            trailer = _read_xref_section(parser, position, xrefs)
+            # Last in, first out: /XRefStm (and all it leads to) is read before /Prev.
+            for key in ("Prev", "XRefStm"):
+                if key in trailer:
+                    pending.append(int_value(trailer[key]))
+
+    def getobj(self, objid: int) -> object:
+        if objid in self._resolving:
+            raise PDFSyntaxError(f"object {objid} is stored inside itself")
+        self._resolving.add(objid)
+        try:
+            return super().getobj(objid)
+        finally:
+            self._resolving.discard(objid)
+
+
+def _read_xref_section(
+    parser: PDFParser, start: int, xrefs: list[PDFBaseXRef]
+) -> dict[str, object]:
+    """Read the one cross-reference section (table or stream) at ``start`` into
+    ``xrefs``, as ``PDFDocument.read_xref_from`` does, and return its trailer."""
+    parser.seek(start)
+    parser.reset()
+    try:
+        position, token = parser.nexttoken()
+    except PSEOF as error:
+        raise PDFNoValidXRef("Unexpected EOF") from error
+    xref: PDFBaseXRef
+    if isinstance(token, int):  # a cross-reference stream (PDF 1.5)
+        parser.seek(position)
+        parser.reset()
+        xref = PDFXRefStream()
+    else:
+        if token is parser.KEYWORD_XREF:
+            parser.nextline()
+        xref = PDFXRef()
+    xref.load(parser)
+    xrefs.append(xref)
+    return xref.get_trailer()
 
 
 # Font flags (PDF 32000-1 9.8.2) and font-name style suffixes (RFL-R22).
