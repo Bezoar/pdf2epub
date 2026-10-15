@@ -164,12 +164,17 @@ def test_text_missed_over_the_allowance_makes_coverage_the_share() -> None:
     assert recognition.reason == "ocr_low_confidence"
 
 
-def dark_plate_page() -> Image.Image:
+def dark_plate_page(halftone: bool = False) -> Image.Image:
     """Dark print beside a dark picture: a black 1700 x 1600 px plate, more than half the
-    page, above 14 lines of ``page()``'s glyph blocks."""
+    page, above 14 lines of ``page()``'s glyph blocks. A ``halftone`` plate has a grid of
+    40 x 40 px white patches, every 90 px, as a halftone scan breaks up."""
     image = Image.new("L", (1800, 2700), 255)
     draw = ImageDraw.Draw(image)
     draw.rectangle((50, 100, 1749, 1699), fill=0)
+    if halftone:
+        for top in range(140, 1640, 90):
+            for left in range(90, 1690, 90):
+                draw.rectangle((left, top, left + 39, top + 39), fill=255)
     for line in range(14):
         top = 1800 + line * LINE_STEP
         for glyph in range(GLYPHS):
@@ -178,9 +183,11 @@ def dark_plate_page() -> Image.Image:
     return image
 
 
-def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print() -> None:
+@pytest.mark.parametrize("halftone", [False, True], ids=["solid", "halftone"])
+def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print(halftone: bool) -> None:
     # Words for the first 7 of the 14 lines: 105 units of the print missed, so coverage is
-    # the share, 1/2. Read inverted, the page would have no text-like ink to miss.
+    # the share, 1/2. Read inverted, the page would have no text-like ink to miss (solid
+    # plate), or only the halftone's white patches (halftone plate).
     assert 7 * UNITS_PER_LINE >= 80
 
     def half(call: int, request: OcrRequest) -> OcrPageResult:
@@ -191,10 +198,21 @@ def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print() -> None:
             words.append(Word("word", 0, top, request.image.size[0], bottom, 0.95, 95))
         return OcrPageResult(lines=tuple(OcrLine((w,), w.bottom - w.top) for w in words))
 
-    recognition = run(FakeEngine(half), dark_plate_page(), quality="fast")
+    recognition = run(FakeEngine(half), dark_plate_page(halftone), quality="fast")
 
     assert recognition.result.coverage == pytest.approx(0.5, abs=0.001)
     assert recognition.reason == "ocr_low_confidence"
+
+
+def test_a_picture_only_page_read_as_no_words_has_full_coverage() -> None:
+    # A plate and no text: with no words there are no boxes to measure text height by,
+    # but the plate is still no text, so nothing is missed.
+    image = Image.new("L", (1800, 2700), 255)
+    ImageDraw.Draw(image).rectangle((300, 600, 1499, 2099), fill=0)
+
+    recognition = run(FakeEngine(lambda call, request: OcrPageResult(lines=())), image)
+
+    assert recognition.result.coverage == 1.0
 
 
 def test_a_word_box_off_the_image_covers_no_ink() -> None:

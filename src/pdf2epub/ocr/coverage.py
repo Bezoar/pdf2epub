@@ -6,13 +6,14 @@ OCR-R7). It counts **text-like ink** only, so that what is not text (scanner and
 borders, picture plates, stamps, ornaments) neither counts against the boxes nor is needed
 to pass:
 
-1. Ink is the dark pixels after Otsu binarisation. A page more than half ink may be light
-   print on a dark ground (a cover) or dark print beside a large dark picture: it is
-   measured both ways, as it is and inverted, and the way with more text-like ink is kept.
-   Ink connected to the image's edge (a border) is set aside and Otsu runs again on the
-   rest, so a black border doesn't set the threshold that faint print must pass.
-2. The scale is the **box height**: the median height of the boxes. A **unit** of ink is
-   the area of a square one box height across.
+1. Ink is the dark pixels after Otsu binarisation. A page more than half ink whose ink
+   mostly reaches the image's edge is light print on a dark ground (a cover), and is
+   inverted first; one whose dark is mostly a picture inside the page is not. Ink
+   connected to the image's edge (a border) is set aside and Otsu runs again on the rest,
+   so a black border doesn't set the threshold that faint print must pass.
+2. The scale is the **box height**: the median height of the boxes (with no boxes, of the
+   ink components that could be lines of text). A **unit** of ink is the area of a square
+   one box height across.
 3. A connected ink component is text-like when it doesn't touch the image's edge, is at
    most ``TEXT_HEIGHT`` box heights tall and ``TEXT_WIDTH`` wide, is larger than a speck,
    and its centre is not in a **picture region**: the box (widened by one box height on
@@ -52,6 +53,9 @@ SPECK = 0.1
 """A component smaller than a square this share of a box height across is a speck (never
 smaller than ``MIN_SPECK`` pixels)."""
 MIN_SPECK = 3
+TEXT_LINES = 20
+"""With no boxes, ink taller than this share of the page (1 / ``TEXT_LINES``) is not taken
+for a line of text when estimating the text height."""
 PICTURE_FILL = 0.2
 """A component too large to be text is a picture when at least this share of its box is
 ink (a thin ring or frame is not)."""
@@ -80,26 +84,17 @@ def measure(image: Image.Image, boxes: Iterable[Box]) -> Coverage:
     if grey.size == 0:
         return Coverage(1.0, 0.0)
     ink = _otsu(grey)
-    found, text = _measure(grey, ink, boxes)
-    if 2 * int(ink.sum()) > ink.size:
-        # Mostly dark: light print on a dark ground, or dark print beside a large dark
-        # picture. The reading with more text-like ink is the right one.
-        inverted = 255 - grey
-        found_inverted, text_inverted = _measure(inverted, _otsu(inverted), boxes)
-        if text_inverted > text:
-            return found_inverted
-    return found
-
-
-def _measure(
-    grey: NDArray[np.uint8], ink: NDArray[np.bool_], boxes: list[Box]
-) -> tuple[Coverage, int]:
-    """The coverage of ``grey``'s text-like ink (``ink`` its first Otsu reading), and how
-    many pixels of text-like ink it has."""
     labels, stats = _components(ink)
+    border = _edge(stats, grey.shape)[labels]
+    if 2 * int(ink.sum()) > ink.size and 2 * int(border.sum()) > int(ink.sum()):
+        # Mostly dark, and the dark is a ground reaching the image's edge, not a picture
+        # inside the page: light print on a dark ground (a cover).
+        grey = 255 - grey
+        ink = _otsu(grey)
+        labels, stats = _components(ink)
+        border = _edge(stats, grey.shape)[labels]
     heights = [bottom - top for _, top, _, bottom in boxes if bottom > top]
     scale = float(np.median(heights)) if heights else _text_height(stats, grey.shape)
-    border = _edge(stats, grey.shape)[labels]
     if border.any():
         reach = max(round(scale / 6), 1)
         border = cv2.dilate(border.astype(np.uint8), _square(reach)) > 0
@@ -117,8 +112,8 @@ def _measure(
     total = int(area[text].sum())
     missed = int(area[text & ~covered].sum())
     if total == 0:
-        return Coverage(1.0, 0.0), 0
-    return Coverage((total - missed) / total, missed / scale**2), total
+        return Coverage(1.0, 0.0)
+    return Coverage((total - missed) / total, missed / scale**2)
 
 
 def _components(ink: NDArray[np.bool_]) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
@@ -147,11 +142,15 @@ def _edge(stats: NDArray[np.int32], shape: tuple[int, ...]) -> NDArray[np.bool_]
 
 
 def _text_height(stats: NDArray[np.int32], shape: tuple[int, ...]) -> float:
-    """With no boxes to measure, the median height of the components off the edge."""
+    """With no boxes to measure, the median height of the components off the edge that
+    could be lines of text (at most ``1 / TEXT_LINES`` of the image's height); with none,
+    that height itself."""
+    tallest = shape[0] / TEXT_LINES
     inner = ~_edge(stats, shape)
     inner[0] = False
     heights = stats[inner, cv2.CC_STAT_HEIGHT]
-    return float(np.median(heights)) if heights.size else 1.0
+    heights = heights[heights <= tallest]
+    return float(np.median(heights)) if heights.size else tallest
 
 
 def _text_like(stats: NDArray[np.int32], shape: tuple[int, ...], scale: float) -> NDArray[np.bool_]:
