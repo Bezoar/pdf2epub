@@ -35,6 +35,8 @@ And two kinds of unreadable page among readable ones (#98, RFL-AC30):
 - ``unloadable-page.pdf``: three pages, the second's cross-reference entry giving its
   content stream's offset (as in ``missing-page.pdf``), so pdfium counts it but can't
   load it; pdfminer reads all three once the table is rebuilt;
+- ``unloadable-first-page.pdf``: the same three pages, the first unloadable instead,
+  so there is no page 1 to render the cover from;
 - ``untyped-page.pdf``: two pages, the second without ``/Type /Page``: pdfium takes it
   for a page, pdfminer doesn't, even after repair.
 
@@ -61,6 +63,7 @@ OBJSTM_LOOP = "damaged/objstm-loop.pdf"
 OBJSTM_ROOT_LOOP = "damaged/objstm-root-loop.pdf"
 UNLOADABLE_PAGE = "damaged/unloadable-page.pdf"
 UNTYPED_PAGE = "damaged/untyped-page.pdf"
+UNLOADABLE_FIRST_PAGE = "damaged/unloadable-first-page.pdf"
 
 SEED = 2902
 BOMB_SIDE = 40000
@@ -242,6 +245,15 @@ def _point_at_next(data: bytes, entry: int) -> bytes:
 
 
 def build_unloadable_page(out_dir: Path) -> None:
+    _write(out_dir, UNLOADABLE_PAGE, _point_at_next(_three_pages(), 5))
+
+
+def build_unloadable_first_page(out_dir: Path) -> None:
+    _write(out_dir, UNLOADABLE_FIRST_PAGE, _point_at_next(_three_pages(), 3))
+
+
+def _three_pages() -> bytes:
+    """Three pages, each object followed by its content stream (objects 3-8)."""
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>",
@@ -253,7 +265,7 @@ def build_unloadable_page(out_dir: Path) -> None:
         _words(b"The last page."),
         _FONT,
     ]
-    _write(out_dir, UNLOADABLE_PAGE, _point_at_next(rawpdf.document(objects), 5))
+    return rawpdf.document(objects)
 
 
 def build_untyped_page(out_dir: Path) -> None:

@@ -342,7 +342,7 @@ def book_pages(epub: Path) -> list[str]:
 def test_unreadable_pages_are_disclosed_in_the_book(
     tmp_path: Path, sink: RecordingSink, isolation: str
 ) -> None:
-    names = ["unloadable-page", "untyped-page", "unmatched-pages"]
+    names = ["unloadable-page", "untyped-page", "unmatched-pages", "unloadable-first-page"]
     inputs = []
     for name in names:
         shutil.copyfile(DAMAGED / f"{name}.pdf", tmp_path / f"{name}.pdf")
@@ -355,7 +355,16 @@ def test_unreadable_pages_are_disclosed_in_the_book(
     results = {Path(result["source"]).stem: result for result in finished(sink)}
     for name in names:
         assert results[name]["outcome"] == "converted", name
-        assert unreadable_pages(results[name]) == [2], name
+        expected = [1] if name == "unloadable-first-page" else [2]
+        assert unreadable_pages(results[name]) == expected, name
+        # API-R21: one analyse event per page of the book, in page order.
+        analysed = [
+            (event["done"], event["page"])
+            for event in sink.of_type("progress")
+            if event["id"] == results[name]["id"] and event["stage"] == "analyse"
+        ]
+        count = results[name]["pages"]
+        assert analysed == [(n, n) for n in range(1, count + 1)], name
 
     # pdfium counts page 2 but can't load it; pdfminer recovered its text.
     assert results["unloadable-page"]["pages"] == 3
@@ -384,3 +393,12 @@ def test_unreadable_pages_are_disclosed_in_the_book(
     text = " ".join(book_text(tmp_path / "unmatched-pages.epub").split())
     assert text.index("The final page.") < text.index(NOTICE.format(2))
     assert "The final page." in text[text.index(NOTICE.format(2)) :]
+
+    # pdfium can't load page 1: the book has no cover rendered from it, and goes on.
+    book = tmp_path / "unloadable-first-page.epub"
+    with zipfile.ZipFile(book) as epub:
+        assert not [name for name in epub.namelist() if "cover" in name]
+    text = " ".join(book_text(book).split())
+    assert (
+        text.index(NOTICE.format(1)) < text.index("The first page.") < text.index("The last page.")
+    )

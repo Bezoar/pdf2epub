@@ -72,6 +72,7 @@ def registry() -> list[Fixture]:
         Fixture(damaged.OBJSTM_ROOT_LOOP, None, damaged.build_objstm_root_loop),
         Fixture(damaged.UNLOADABLE_PAGE, None, damaged.build_unloadable_page),
         Fixture(damaged.UNTYPED_PAGE, None, damaged.build_untyped_page),
+        Fixture(damaged.UNLOADABLE_FIRST_PAGE, None, damaged.build_unloadable_first_page),
         Fixture(hostile.PATH, hostile.GROUND_TRUTH, hostile.build),
         Fixture(blank.BLANK, None, blank.build_blank),
         Fixture(blank.PLUS_TEXT, blank.PLUS_TEXT_TRUTH, blank.build_plus_text),

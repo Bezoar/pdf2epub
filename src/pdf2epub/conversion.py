@@ -153,6 +153,9 @@ def convert(
                 else:
                     pages.append(page)
                 progress("analyse", page.page, page_count, page=page.page)
+            # API-R21: one event per page of the book, the pages only pdfium has too.
+            for number in range(found + 1, page_count + 1):
+                progress("analyse", number, page_count, page=number)
 
         unreadable = unreadable_pages(source, found, recovered, access.password)
         source = with_page_count(source, page_count)
