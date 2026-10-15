@@ -243,7 +243,7 @@ def _check(
 ) -> LayerCheck:
     pdf_page = document[page.page - 1]
     try:
-        _, _, _, top = pdf_page.get_bbox()
+        left, _, _, top = pdf_page.get_bbox()
         textpage = pdf_page.get_textpage()
         try:
             raw = textpage.raw
@@ -273,7 +273,7 @@ def _check(
                 invisible += modes[key]
             scanned = any(share(image, page) >= FULL_PAGE for image in images)
             prior_ocr = bool(counted) and (2 * invisible >= len(counted) or scanned)
-            boxes = [_box(raw, index, top) for index in counted] if prior_ocr else []
+            boxes = [_box(raw, index, left, top) for index in counted] if prior_ocr else []
         finally:
             textpage.close()
     finally:
@@ -300,15 +300,17 @@ def _font_name(textpage: object, index: int) -> str:
     return buffer.value.decode("utf-8", "replace")
 
 
-def _box(textpage: object, index: int, top: float) -> tuple[float, float, float, float]:
+def _box(
+    textpage: object, index: int, page_left: float, top: float
+) -> tuple[float, float, float, float]:
     """Character ``index``'s box as (left, top, right, bottom) in pixels at ``CHECK_DPI``
-    from the page's top-left corner."""
+    from the visible page's top-left corner (``page_left``, ``top`` in page space)."""
     left, right, bottom, upper = (ctypes.c_double() for _ in range(4))
     pdfium_c.FPDFText_GetCharBox(textpage, index, left, right, bottom, upper)
     scale = CHECK_DPI / 72
     return (
-        left.value * scale,
+        (left.value - page_left) * scale,
         (top - upper.value) * scale,
-        right.value * scale,
+        (right.value - page_left) * scale,
         (top - bottom.value) * scale,
     )

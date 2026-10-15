@@ -14,7 +14,7 @@ import pytest
 from conftest import FIXTURES, NOVEL
 from lxml import etree
 from PIL import Image, ImageChops, ImageStat
-from test_structure import Epub, open_epub
+from test_structure import Epub, open_epub, text_of
 from test_text import EPUB_TYPE, OPF_NS, XHTML, convert
 
 from pdf2epub import ConversionOptions
@@ -144,3 +144,80 @@ def test_a_cover_with_a_transparent_colour_key_stays_transparent(tmp_path: Path)
     with picture(epub, str(item.get("href"))) as image:
         alpha = image.convert("RGBA").getchannel("A")
         assert (alpha.getpixel((0, 0)), alpha.getpixel((39, 0))) == (255, 0)
+
+
+MASKED_LAYERS = FIXTURES / "images" / "masked-layers.pdf"
+CROPPED = FIXTURES / "images" / "cropped.pdf"
+# The fixtures' documented content (tests/fixtures/fixturegen/imagelayers.py).
+BACKGROUND, SMEAR = (236, 226, 196), (200, 30, 30)
+CAPTION = "Figure 1. A picture on a trimmed page."
+
+
+def body_items(epub: Epub) -> list[etree._Element]:
+    """The paragraphs and figures of the book, in reading order."""
+    return [
+        element
+        for name in epub.spine
+        for element in epub.xml(name).iter(f"{XHTML}p", f"{XHTML}figure")
+        if (parent := element.getparent()) is None or parent.tag != f"{XHTML}figure"
+    ]
+
+
+def near(colour: tuple[int, ...], expected: tuple[int, int, int], tolerance: int = 12) -> bool:
+    return all(abs(a - b) <= tolerance for a, b in zip(colour[:3], expected, strict=True))
+
+
+@pytest.mark.ac("RFL-AC31")
+def test_a_masked_layer_is_taken_as_the_page_shows_it(tmp_path: Path) -> None:
+    _, path = convert(MASKED_LAYERS, tmp_path, ConversionOptions(cover=None))
+    epub = open_epub(path)
+
+    sources = [
+        str(img.get("src")) for name in epub.spine for img in epub.xml(name).iter(f"{XHTML}img")
+    ]
+    # Background and masked foreground are one picture, as on the page.
+    assert len(sources) == 1
+    with picture(epub, sources[0]) as image:
+        rgb = image.convert("RGB")
+    width, height = rgb.size
+    assert width / height == pytest.approx(216 / 144, rel=0.02)
+
+    def at(x: float, y: float) -> tuple[int, ...]:
+        """The colour at a point given in the 120 x 80 layers' pixels."""
+        pixel = rgb.getpixel((int(x * width / 120), int(y * height / 80)))
+        assert isinstance(pixel, tuple)
+        return pixel
+
+    # The H's stems and bar show the red; everywhere else is the pale background, not
+    # the red the foreground's own pixels hold.
+    assert near(at(30, 40), SMEAR) and near(at(90, 20), SMEAR) and near(at(60, 40), SMEAR)
+    assert near(at(5, 5), BACKGROUND) and near(at(60, 20), BACKGROUND)
+    assert near(at(110, 75), BACKGROUND) and near(at(60, 60), BACKGROUND)
+
+
+@pytest.mark.ac("RFL-AC32")
+def test_images_on_a_cropped_page_keep_their_place_and_caption(tmp_path: Path) -> None:
+    _, path = convert(CROPPED, tmp_path, ConversionOptions(cover=None))
+    epub = open_epub(path)
+
+    items = body_items(epub)
+    kinds = [etree.QName(item).localname for item in items]
+    assert kinds == ["p", "figure", "p", "figure"]
+    opening, figure, closing, clipped = items
+    assert text_of(opening).startswith("The opening paragraph")
+    assert text_of(closing).startswith("The closing paragraph")
+    figcaption = figure.find(f"{XHTML}figcaption")
+    assert figcaption is not None and text_of(figcaption) == CAPTION
+    assert clipped.find(f"{XHTML}figcaption") is None
+
+    # The sliver in the trimmed margin and the picture 3% inside are left out; the
+    # picture cut by the bottom edge keeps only its visible 75 of 120 pt.
+    sizes = []
+    for item in (figure, clipped):
+        img = item.find(f"{XHTML}img")
+        assert img is not None
+        with picture(epub, str(img.get("src"))) as image:
+            sizes.append(image.size)
+    (width, height), (cut_width, cut_height) = sizes
+    assert width / height == pytest.approx(300 / 180, rel=0.02)
+    assert cut_width / cut_height == pytest.approx(300 / 75, rel=0.03)

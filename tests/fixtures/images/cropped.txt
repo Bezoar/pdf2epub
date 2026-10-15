@@ -1,0 +1,5 @@
+The opening paragraph sits above the picture on this trimmed page, and it runs to a second line.
+
+Figure 1. A picture on a trimmed page.
+
+The closing paragraph follows the caption and the picture, as the reader expects it to.

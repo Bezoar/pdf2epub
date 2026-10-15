@@ -46,6 +46,11 @@ Normalisation applies equally to OCR'd text.
 
 <a id="rfl-r9"></a>**RFL-R9**: The core shall extract embedded raster images with their bounding boxes, for use as book images ([§8](#8-images-and-cover)).
 
+Images are taken as they appear on the rendered page:
+- an image with a mask (soft mask, stencil or colour key) is taken with its mask applied, never as its unmasked pixels; a masked image drawn over an earlier image is composited onto it, so that the two make one picture, as the page shows them (scanning software often draws a page as a background image under a masked foreground whose own pixels are a smear of the text colour);
+- positions are measured on the **visible page**: the CropBox (cut to the MediaBox), turned as the page's `/Rotate` says. Text-layer lines, OCR lines and images all use this one frame;
+- an image is clipped to the visible page: one with less than 5% of its area on the visible page is left out, and one partly outside keeps only the part that shows.
+
 ## 3. Layout analysis
 
 <a id="rfl-r10"></a>**RFL-R10**: Per page, the core shall group spans into lines and lines into blocks using geometry: baseline, line spacing and horizontal gaps. Within a single-column page, the reading order is top to bottom.
@@ -55,7 +60,7 @@ Normalisation applies equally to OCR'd text.
 <a id="rfl-r12"></a>**RFL-R12**: Each block on a reflowed page shall be classified as one of:
 - `heading` (with a level from 1 to 6);
 - `paragraph`;
-- `image` (with an optional caption: the adjacent short block in smaller type directly below or above it);
+- `image` (with an optional caption: the adjacent short block in smaller type directly below or above it, measured on the visible page ([RFL-R9](#rfl-r9)), so captions pair with their images on pages whose CropBox is offset from the MediaBox);
 - `furniture` ([§4](#4-furniture)).
 
 Lists and block quotes are emitted as paragraphs in v1. Verse, code and other text whose line breaks carry meaning is a **line block** ([RFL-R36](#rfl-r36)).
@@ -130,7 +135,7 @@ Matching is case-insensitive, and number words cover one to one hundred. Lower h
 
 ## 8. Images and cover
 
-<a id="rfl-r26"></a>**RFL-R26**: Book images ([RFL-R9](#rfl-r9)) shall be kept in reading order at their block position. Identical images (same decoded-pixel hash) shall be stored once and referenced wherever they appear.
+<a id="rfl-r26"></a>**RFL-R26**: Book images ([RFL-R9](#rfl-r9)), as taken from the rendered page, shall be kept in reading order at their block position. Identical images (same decoded-pixel hash) shall be stored once and referenced wherever they appear.
 
 <a id="rfl-r27"></a>**RFL-R27**: Every image, including page images and the cover, shall be:
 - downscaled so its long edge is at most 1600 px;
@@ -299,6 +304,10 @@ Each also holds when the conversion runs in a worker process.
 - the document has exactly 2 image assets;
 - the photograph is a JPEG with long edge 1600 px, referenced from 2 `Image` blocks;
 - the drawing is a PNG.
+
+<a id="rfl-ac31"></a>**RFL-AC31** (covers [RFL-R9](#rfl-r9), [RFL-R26](#rfl-r26)): **Given** a synthetic page with a line of text above a pale background image and, in the same box, a foreground image whose own pixels are all red and whose soft mask shows them only in the shape of a letter H, **when** it is converted, **then** the book has one image there, and it shows the red H on the pale background: the pixels outside the H are the background's colour, not red.
+
+<a id="rfl-ac32"></a>**RFL-AC32** (covers [RFL-R9](#rfl-r9), [RFL-R12](#rfl-r12), [RFL-R26](#rfl-r26)): **Given** a synthetic US Letter page whose CropBox is offset from its MediaBox, holding a paragraph, a picture with a caption in smaller type just below it, another paragraph, a picture cut by the CropBox's bottom edge, a picture wholly outside the CropBox and a picture with 3% of its area inside it, **when** it is converted, **then** the book reads the first paragraph, the picture with that caption as its `figcaption`, the second paragraph, then the cut picture, showing only its visible part (its aspect ratio is that of the part inside the CropBox); the other two pictures are left out; and the EPUB passes epubcheck.
 
 <a id="rfl-ac19"></a>**RFL-AC19** (covers [RFL-R28](#rfl-r28)): **Given** the novel fixture:
 - **when** it is converted with default options, **then** the cover is a render of page 1;
