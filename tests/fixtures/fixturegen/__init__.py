@@ -120,6 +120,12 @@ def registry() -> list[Fixture]:
             encrypted.USER_OWNER_RESTRICTED_TRUTH,
             encrypted.build_user_owner_restricted,
         ),
+        Fixture(encrypted.OWNER_PADDED, encrypted.OWNER_PADDED_TRUTH, encrypted.build_owner_padded),
+        Fixture(
+            encrypted.OWNER_PADDED_R5,
+            encrypted.OWNER_PADDED_R5_TRUTH,
+            encrypted.build_owner_padded_r5,
+        ),
         Fixture(drm.EBX_HANDLER, None, drm.build_ebx_handler),
         Fixture(drm.ADOBE_PUBSEC, None, drm.build_adobe_pubsec),
         Fixture(drm.FOPN_FOWEB, None, drm.build_fopn_foweb),
