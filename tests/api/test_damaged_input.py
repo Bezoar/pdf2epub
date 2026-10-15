@@ -1,13 +1,15 @@
 """Damaged and hostile PDFs fail cleanly or convert with a warning (RFL-R2 to RFL-R6,
-RFL-R35), driven through ``plan_batch`` / ``run_batch`` in-process."""
+RFL-R35, RFL-R37), driven through ``plan_batch`` / ``run_batch`` in-process."""
 
 import os
+import re
 import resource
 import shutil
 import socket
 import subprocess
 import sys
 import webbrowser
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -229,3 +231,83 @@ def test_blank_pages_beside_a_text_page_convert_without_issues_for_them(
     assert result["pages"] == 4
     assert [i for i in result["issues"] if set(i["pages"]) & {1, 2, 3}] == []
     assert "empty_document" not in codes(result["issues"])
+
+
+# --- Damage that once crashed a conversion (#94) ----------------------------------------
+
+TWO_PAGES = FIXTURES / "born-digital" / "two-pages.pdf"
+UPDATES = 1500
+"""More incremental updates than Python's default recursion limit (1000) has frames."""
+
+
+def with_empty_updates(source: Path, target: Path, count: int) -> None:
+    """Write ``source`` followed by ``count`` incremental updates that change nothing,
+    each naming the one before as ``/Prev``."""
+    data = bytearray(source.read_bytes())
+    tail = bytes(data[data.rindex(b"trailer") :])
+    size = re.search(rb"/Size (\d+)", tail)
+    root = re.search(rb"/Root (\d+ \d+ R)", tail)
+    previous = re.search(rb"startxref\s+(\d+)", tail)
+    assert size and root and previous, "the source's trailer is not as expected"
+    offset = int(previous[1])
+    for _ in range(count):
+        section = len(data)
+        data += b"xref\n0 1\n0000000000 65535 f \ntrailer\n"
+        data += b"<< /Size %s /Root %s /Prev %d >>\n" % (size[1], root[1], offset)
+        data += b"startxref\n%d\n%%%%EOF\n" % section
+        offset = section
+    target.write_bytes(bytes(data))
+
+
+def book_text(epub: Path) -> str:
+    """Every word in the book's XHTML documents, markup removed."""
+    with zipfile.ZipFile(epub) as book:
+        pages = [book.read(name).decode() for name in book.namelist() if name.endswith(".xhtml")]
+    return " ".join(re.sub(r"<[^>]+>", " ", page) for page in pages)
+
+
+@pytest.mark.ac("RFL-AC29")
+@pytest.mark.parametrize("isolation", ["inprocess", "subprocess"])
+def test_damage_that_loops_or_disagrees_fails_cleanly_or_converts_repaired(
+    tmp_path: Path, sink: RecordingSink, isolation: str
+) -> None:
+    sources = [
+        DAMAGED / "stale-xref.pdf",
+        DAMAGED / "unmatched-pages.pdf",
+        DAMAGED / "missing-page.pdf",
+        DAMAGED / "xref-loop.pdf",
+        DAMAGED / "objstm-loop.pdf",
+        DAMAGED / "objstm-root-loop.pdf",
+    ]
+    inputs = []
+    for source in sources:
+        shutil.copyfile(source, tmp_path / source.name)
+        inputs.append(InputSpec(tmp_path / source.name))
+    with_empty_updates(TWO_PAGES, tmp_path / "long-chain.pdf", UPDATES)
+    inputs.append(InputSpec(tmp_path / "long-chain.pdf"))
+    plan = plan_batch(inputs, DiscoveryOptions())
+    options = BatchOptions(isolation=isolation)  # type: ignore[arg-type]  # parametrised Literal
+
+    run_batch(plan, options, ConversionOptions(), sink)
+
+    results = {Path(result["source"]).stem: result for result in finished(sink)}
+    every_code = [code for result in results.values() for code in codes(result["issues"])]
+    assert "internal_error" not in every_code
+    for name in ("unmatched-pages", "missing-page", "objstm-loop", "objstm-root-loop"):
+        assert results[name]["outcome"] == "failed", name
+        assert codes(results[name]["issues"]) == ["corrupt_pdf"], name
+        assert not (tmp_path / f"{name}.epub").exists(), name
+
+    for name in ("stale-xref", "xref-loop"):
+        assert results[name]["outcome"] == "converted", name
+        assert "repaired_pdf" in codes(results[name]["issues"]), name
+    stale = book_text(tmp_path / "stale-xref.epub")
+    assert "Stale offsets, first page." in stale
+    assert "Stale offsets, second page." in stale
+    looped = book_text(tmp_path / "xref-loop.epub")
+    assert "The final page." in looped
+    assert "draft" not in looped
+
+    assert results["long-chain"]["outcome"] == "converted"
+    assert results["long-chain"]["pages"] == 2
+    assert "repaired_pdf" not in codes(results["long-chain"]["issues"])

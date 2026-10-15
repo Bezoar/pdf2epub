@@ -74,6 +74,7 @@ def open_source(path: Path, password: Secret | None = None) -> SourcePdf:
             raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
         raise
     try:
+        _check_pages(document)
         labels = [document.get_page_label(i) or str(i + 1) for i in range(len(document))]
         info = {key: value for key, value in document.get_metadata_dict(skip_empty=True).items()}
         language = _catalog_language(document)
@@ -135,12 +136,22 @@ _CORRUPT = (
 )
 
 
+def _check_pages(document: pdfium.PdfDocument) -> None:
+    """Raise ``CorruptPdf`` when a page in the page count can't be found: every later
+    stage that renders or reads a page through pdfium would fail on it."""
+    for index in range(len(document)):
+        try:
+            document.get_page_size(index)  # finds the page as loading it does
+        except pdfium.PdfiumError as error:
+            raise CorruptPdf(f"Page {index + 1} can't be read, even with repair") from error
+
+
 def _has_no_pages(data: bytes) -> bool:
     """True when pdfminer reads the document and finds an empty page tree."""
     try:
         document = PDFDocument(PDFParser(io.BytesIO(data)))
         return next(PDFPage.create_pages(document), None) is None
-    except PSException:
+    except (PSException, RecursionError):  # a loop in a damaged file: not empty, broken
         return False
 
 
