@@ -14,7 +14,8 @@
 #                           tables means any one of them may match.
 #   expect_without_password the issue a second run without the password must report
 #   must_trust              true if no page of the file may have its text layer rejected
-#                           (TST-R4: born-digital pages, and the IA layers of S7 and S9)
+#                           (TST-R4: born-digital pages, and the IA layers of S7 and S9;
+#                           not S6 or S12, whose text is Lorem Ipsum filler)
 #   check_by_eye            what the owner checks by hand in the v1 acceptance ticket
 
 [[entries]]
@@ -78,7 +79,6 @@ url = "https://raw.githubusercontent.com/py-pdf/sample-files/02b8203bf416db3dbdb
 sha256 = "bdb495e95b3e1afae95013099dc59b0cea047f1fa70f677ee9cb33f10faa1c6c"
 license = "CC BY-SA 4.0"
 expect = { outcome = "converted", issues = ["page_fallback:multi_column"] }
-must_trust = true
 check_by_eye = "two-column text never interleaved"
 
 [[entries]]
@@ -145,7 +145,6 @@ sha256 = "3e333bff0196d0c5320f40cdd1b7a3abd21b316de79de3c0f9083accdaef9358"
 license = "CC BY-SA 4.0"
 password = "openpassword"
 expect = { outcome = "converted" }
-must_trust = true
 
 [[entries]]
 id = "S13"
