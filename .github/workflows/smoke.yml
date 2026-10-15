@@ -1,0 +1,54 @@
+name: Smoke set
+
+# The real-world smoke set (TST-R10, TST-R11): fetched, hash-checked and converted by
+# scripts/smoke.py. Started by hand only; it never gates a pull request or a merge.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated entry ids to run, e.g. S4,S15 (empty: all 15)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke set
+    runs-on: ubuntu-24.04
+    # The scanned books OCR hundreds of pages; GitHub-hosted jobs stop at 6 hours.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+          tesseract --version
+      - run: uv sync --locked
+      - name: Cache the smoke-set files
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pdf2epub-corpus
+          key: smoke-corpus-${{ hashFiles('tests/corpus/smoke.toml') }}
+          restore-keys: smoke-corpus-
+      - name: Run the smoke set
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          args=(--cache ~/.cache/pdf2epub-corpus --out "$RUNNER_TEMP/smoke")
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          uv run python scripts/smoke.py run "${args[@]}"
+      # Only the batch report is kept: some smoke-set books may not be redistributed
+      # (S1 is CC BY-NC-SA), so the EPUBs are not uploaded.
+      - name: Keep the batch report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report
+          path: ${{ runner.temp }}/smoke/report.json
+          if-no-files-found: ignore

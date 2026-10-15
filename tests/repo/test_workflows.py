@@ -84,3 +84,22 @@ def test_pr_workflow_tests_every_python_on_every_supported_platform() -> None:
 def test_package_requires_python_312_or_later() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert project["requires-python"] == ">=3.12"
+
+
+@pytest.mark.ac("TST-AC7")
+def test_smoke_workflow_is_manual_only() -> None:
+    smoke = REPO / ".github" / "workflows" / "smoke.yml"
+    assert "scripts/smoke.py" in smoke.read_text(encoding="utf-8")
+    assert set(triggers(load_workflow(smoke))) == {"workflow_dispatch"}
+
+
+@pytest.mark.ac("TST-AC7")
+def test_no_workflow_that_runs_on_pull_requests_runs_the_smoke_set() -> None:
+    gating = {"pull_request", "pull_request_target", "push", "merge_group"}
+    for path in sorted((REPO / ".github" / "workflows").glob("*.y*ml")):
+        workflow = load_workflow(path)
+        if not gating & set(triggers(workflow)):
+            continue
+        assert "smoke.py" not in path.read_text(encoding="utf-8"), path.name
+        for job in workflow["jobs"].values():
+            assert "smoke.yml" not in str(job.get("uses", "")), path.name

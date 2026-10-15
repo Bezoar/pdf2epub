@@ -1,0 +1,179 @@
+# The real-world smoke set (TST-R9, TST-R12): fetched, hash-checked and converted by
+# scripts/smoke.py in the manual smoke workflow. None of these files is committed (TST-R8).
+#
+# Fields of each [[entries]] table:
+#   id, role, file          what the entry is (TST-R12's table)
+#   url, sha256             where to fetch it and its pinned SHA-256; a derived entry has
+#                           `derived` instead: `from` names the source entry and `fraction`
+#                           the share of its bytes kept, from the start
+#   license                 the file's licence
+#   password                the test password published with the file (absent if none)
+#   expect                  the expected conversion in the one batch run: `outcome`, the
+#                           `issues` that must be reported (`code` or `code:reason`) and,
+#                           with `ocr = true`, that the conversion ran OCR. A list of
+#                           tables means any one of them may match.
+#   expect_without_password the issue a second run without the password must report
+#   must_trust              true if no page of the file may have its text layer rejected
+#                           (TST-R4: born-digital pages, and the IA layers of S7 and S9)
+#   check_by_eye            what the owner checks by hand in the v1 acceptance ticket
+
+[[entries]]
+id = "S1"
+role = "Novel, born-digital"
+file = "Little Brother, Cory Doctorow (134 pp)"
+url = "https://craphound.com/littlebrother/Cory_Doctorow_-_Little_Brother.pdf"
+sha256 = "f90e8dfe9778a6859a817a598c557c8c9963ac75a49ca2d7987ca386ad8f3700"
+license = "CC BY-NC-SA 3.0 (fetch only)"
+expect = { outcome = "converted" }
+must_trust = true
+check_by_eye = "chapter TOC; no running headers (Cory Doctorow/Little Brother/NN) or page numbers in text"
+
+[[entries]]
+id = "S2"
+role = "Non-fiction with images, born-digital"
+file = "NASA SP-4319 Revolutionary Atmosphere (414 pp)"
+url = "https://www.nasa.gov/wp-content/uploads/2023/04/sp-4319.pdf"
+sha256 = "6a18d02a4b4be8710dd670811800b9a2819cb8b3e6fc94c3305bd805a2018321"
+license = "US government work"
+expect = { outcome = "converted" }
+must_trust = true
+check_by_eye = "images with captions"
+
+[[entries]]
+id = "S3"
+role = "Photo-heavy, scanned with an existing OCR layer"
+file = "NASA SP-4553 NASA Photo One (133 pp)"
+url = "https://www.nasa.gov/wp-content/uploads/2023/03/sp-4553.pdf"
+sha256 = "e0d2684878252f5174b7f3e7c54d164924bdea758b0e8638fa1433d651160e80"
+license = "US government work"
+expect = { outcome = "converted" }
+
+[[entries]]
+id = "S4"
+role = "Two-column paper"
+file = "arXiv 2501.17887v1 (Docling, 8 pp)"
+url = "https://arxiv.org/pdf/2501.17887v1"
+sha256 = "f555f6260be1de6cd8f75addca4edc3c4456b2d5f3bf01a115942cb81396208a"
+license = "CC BY 4.0"
+expect = { outcome = "converted", issues = ["page_fallback:multi_column"] }
+must_trust = true
+check_by_eye = "two-column text never interleaved"
+
+[[entries]]
+id = "S5"
+role = "Two-column paper, classic"
+file = "pdf.js tracemonkey.pdf (14 pp)"
+url = "https://raw.githubusercontent.com/mozilla/pdf.js/288892aadaa27f03ed0cd4724edf678c6bda8e61/test/pdfs/tracemonkey.pdf"
+sha256 = "3662ff519e485810520552bf301d8c3b2b917fd2f83303f4965d7abed367e113"
+license = "in an Apache-2.0 repo; paper rights unclear (fetch only)"
+expect = { outcome = "converted", issues = ["page_fallback:multi_column"] }
+must_trust = true
+check_by_eye = "two-column text never interleaved"
+
+[[entries]]
+id = "S6"
+role = "Multi-column LaTeX, tiny"
+file = "py-pdf 026-latex-multicolumn/multicolumn.pdf (3 pp)"
+url = "https://raw.githubusercontent.com/py-pdf/sample-files/02b8203bf416db3dbdb03438bc8278dfcb0555f3/026-latex-multicolumn/multicolumn.pdf"
+sha256 = "bdb495e95b3e1afae95013099dc59b0cea047f1fa70f677ee9cb33f10faa1c6c"
+license = "CC BY-SA 4.0"
+expect = { outcome = "converted", issues = ["page_fallback:multi_column"] }
+must_trust = true
+check_by_eye = "two-column text never interleaved"
+
+[[entries]]
+id = "S7"
+role = "Scanned book, clean, with an IA OCR layer"
+file = "IA prideprejudicewi00austuoft (1906, 360 pp)"
+url = "https://archive.org/download/prideprejudicewi00austuoft/prideprejudicewi00austuoft.pdf"
+sha256 = "77bb1627dd1a03ab1a5308f3d96cb2703e4bbe08ed62ba15d1418ba02be77d79"
+license = "public domain (US)"
+expect = { outcome = "converted" }
+must_trust = true
+check_by_eye = "text matches Project Gutenberg #1342 (without the introduction)"
+
+[[entries]]
+id = "S8"
+role = "Scanned book, degraded, image-only"
+file = "IA hassanafellahar00gillgoog (1898 Google scan, 614 pp; text layer only on the p. 1 guidelines page; watermark on every page)"
+url = "https://archive.org/download/hassanafellahar00gillgoog/hassanafellahar00gillgoog.pdf"
+sha256 = "32df99306fb45d47d04d050db891d5a4052cb2f95b7db7136eb80d272a72b724"
+license = "public domain (NOT_IN_COPYRIGHT); Google guidelines on p. 1"
+expect = { outcome = "converted", ocr = true }
+
+[[entries]]
+id = "S9"
+role = "Scanned book, degraded (microfiche), with an IA OCR layer"
+file = "IA cihm_990165 (Pride and Prejudice, 1919, 291 pp)"
+url = "https://archive.org/download/cihm_990165/cihm_990165.pdf"
+sha256 = "d4cbabed17bddae01bb449d9686067f40cc0254fa37b8d16fe7fbefc000923a8"
+license = "public domain (US, pre-1929)"
+expect = { outcome = "converted" }
+must_trust = true
+check_by_eye = "text matches Project Gutenberg #1342, compared with S7"
+
+[[entries]]
+id = "S10"
+role = "Encrypted, AES-256 (R6), user password"
+file = "qpdf enc-XI-R6,V5,U=view,O=master.pdf (30 pp)"
+url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/enc-XI-R6,V5,U=view,O=master.pdf"
+sha256 = "96b9262bfacf1358c7a68ab46c11563677e858888950237fdac8f3a227210edf"
+license = "Apache-2.0"
+password = "view"
+expect = { outcome = "converted" }
+expect_without_password = "missing_password"
+must_trust = true
+
+[[entries]]
+id = "S11"
+role = "Encrypted, owner password only, AES-256 (R6), restricted"
+file = "qpdf enc-XI-R6,V5,O=master.pdf (30 pp)"
+url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/enc-XI-R6,V5,O=master.pdf"
+sha256 = "63c99503fc9c6b44c47df124ce040d005e26d2c5d8d0999ad59c48b31a426863"
+license = "Apache-2.0"
+password = "master"
+expect = { outcome = "converted", issues = ["owner_password_used"] }
+expect_without_password = "restricted"
+must_trust = true
+
+[[entries]]
+id = "S12"
+role = "Encrypted, RC4-128 (R3), user password"
+file = "py-pdf 005-libreoffice-writer-password/libreoffice-writer-password.pdf (owner password permissionpassword)"
+url = "https://raw.githubusercontent.com/py-pdf/sample-files/02b8203bf416db3dbdb03438bc8278dfcb0555f3/005-libreoffice-writer-password/libreoffice-writer-password.pdf"
+sha256 = "3e333bff0196d0c5320f40cdd1b7a3abd21b316de79de3c0f9083accdaef9358"
+license = "CC BY-SA 4.0"
+password = "openpassword"
+expect = { outcome = "converted" }
+must_trust = true
+
+[[entries]]
+id = "S13"
+role = "Malformed, recoverable"
+file = "pdf.js xref_command_missing.pdf (631 bytes, 1 page)"
+url = "https://raw.githubusercontent.com/mozilla/pdf.js/288892aadaa27f03ed0cd4724edf678c6bda8e61/test/pdfs/xref_command_missing.pdf"
+sha256 = "88d3905774607b3f529e369db122b2d14051417993c9a704472c91c6702ccff6"
+license = "in an Apache-2.0 repo"
+expect = { outcome = "converted", issues = ["repaired_pdf"] }
+must_trust = true
+
+[[entries]]
+id = "S14"
+role = "Malformed, unrecoverable"
+file = "qpdf bad-xref.pdf"
+url = "https://raw.githubusercontent.com/qpdf/qpdf/4eba95899886e851cc41d76886483b347612f2a8/qpdf/qtest/qpdf/bad-xref.pdf"
+sha256 = "5895dfedf978f600b12e29643617dbb111869b60526d957878e349571e1467d1"
+license = "Apache-2.0"
+expect = { outcome = "failed", issues = ["corrupt_pdf"] }
+
+[[entries]]
+id = "S15"
+role = "Truncated download"
+file = "the first 60% of the bytes of S4, generated by the smoke script"
+derived = { from = "S4", fraction = 0.6 }
+license = "inherits CC BY 4.0"
+expect = [
+    { outcome = "failed", issues = ["corrupt_pdf"] },
+    { outcome = "converted", issues = ["repaired_pdf"] },
+]
+must_trust = true
