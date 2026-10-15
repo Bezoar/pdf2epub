@@ -164,6 +164,39 @@ def test_text_missed_over_the_allowance_makes_coverage_the_share() -> None:
     assert recognition.reason == "ocr_low_confidence"
 
 
+def dark_plate_page() -> Image.Image:
+    """Dark print beside a dark picture: a black 1700 x 1600 px plate, more than half the
+    page, above 14 lines of ``page()``'s glyph blocks."""
+    image = Image.new("L", (1800, 2700), 255)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((50, 100, 1749, 1699), fill=0)
+    for line in range(14):
+        top = 1800 + line * LINE_STEP
+        for glyph in range(GLYPHS):
+            left = GLYPH_LEFT + glyph * GLYPH_STEP
+            draw.rectangle((left, top, left + GLYPH_WIDTH - 1, top + GLYPH_HEIGHT - 1), fill=0)
+    return image
+
+
+def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print() -> None:
+    # Words for the first 7 of the 14 lines: 105 units of the print missed, so coverage is
+    # the share, 1/2. Read inverted, the page would have no text-like ink to miss.
+    assert 7 * UNITS_PER_LINE >= 80
+
+    def half(call: int, request: OcrRequest) -> OcrPageResult:
+        words = []
+        for line in range(7):
+            top = 1800 + line * LINE_STEP - LINE_MARGIN
+            bottom = top + GLYPH_HEIGHT + 2 * LINE_MARGIN
+            words.append(Word("word", 0, top, request.image.size[0], bottom, 0.95, 95))
+        return OcrPageResult(lines=tuple(OcrLine((w,), w.bottom - w.top) for w in words))
+
+    recognition = run(FakeEngine(half), dark_plate_page(), quality="fast")
+
+    assert recognition.result.coverage == pytest.approx(0.5, abs=0.001)
+    assert recognition.reason == "ocr_low_confidence"
+
+
 def test_a_word_box_off_the_image_covers_no_ink() -> None:
     # A box wholly above and left of the image must not wrap round to cover its far side.
     def half_and_off(call: int, request: OcrRequest) -> OcrPageResult:

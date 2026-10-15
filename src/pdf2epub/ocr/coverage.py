@@ -6,10 +6,11 @@ OCR-R7). It counts **text-like ink** only, so that what is not text (scanner and
 borders, picture plates, stamps, ornaments) neither counts against the boxes nor is needed
 to pass:
 
-1. Ink is the dark pixels after Otsu binarisation. A page more than half ink is light
-   print on a dark ground, and is inverted first. Ink connected to the image's edge (a
-   border) is set aside and Otsu runs again on the rest, so a black border doesn't set the
-   threshold that faint print must pass.
+1. Ink is the dark pixels after Otsu binarisation. A page more than half ink may be light
+   print on a dark ground (a cover) or dark print beside a large dark picture: it is
+   measured both ways, as it is and inverted, and the way with more text-like ink is kept.
+   Ink connected to the image's edge (a border) is set aside and Otsu runs again on the
+   rest, so a black border doesn't set the threshold that faint print must pass.
 2. The scale is the **box height**: the median height of the boxes. A **unit** of ink is
    the area of a square one box height across.
 3. A connected ink component is text-like when it doesn't touch the image's edge, is at
@@ -79,9 +80,22 @@ def measure(image: Image.Image, boxes: Iterable[Box]) -> Coverage:
     if grey.size == 0:
         return Coverage(1.0, 0.0)
     ink = _otsu(grey)
-    if 2 * int(ink.sum()) > ink.size:  # light print on a dark ground
-        grey = 255 - grey
-        ink = _otsu(grey)
+    found, text = _measure(grey, ink, boxes)
+    if 2 * int(ink.sum()) > ink.size:
+        # Mostly dark: light print on a dark ground, or dark print beside a large dark
+        # picture. The reading with more text-like ink is the right one.
+        inverted = 255 - grey
+        found_inverted, text_inverted = _measure(inverted, _otsu(inverted), boxes)
+        if text_inverted > text:
+            return found_inverted
+    return found
+
+
+def _measure(
+    grey: NDArray[np.uint8], ink: NDArray[np.bool_], boxes: list[Box]
+) -> tuple[Coverage, int]:
+    """The coverage of ``grey``'s text-like ink (``ink`` its first Otsu reading), and how
+    many pixels of text-like ink it has."""
     labels, stats = _components(ink)
     heights = [bottom - top for _, top, _, bottom in boxes if bottom > top]
     scale = float(np.median(heights)) if heights else _text_height(stats, grey.shape)
@@ -103,8 +117,8 @@ def measure(image: Image.Image, boxes: Iterable[Box]) -> Coverage:
     total = int(area[text].sum())
     missed = int(area[text & ~covered].sum())
     if total == 0:
-        return Coverage(1.0, 0.0)
-    return Coverage((total - missed) / total, missed / scale**2)
+        return Coverage(1.0, 0.0), 0
+    return Coverage((total - missed) / total, missed / scale**2), total
 
 
 def _components(ink: NDArray[np.bool_]) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
