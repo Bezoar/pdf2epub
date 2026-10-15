@@ -31,6 +31,7 @@ from pdf2epub.reflow.limits import ResourceLimitExceeded
 from pdf2epub.reflow.metadata import read_xmp
 from pdf2epub.reflow.parse import ParsedPdf
 from pdf2epub.reflow.source import CorruptPdf, open_source
+from pdf2epub.reflow.unreadable import unreadable_page_numbers, unreadable_pages, with_page_count
 from pdf2epub.results import ConversionResult, OcrSummary
 
 log = logging.getLogger(__name__)
@@ -130,24 +131,40 @@ def convert(
         password_source = access.source
         source = open_source(source_path, access.password)
         page_count = source.page_count
-        log.debug("conversion %d: %d pages", planned.id, page_count)
-        with ParsedPdf(source_path, access.password, page_count) as pdf:
+        with ParsedPdf(source_path, access.password, source.page_count) as pdf:
             repaired = pdf.repaired
             source = replace(source, xmp=pdf.xmp())
+            found = pdf.page_count or 0
+            # RFL-R37: the book has every page either parser reads.
+            page_count = max(source.page_count, found)
+            log.debug("conversion %d: %d pages", planned.id, page_count)
             progress("open", 1, 1)
             if page_count == 0:
                 raise _Empty("The PDF has no pages.")
+            if source.page_count == 0:
+                raise CorruptPdf("No page of the PDF can be read, even with repair")
+            unreadable_numbers = unreadable_page_numbers(source, found)
 
             pages: list[PageText] = []
+            recovered: dict[int, PageText] = {}
             for page in read_pages(pdf):
-                pages.append(page)
-                progress("analyse", len(pages), page_count, page=page.page)
+                if page.page in unreadable_numbers:
+                    recovered[page.page] = page
+                else:
+                    pages.append(page)
+                progress("analyse", page.page, page_count, page=page.page)
 
-        images = read_images(source_path, access.password)
+        unreadable = unreadable_pages(source, found, recovered, access.password)
+        source = with_page_count(source, page_count)
+        images = read_images(source_path, access.password, skip=unreadable.keys())
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
         # so empty_document is the only one. A page's content is its text and its book
-        # images.
-        if not any(page.lines for page in pages) and not images:
+        # images; an unreadable page's, its render or the text recovered from it.
+        if (
+            not any(page.lines for page in pages)
+            and not images
+            and not any(page.rendered or page.text for page in unreadable.values())
+        ):
             raise _Empty("No page of the PDF has any text or image.")
         if access.owner_password_used:
             add(
@@ -167,10 +184,14 @@ def convert(
         for issue in recognised.issues:
             add(issue)
 
-        document, found = build_document(source, pages, images, options, access.password)
-        for issue in found:
+        document, built = build_document(
+            source, pages, images, options, access.password, unreadable
+        )
+        for issue in built:
             add(issue)
-        document = replace(document, cover=book_cover(options.cover, source_path, access.password))
+        # A page 1 pdfium can't load has no render to make the cover from (RFL-R37).
+        cover = None if options.cover == "page1" and 1 in source.unloadable else options.cover
+        document = replace(document, cover=book_cover(cover, source_path, access.password))
         progress("reflow", 1, 1)
 
         write_atomically(

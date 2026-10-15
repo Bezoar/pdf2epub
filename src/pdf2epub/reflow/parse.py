@@ -80,19 +80,28 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
     ) -> None:
         """Open ``path``. With ``page_count``, the number of pages pdfium found, a page
         tree that reads differently here is damage: the cross-reference table is rebuilt
-        by scanning the file, and if the two still disagree the PDF is corrupt."""
+        by scanning the file (RFL-R37). If the two still disagree, the reading that
+        shares more pages with pdfium's is kept, the rebuilt one on a tie, and
+        ``page_count`` says how many pages it has."""
         self._file: BinaryIO = path.open("rb")
+        self.page_count: int | None = None
+        """The pages read here, when ``page_count`` was given; else None."""
         try:
             self._document = self._open(password, rebuild=False)
-            if page_count is not None and not self._has_pages(page_count):
-                if not self.repaired:
-                    self._document = self._open(password, rebuild=True)
-                found = sum(1 for _ in self.pages())
-                if found != page_count:
-                    raise CorruptPdf(
-                        f"The PDF's page tree can't be read, even with repair: {found} pages "
-                        f"found where the renderer finds {page_count}"
-                    )
+            if page_count is None:
+                return
+            found = self._count()
+            if found != page_count and not self.repaired:
+                first = self._document, found
+                self._document = self._open(password, rebuild=True)
+                found = self._count()
+                if found != page_count and _shared(first[1], page_count) > _shared(
+                    found, page_count
+                ):
+                    self._document, found = first
+            if found is None:
+                raise CorruptPdf("The PDF's page tree can't be read, even with repair")
+            self.page_count = found
         except BaseException:
             self._file.close()
             raise
@@ -107,12 +116,12 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         except (PSException, RecursionError) as error:
             raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
 
-    def _has_pages(self, count: int) -> bool:
-        """True when the page tree reads as ``count`` pages."""
+    def _count(self) -> int | None:
+        """The number of pages in the page tree, or None when it can't be read."""
         try:
-            return sum(1 for _ in self.pages()) == count
+            return sum(1 for _ in self.pages())
         except CorruptPdf:
-            return False
+            return None
 
     @property
     def repaired(self) -> bool:
@@ -166,6 +175,12 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         traceback: TracebackType | None,
     ) -> None:
         self._file.close()
+
+
+def _shared(found: int | None, page_count: int) -> int:
+    """How many pages a reading of ``found`` pages has in common with pdfium's
+    ``page_count``, matched by position."""
+    return min(found or 0, page_count)
 
 
 class _SecurityHandlerV5(PDFStandardSecurityHandlerV5):

@@ -293,10 +293,13 @@ def test_damage_that_loops_or_disagrees_fails_cleanly_or_converts_repaired(
     results = {Path(result["source"]).stem: result for result in finished(sink)}
     every_code = [code for result in results.values() for code in codes(result["issues"])]
     assert "internal_error" not in every_code
-    for name in ("unmatched-pages", "missing-page", "objstm-loop", "objstm-root-loop"):
+    for name in ("missing-page", "objstm-loop", "objstm-root-loop"):
         assert results[name]["outcome"] == "failed", name
         assert codes(results[name]["issues"]) == ["corrupt_pdf"], name
         assert not (tmp_path / f"{name}.epub").exists(), name
+
+    assert results["unmatched-pages"]["outcome"] == "converted"
+    assert unreadable_pages(results["unmatched-pages"]) == [2]
 
     for name in ("stale-xref", "xref-loop"):
         assert results[name]["outcome"] == "converted", name
@@ -311,3 +314,73 @@ def test_damage_that_loops_or_disagrees_fails_cleanly_or_converts_repaired(
     assert results["long-chain"]["outcome"] == "converted"
     assert results["long-chain"]["pages"] == 2
     assert "repaired_pdf" not in codes(results["long-chain"]["issues"])
+
+
+# --- Unreadable pages among readable ones (#98) ------------------------------------------
+
+NOTICE = "Page {} could not be read from the PDF."
+
+
+def unreadable_pages(result: dict[str, Any]) -> list[int]:
+    """The pages of the conversion's one ``page_unreadable`` warning."""
+    [issue] = [i for i in result["issues"] if i["code"] == "page_unreadable"]
+    assert issue["severity"] == "warning"
+    return list(issue["pages"])
+
+
+def book_pages(epub: Path) -> list[str]:
+    """The labels of the book's page list, in order."""
+    with zipfile.ZipFile(epub) as book:
+        nav = book.read("OEBPS/nav.xhtml").decode()
+    page_list = nav[nav.index('epub:type="page-list"') :]
+    page_list = page_list[: page_list.index("</nav>")]
+    return re.findall(r"<a [^>]*>([^<]*)</a>", page_list)
+
+
+@pytest.mark.ac("RFL-AC30")
+@pytest.mark.parametrize("isolation", ["inprocess", "subprocess"])
+def test_unreadable_pages_are_disclosed_in_the_book(
+    tmp_path: Path, sink: RecordingSink, isolation: str
+) -> None:
+    names = ["unloadable-page", "untyped-page", "unmatched-pages"]
+    inputs = []
+    for name in names:
+        shutil.copyfile(DAMAGED / f"{name}.pdf", tmp_path / f"{name}.pdf")
+        inputs.append(InputSpec(tmp_path / f"{name}.pdf"))
+    plan = plan_batch(inputs, DiscoveryOptions())
+    options = BatchOptions(isolation=isolation)  # type: ignore[arg-type]  # parametrised Literal
+
+    run_batch(plan, options, ConversionOptions(), sink)
+
+    results = {Path(result["source"]).stem: result for result in finished(sink)}
+    for name in names:
+        assert results[name]["outcome"] == "converted", name
+        assert unreadable_pages(results[name]) == [2], name
+
+    # pdfium counts page 2 but can't load it; pdfminer recovered its text.
+    assert results["unloadable-page"]["pages"] == 3
+    book = tmp_path / "unloadable-page.epub"
+    assert book_pages(book) == ["1", "2", "3"]
+    text = " ".join(book_text(book).split())
+    first, notice = text.index("The first page."), text.index(NOTICE.format(2))
+    assert first < notice < text.index("The lost page.") < text.index("The last page.")
+
+    # Only pdfium has page 2: it renders it, as a page image after the notice.
+    assert results["untyped-page"]["pages"] == 2
+    fallbacks = [i for i in results["untyped-page"]["issues"] if i["code"] == "page_fallback"]
+    assert [(i["reason"], i["pages"]) for i in fallbacks] == [("unreadable", [2])]
+    book = tmp_path / "untyped-page.epub"
+    assert book_pages(book) == ["1", "2"]
+    with zipfile.ZipFile(book) as epub:
+        markup = "".join(
+            epub.read(name).decode() for name in epub.namelist() if name.endswith(".xhtml")
+        )
+    notice = markup.index(NOTICE.format(2))
+    image = markup.index('alt="Page 2"')
+    assert markup.index("The typed page.") < notice < image < markup.index("The untyped page.")
+
+    # Only pdfminer has page 2 (the page tree read wrongly): its text follows the notice.
+    assert results["unmatched-pages"]["pages"] == 2
+    text = " ".join(book_text(tmp_path / "unmatched-pages.epub").split())
+    assert text.index("The final page.") < text.index(NOTICE.format(2))
+    assert "The final page." in text[text.index(NOTICE.format(2)) :]
