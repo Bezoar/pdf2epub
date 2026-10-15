@@ -4,8 +4,6 @@
 # The v1 acceptance ticket requires this list to be empty.
 
 
-CLI-AC3
-CLI-AC6
 
 
 MAIN-AC-F
