@@ -30,6 +30,16 @@ And the kinds of damage that once crashed a conversion instead of failing it cle
 - ``objstm-root-loop.pdf``: the same, with the trailer's ``/Root`` naming that object
   stream, which neither parser can read (qpdf's ``issue-120.pdf``).
 
+And two kinds of unreadable page among readable ones (#98, RFL-AC30):
+
+- ``unloadable-page.pdf``: three pages, the second's cross-reference entry giving its
+  content stream's offset (as in ``missing-page.pdf``), so pdfium counts it but can't
+  load it; pdfminer reads all three once the table is rebuilt;
+- ``unloadable-first-page.pdf``: the same three pages, the first unloadable instead,
+  so there is no page 1 to render the cover from;
+- ``untyped-page.pdf``: two pages, the second without ``/Type /Page``: pdfium takes it
+  for a page, pdfminer doesn't, even after repair.
+
 Their text, where they have any, is the novel's or a single word, so none has ground
 truth of its own.
 """
@@ -51,6 +61,9 @@ MISSING_PAGE = "damaged/missing-page.pdf"
 XREF_LOOP = "damaged/xref-loop.pdf"
 OBJSTM_LOOP = "damaged/objstm-loop.pdf"
 OBJSTM_ROOT_LOOP = "damaged/objstm-root-loop.pdf"
+UNLOADABLE_PAGE = "damaged/unloadable-page.pdf"
+UNTYPED_PAGE = "damaged/untyped-page.pdf"
+UNLOADABLE_FIRST_PAGE = "damaged/unloadable-first-page.pdf"
 
 SEED = 2902
 BOMB_SIDE = 40000
@@ -217,12 +230,56 @@ def build_missing_page(out_dir: Path) -> None:
         _words(b"A page nobody can find."),
         _FONT,
     ]
-    data = bytearray(rawpdf.document(objects))
-    table = data.rindex(b"\nxref\n") + 1
-    entries = table + len(b"xref\n0 6\n")
-    page, contents = entries + 20 * 3, entries + 20 * 4  # 20 bytes per entry
-    data[page : page + 10] = data[contents : contents + 10]
-    _write(out_dir, MISSING_PAGE, bytes(data))
+    _write(out_dir, MISSING_PAGE, _point_at_next(rawpdf.document(objects), 3))
+
+
+def _point_at_next(data: bytes, entry: int) -> bytes:
+    """``data`` (from ``rawpdf.document``) with cross-reference entry ``entry`` giving the
+    offset of the object after it."""
+    out = bytearray(data)
+    table = out.rindex(b"\nxref\n") + 1
+    first = out.index(b"\n", table + len(b"xref\n")) + 1  # after the "0 <size>" line
+    at, after = first + 20 * entry, first + 20 * (entry + 1)  # 20 bytes per entry
+    out[at : at + 10] = out[after : after + 10]
+    return bytes(out)
+
+
+def build_unloadable_page(out_dir: Path) -> None:
+    _write(out_dir, UNLOADABLE_PAGE, _point_at_next(_three_pages(), 5))
+
+
+def build_unloadable_first_page(out_dir: Path) -> None:
+    _write(out_dir, UNLOADABLE_FIRST_PAGE, _point_at_next(_three_pages(), 3))
+
+
+def _three_pages() -> bytes:
+    """Three pages, each object followed by its content stream (objects 3-8)."""
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>",
+        _one_page(2, 4, 9),
+        _words(b"The first page."),
+        _one_page(2, 6, 9),
+        _words(b"The lost page."),
+        _one_page(2, 8, 9),
+        _words(b"The last page."),
+        _FONT,
+    ]
+    return rawpdf.document(objects)
+
+
+def build_untyped_page(out_dir: Path) -> None:
+    untyped = _one_page(2, 6, 7).replace(b"/Type /Page ", b"")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>",
+        _one_page(2, 4, 7),
+        _words(b"The typed page."),
+        untyped,
+        _words(b"The untyped page."),
+        _FONT,
+    ]
+    _write(out_dir, UNTYPED_PAGE, rawpdf.document(objects))
 
 
 def build_objstm_loop(out_dir: Path) -> None:

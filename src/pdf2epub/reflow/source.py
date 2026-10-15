@@ -4,6 +4,7 @@
 import ctypes
 import hashlib
 import io
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,6 +51,8 @@ class SourcePdf:
     outline: list[OutlineEntry] = field(default_factory=list)
     xmp: bytes | None = None
     """The XMP metadata packet, if any, as read by ``ParsedPdf.xmp``."""
+    unloadable: frozenset[int] = frozenset()
+    """The 1-based pages pdfium counts but can't load (RFL-R37)."""
 
     @property
     def page_count(self) -> int:
@@ -58,8 +61,8 @@ class SourcePdf:
 
 def open_source(path: Path, password: Secret | None = None) -> SourcePdf:
     """Open ``path`` with pdfium, which repairs what it can, with ``password`` if it
-    needs one. Raises ``CorruptPdf`` when even that fails. A PDF with no pages comes back
-    with ``page_count`` 0."""
+    needs one. Raises ``CorruptPdf`` when even that fails, or when pdfium can load none of
+    the pages it counts (RFL-R37). A PDF with no pages comes back with ``page_count`` 0."""
     data = path.read_bytes()
     try:
         document = pdfium.PdfDocument(
@@ -74,11 +77,13 @@ def open_source(path: Path, password: Secret | None = None) -> SourcePdf:
             raise CorruptPdf(f"The PDF can't be parsed, even with repair: {error}") from error
         raise
     try:
-        _check_pages(document)
+        unloadable = _unloadable_pages(document)
+        if unloadable and len(unloadable) == len(document):
+            raise CorruptPdf("No page of the PDF can be read, even with repair")
         labels = [document.get_page_label(i) or str(i + 1) for i in range(len(document))]
         info = {key: value for key, value in document.get_metadata_dict(skip_empty=True).items()}
         language = _catalog_language(document)
-        outline = _outline(document)
+        outline = _outline(document, unloadable)
     finally:
         document.close()
     return SourcePdf(
@@ -88,7 +93,32 @@ def open_source(path: Path, password: Secret | None = None) -> SourcePdf:
         info=info,
         language=language,
         outline=outline,
+        unloadable=unloadable,
     )
+
+
+def page_text(path: Path, pages: Collection[int], password: Secret | None = None) -> dict[int, str]:
+    """The text pdfium reads on each of ``pages`` (1-based) of ``path``, opened with
+    ``password`` if it needs one: a page's text where pdfminer.six has no page to read it
+    from (RFL-R37)."""
+    if not pages:
+        return {}
+    document = pdfium.PdfDocument(path, password=password.reveal() if password else None)
+    try:
+        texts: dict[int, str] = {}
+        for number in sorted(pages):
+            page = document[number - 1]
+            try:
+                textpage = page.get_textpage()
+                try:
+                    texts[number] = textpage.get_text_range()
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+        return texts
+    finally:
+        document.close()
 
 
 # The most outline entries read, and the deepest nesting followed: an outline is a tree
@@ -105,7 +135,7 @@ _TOP_PARAMETER = {
 }
 
 
-def _outline(document: pdfium.PdfDocument) -> list[OutlineEntry]:
+def _outline(document: pdfium.PdfDocument, unloadable: Collection[int]) -> list[OutlineEntry]:
     entries: list[OutlineEntry] = []
     for item in document.get_toc(max_depth=_MAX_OUTLINE_DEPTH):
         if len(entries) == _MAX_OUTLINE:
@@ -117,8 +147,9 @@ def _outline(document: pdfium.PdfDocument) -> list[OutlineEntry]:
             page = index + 1
             mode, params = destination.get_view() if destination is not None else (0, [])
             at = _TOP_PARAMETER.get(mode)
-            # pdfium reports a null (unchanged) top as 0, which no real view uses.
-            if at is not None and len(params) > at and params[at]:
+            # pdfium reports a null (unchanged) top as 0, which no real view uses. A page
+            # pdfium can't load has no size to measure the top from.
+            if at is not None and len(params) > at and params[at] and page not in unloadable:
                 top = max(document.get_page_size(index)[1] - float(params[at]), 0.0)
         title = " ".join(item.get_title().split())
         entries.append(OutlineEntry(item.level, title, page, top))
@@ -136,14 +167,16 @@ _CORRUPT = (
 )
 
 
-def _check_pages(document: pdfium.PdfDocument) -> None:
-    """Raise ``CorruptPdf`` when a page in the page count can't be found: every later
-    stage that renders or reads a page through pdfium would fail on it."""
+def _unloadable_pages(document: pdfium.PdfDocument) -> frozenset[int]:
+    """The 1-based pages in the page count that pdfium can't find: no later stage may ask
+    pdfium to render or read them."""
+    unloadable: set[int] = set()
     for index in range(len(document)):
         try:
             document.get_page_size(index)  # finds the page as loading it does
-        except pdfium.PdfiumError as error:
-            raise CorruptPdf(f"Page {index + 1} can't be read, even with repair") from error
+        except pdfium.PdfiumError:
+            unloadable.add(index + 1)
+    return frozenset(unloadable)
 
 
 def _has_no_pages(data: bytes) -> bool:

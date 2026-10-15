@@ -46,6 +46,7 @@ REGISTRY = {
     "output_collision": "info",
     "write_failed": "error",
     "page_fallback": "warning",
+    "page_unreadable": "warning",
     "language_defaulted": "warning",
     "page_sequence_gap": "warning",
     "ocr_unavailable": "warning",

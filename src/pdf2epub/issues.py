@@ -38,6 +38,7 @@ class IssueCode(StrEnum):
     OUTPUT_COLLISION = "output_collision"
     WRITE_FAILED = "write_failed"
     PAGE_FALLBACK = "page_fallback"
+    PAGE_UNREADABLE = "page_unreadable"
     LANGUAGE_DEFAULTED = "language_defaulted"
     PAGE_SEQUENCE_GAP = "page_sequence_gap"
     OCR_UNAVAILABLE = "ocr_unavailable"
@@ -71,6 +72,7 @@ SEVERITIES: dict[IssueCode, Severity] = {
     IssueCode.OUTPUT_COLLISION: _I,
     IssueCode.WRITE_FAILED: _E,
     IssueCode.PAGE_FALLBACK: _W,
+    IssueCode.PAGE_UNREADABLE: _W,
     IssueCode.LANGUAGE_DEFAULTED: _W,
     IssueCode.PAGE_SEQUENCE_GAP: _W,
     IssueCode.OCR_UNAVAILABLE: _W,
