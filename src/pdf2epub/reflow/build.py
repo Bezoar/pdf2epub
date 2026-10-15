@@ -13,11 +13,12 @@ into chapters with a table of contents (``reflow.chapters``, RFL-R23, RFL-R24).
 
 Pages set in more than one column, and in ``mode = "auto"`` complex pages, are not
 reflowed: each becomes a page image with its text kept searchable (RFL-R11, RFL-R13,
-RFL-R15), reported as one ``page_fallback`` issue per reason (API-R11). The cover is
-added by the conversion (``reflow.cover``).
+RFL-R15), reported as one ``page_fallback`` issue per reason (API-R11). An unreadable
+page (``reflow.unreadable``, RFL-R37) keeps its place, with a visible notice and what was
+recovered of it. The cover is added by the conversion (``reflow.cover``).
 """
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 from itertools import pairwise
 
@@ -46,6 +47,7 @@ from pdf2epub.reflow.model import (
     Heading,
     Image,
     ImageAsset,
+    Inline,
     LineBlock,
     PageBreak,
     PageImage,
@@ -56,6 +58,7 @@ from pdf2epub.reflow.render import render_pages
 from pdf2epub.reflow.sequence import sequence_gaps
 from pdf2epub.reflow.source import SourcePdf
 from pdf2epub.reflow.text import Join, ends_sentence, paragraph_inlines
+from pdf2epub.reflow.unreadable import UnreadablePage
 from pdf2epub.reflow.wordlists import wordlist
 
 
@@ -65,15 +68,21 @@ def build_document(
     images: dict[int, list[PlacedImage]],
     options: ConversionOptions,
     password: Secret | None = None,
+    unreadable: Mapping[int, UnreadablePage] | None = None,
 ) -> tuple[Document, list[Issue]]:
-    """The document model for ``source`` from its pages' text and images, and the issues
-    found while building it."""
+    """The document model for ``source`` from its pages' text and images, and its
+    ``unreadable`` pages, which ``pages`` leaves out; and the issues found while building
+    it."""
+    unreadable = unreadable or {}
     metadata, issues = book_metadata(source, options)
     reasons = {page.page: reason for page in pages if (reason := fallback_reason(page, options))}
-    page_images = _page_images(source, pages, reasons, password)
+    reasons |= {number: UNREADABLE for number, page in unreadable.items() if page.rendered}
+    page_images = _page_images(source, pages, unreadable, reasons, password)
     blocks, positions, furniture = _body(
-        source, pages, images, page_images, wordlist(metadata.language)
+        source, pages, images, page_images, unreadable, wordlist(metadata.language)
     )
+    if unreadable:
+        issues.append(Issue(IssueCode.PAGE_UNREADABLE, _UNREADABLE, pages=sorted(unreadable)))
     issues.extend(_fallback_issues(reasons))
     gaps = sequence_gaps(furniture.page_numbers)
     if gaps is not None:
@@ -93,6 +102,11 @@ OCR_TIMEOUT, OCR_FAILED = "ocr_timeout", "ocr_failed"
 OCR_LOW_CONFIDENCE = "ocr_low_confidence"
 BAD_TEXT_LAYER = "bad_text_layer"
 OCR_UNAVAILABLE = "ocr_unavailable"
+UNREADABLE = "unreadable"
+_UNREADABLE = (
+    "These pages could not be read from the PDF; each is marked in the book, with what "
+    "could be recovered of it."
+)
 # In the order their page_fallback issues are reported.
 _FALLBACK_MESSAGES = {
     COMPLEX: "Pages with tables, equations or heavy graphics were embedded as page "
@@ -107,6 +121,8 @@ _FALLBACK_MESSAGES = {
     OCR_FAILED: "The OCR engine failed on these pages, so they were embedded as page images.",
     OCR_UNAVAILABLE: "These pages needed OCR, which is unavailable, so they were embedded as "
     "page images.",
+    UNREADABLE: "These pages could be rendered but not read as text, so they were embedded "
+    "as page images.",
 }
 
 
@@ -141,12 +157,14 @@ def _fallback_issues(reasons: dict[int, str]) -> list[Issue]:
 def _page_images(
     source: SourcePdf,
     pages: list[PageText],
+    unreadable: Mapping[int, UnreadablePage],
     reasons: dict[int, str],
     password: Secret | None,
 ) -> dict[int, PageImage]:
     """The page image block for each page that falls back: a render of the page, and its
     lines (in column order on a multi-column page) as its searchable text."""
     text = {page.page: "\n".join(line.text for line in page.lines) for page in pages}
+    text |= {number: page.text or "" for number, page in unreadable.items()}
     return {
         number: PageImage(asset, text[number] or None, number)
         for number, asset in render_pages(source.path, sorted(reasons), password)
@@ -174,7 +192,8 @@ class _Heading:
     level: int
 
 
-_Item = PageBreak | _Open | _Heading | LineBlock | Image | PageImage
+_Item = PageBreak | _Open | _Heading | Paragraph | LineBlock | Image | PageImage
+"""What goes into the stream of blocks; a ``Paragraph`` is one pdf2epub wrote."""
 
 
 def _body(
@@ -182,6 +201,7 @@ def _body(
     pages: list[PageText],
     images: dict[int, list[PlacedImage]],
     page_images: dict[int, PageImage],
+    unreadable: Mapping[int, UnreadablePage],
     words: Collection[str] | None,
 ) -> tuple[list[Block], list[Position], Furniture]:
     """The book's blocks in reading order, with where each starts, and its furniture."""
@@ -193,7 +213,15 @@ def _body(
     levels = heading_levels(laid_out, furniture.removed, typography, ocr_widths)
     stream: list[tuple[_Item, Position]] = []
     open_paragraph: _Open | None = None
-    for page in laid_out:
+    waiting = sorted(unreadable)
+    """The unreadable pages not yet placed, each before the first page after it."""
+    for page in [*laid_out, None]:
+        while waiting and (page is None or waiting[0] < page.page):
+            # Nothing joins across an unreadable page (RFL-R18, RFL-R37).
+            stream.extend(_unreadable(source, unreadable[waiting.pop(0)], page_images))
+            open_paragraph = None
+        if page is None:
+            break
         marker = PageBreak(label=source.page_labels[page.page - 1], page=page.page)
         if page.page in page_images:
             # The page image holds the page's own images; nothing joins across it (RFL-R18).
@@ -260,6 +288,25 @@ def _body(
         else:
             blocks.append(item)
     return blocks, [position for _, position in stream], furniture
+
+
+def _unreadable(
+    source: SourcePdf, page: UnreadablePage, page_images: dict[int, PageImage]
+) -> list[tuple[_Item, Position]]:
+    """An unreadable page's blocks (RFL-R37): its page-break marker, a visible notice,
+    then its page image or the text recovered from it, line by line."""
+    number = page.page
+    notice = Paragraph([Text(f"Page {number} could not be read from the PDF.", italic=True)])
+    items: list[tuple[_Item, Position]] = [
+        (PageBreak(label=source.page_labels[number - 1], page=number), (number, -1.0)),
+        (notice, (number, 0.0)),
+    ]
+    if number in page_images:
+        items.append((page_images[number], (number, 0.0)))
+    elif page.text:
+        lines: list[list[Inline]] = [[Text(line)] for line in page.text.splitlines()]
+        items.append((LineBlock(lines), (number, 0.0)))
+    return items
 
 
 # Points of slack when deciding that an image sits in the gap between two lines.

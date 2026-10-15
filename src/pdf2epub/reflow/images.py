@@ -9,6 +9,7 @@ asset, downscaled and re-encoded by ``reflow.render.encode``.
 
 import hashlib
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,10 +38,13 @@ class PlacedImage:
     bottom: float
 
 
-def read_images(path: Path, password: Secret | None = None) -> dict[int, list[PlacedImage]]:
+def read_images(
+    path: Path, password: Secret | None = None, skip: Collection[int] = ()
+) -> dict[int, list[PlacedImage]]:
     """The images on each page of ``path`` (opened with ``password`` if it needs one),
-    by 1-based page index, top to bottom. Raises ``ResourceLimitExceeded`` for an image
-    above the pixel limit."""
+    by 1-based page index, top to bottom, leaving out the pages in ``skip`` (unreadable
+    pages, RFL-R37). Raises ``ResourceLimitExceeded`` for an image above the pixel
+    limit."""
     images: dict[int, list[PlacedImage]] = {}
     seen: dict[str, ImageAsset] = {}
     """Each asset by the hash of its decoded pixels (RFL-R26)."""
@@ -49,6 +53,8 @@ def read_images(path: Path, password: Secret | None = None) -> dict[int, list[Pl
     )
     try:
         for index in range(len(document)):
+            if index + 1 in skip:
+                continue
             page = document[index]
             try:
                 placed = _page_images(page, seen)
