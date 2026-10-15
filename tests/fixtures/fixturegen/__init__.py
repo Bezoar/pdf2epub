@@ -160,9 +160,8 @@ def registry() -> list[Fixture]:
         Fixture(
             textlayers.NO_TOUNICODE, textlayers.NO_TOUNICODE_TRUTH, textlayers.build_no_tounicode
         ),
-        # Must-trust pages that reproduce real-world rejections (#89).
+        # A must-trust page that reproduces a real-world rejection (#89).
         Fixture(trusted.TYPE3_NAMES, trusted.TYPE3_NAMES_TRUTH, trusted.build_type3_names),
-        Fixture(trusted.LOREM_IPSUM, trusted.LOREM_IPSUM_TRUTH, trusted.build_lorem_ipsum),
     ]
 
 

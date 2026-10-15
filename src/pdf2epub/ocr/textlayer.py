@@ -15,9 +15,9 @@ Three signals (OCR-R7), each against a threshold below:
    font's encoding names the character's glyph with a standard glyph name (``/a``,
    ``/comma``, ``/uni00E9``): the name says which character it is (ISO 32000-2 §9.10.2),
    though PDFium doesn't read it for Type 3 fonts, the kind Matplotlib writes;
-2. word plausibility: the share of word tokens in the language's wordlist or spelt like
-   its words, or that look like words when it has none (``signals.plausibility``); only
-   judged on a page with at least ``MIN_TOKENS`` tokens;
+2. word plausibility: the share of word tokens in the language's wordlist, or that look
+   like words when it has none (``signals.plausibility``); only judged on a page with at
+   least ``MIN_TOKENS`` tokens;
 3. coverage, for prior OCR layers only: the share of the rendered page's ink inside the
    layer's character boxes (OCR-R16's metric).
 

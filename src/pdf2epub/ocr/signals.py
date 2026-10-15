@@ -7,10 +7,8 @@ between the best OCR attempt and that layer (OCR-R10).
   language. (The text-layer check also counts PDFium's Unicode-map errors, which only
   the PDF can tell.)
 - **Word plausibility**: the share of word tokens found in the language's wordlist (the
-  one de-hyphenation uses), or spelt like its words: every three-letter sequence of the
-  token, its start and end included, occurs in a word of the list. Filler such as Lorem
-  Ipsum is spelt like words; letters replaced at random are not. With no wordlist, the
-  share of tokens that look like words: letters only, of a sensible length.
+  one de-hyphenation uses); with no wordlist, the share that look like words: letters
+  only, of a sensible length.
 
 Scripts are told apart by Unicode character names (``LATIN SMALL LETTER A``,
 ``CYRILLIC CAPITAL LETTER A``, ``CJK UNIFIED IDEOGRAPH-4E00``). Han, kana, Hangul and
@@ -188,9 +186,8 @@ def tokens(text: str) -> list[str]:
 def plausibility(text: str, words: Collection[str] | None) -> tuple[float, int]:
     """The share of ``text``'s word tokens that are plausible words, and how many tokens
     there are (share 0 for none). With a wordlist, a token is plausible when it is in the
-    list, as written, in lower case or capitalised (each part of a hyphenated token), or
-    when it is spelt like the list's words (``spelt_like``); without one, when it is
-    letters only and of a sensible length."""
+    list, as written, in lower case or capitalised (each part of a hyphenated token);
+    without one, when it is letters only and of a sensible length."""
     # Ligatures expanded and soft hyphens removed, as the text layer is read (RFL-R8).
     found = tokens(normalise(text))
     if not found:
@@ -206,37 +203,7 @@ def _known(token: str, words: Collection[str] | None) -> bool:
     return all(
         part in words or part.lower() in words or part.capitalize() in words
         for part in token.split("-")
-    ) or spelt_like(token, words)
-
-
-_BOUNDARY = "^$"  # marks a word's start and end in its trigrams; never a letter
-
-
-def _trigrams(word: str) -> set[str]:
-    """``word``'s three-letter sequences, in lower case, its start and end marked."""
-    marked = _BOUNDARY[0] + word.lower() + _BOUNDARY[1]
-    return {marked[i : i + 3] for i in range(len(marked) - 2)}
-
-
-@functools.cache
-def _spellings(words: frozenset[str]) -> frozenset[str]:
-    """Every trigram (``_trigrams``) of the words in ``words`` made of letters only."""
-    found: set[str] = set()
-    for word in words:
-        if word.isalpha():
-            found |= _trigrams(word)
-    return frozenset(found)
-
-
-def spelt_like(token: str, words: Collection[str]) -> bool:
-    """Whether ``token`` is spelt like the words of ``words``: each of its parts (split at
-    hyphens and apostrophes) is letters only, and every trigram of each part, its start
-    and end included, occurs in a word of the list."""
-    parts = re.split(r"['\-" + _APOSTROPHE + "]", token)
-    if not all(part.isalpha() for part in parts):
-        return False
-    known = _spellings(words if isinstance(words, frozenset) else frozenset(words))
-    return all(_trigrams(part) <= known for part in parts)
+    )
 
 
 def _word_like(token: str, words: Collection[str] | None) -> bool:
