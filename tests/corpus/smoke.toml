@@ -20,13 +20,13 @@
 [[entries]]
 id = "S1"
 role = "Novel, born-digital"
-file = "Little Brother, Cory Doctorow (134 pp)"
-url = "https://craphound.com/littlebrother/Cory_Doctorow_-_Little_Brother.pdf"
-sha256 = "f90e8dfe9778a6859a817a598c557c8c9963ac75a49ca2d7987ca386ad8f3700"
-license = "CC BY-NC-SA 3.0 (fetch only)"
+file = "Homeland, Cory Doctorow (292 pp, single column)"
+url = "https://craphound.com/homeland/Cory_Doctorow_-_Homeland.pdf"
+sha256 = "13385ccf9de0691331a0fd075a6386a0626f0a382dacdf04c5f24b4b3929a36e"
+license = "CC BY-NC-ND 3.0 (fetch only)"
 expect = { outcome = "converted" }
 must_trust = true
-check_by_eye = "chapter TOC; no running headers (Cory Doctorow/Little Brother/NN) or page numbers in text"
+check_by_eye = "chapter TOC; no running headers (Homeland) or page numbers in text"
 
 [[entries]]
 id = "S2"
