@@ -69,7 +69,7 @@ class Coverage:
     def value(self) -> float:
         """The coverage: the share, or 1 when the boxes hold some text-like ink and less
         than ``MAX_UNCOVERED`` units are uncovered."""
-        return 1.0 if 0 < self.share and self.uncovered < MAX_UNCOVERED else self.share
+        return 1.0 if self.share > 0 and self.uncovered < MAX_UNCOVERED else self.share
 
 
 def measure(image: Image.Image, boxes: Iterable[Box]) -> Coverage:
