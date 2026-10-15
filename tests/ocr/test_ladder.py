@@ -2,13 +2,16 @@
 (OCR-R16, OCR-R19, OCR-R20, OCR-R21, OCR-R27).
 
 ``recognise`` runs one page through cleanup and the ladder. The page is a synthetic image
-with known ink: two equal black bars, mirror images of each other about the page's
-vertical centre line. The fake engine "reads" words whose boxes it places from the image
-it is sent, so its scripted coverage holds whatever cleanup cropped.
+with known ink: lines of glyph-sized blocks, the two halves of each line mirror images of
+each other about the page's vertical centre line. The fake engine "reads" words whose
+boxes it places from the image it is sent, so its scripted coverage holds whatever
+cleanup cropped.
 """
 
 import re
 import time
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -32,28 +35,46 @@ from pdf2epub.ocr.ladder import P_MIN, Recognition, recognise
 DPI = 300
 
 
+LINES, GLYPHS = 30, 40
+"""The page's text: 30 lines of 40 glyph-sized blocks."""
+LINE_TOP, LINE_STEP, GLYPH_HEIGHT = 600, 60, 30
+GLYPH_LEFT, GLYPH_STEP, GLYPH_WIDTH = 305, 30, 20
+LINE_MARGIN = 5
+"""How far a word's box reaches above and below its line's glyphs."""
+
+
 def page() -> Image.Image:
-    """A 6 x 9 in white page at 300 DPI with two 400 x 60 px black bars side by side, the
-    page's only ink, equal and placed symmetrically about its centre line."""
+    """A 6 x 9 in white page at 300 DPI whose only ink is 30 lines of 40 black 20 x 30 px
+    blocks, the size of 10 pt letters, 10 px apart: 20 blocks of each line lie left of the
+    page's vertical centre line and 20, their mirror images, right of it."""
     image = Image.new("L", (1800, 2700), 255)
     draw = ImageDraw.Draw(image)
-    draw.rectangle((450, 1300, 849, 1359), fill=0)
-    draw.rectangle((950, 1300, 1349, 1359), fill=0)
+    for line in range(LINES):
+        top = LINE_TOP + line * LINE_STEP
+        for glyph in range(GLYPHS):
+            left = GLYPH_LEFT + glyph * GLYPH_STEP
+            draw.rectangle((left, top, left + GLYPH_WIDTH - 1, top + GLYPH_HEIGHT - 1), fill=0)
     return image
 
 
 def boxes(request: OcrRequest, share: float, confidence: float) -> OcrPageResult:
-    """One word whose box spans the left ``share`` of the request image, full height: with
-    ``share`` 0.5 it holds exactly the left bar; with 1, all the ink."""
-    width, height = request.image.size
-    word = Word("word", 0, 0, width * share, height, confidence, confidence * 100)
-    return OcrPageResult(lines=(OcrLine((word,), height),))
+    """One word per line, its box the line's height (and a little more) and spanning the
+    left ``share`` of the request image: with ``share`` 0.5 the words hold exactly the
+    left half of the ink; with 1, all of it."""
+    width = request.image.size[0]
+    lines = []
+    for line in range(LINES):
+        top = LINE_TOP + line * LINE_STEP - LINE_MARGIN
+        bottom = top + GLYPH_HEIGHT + 2 * LINE_MARGIN
+        word = Word("word", 0, top, width * share, bottom, confidence, confidence * 100)
+        lines.append(OcrLine((word,), bottom - top))
+    return OcrPageResult(lines=tuple(lines))
 
 
-def run(engine: FakeEngine, **options: object) -> Recognition:
+def run(engine: FakeEngine, image: Image.Image | None = None, **options: object) -> Recognition:
     return recognise(
         engine,
-        page(),
+        page() if image is None else image,
         DPI,
         OcrOptions(**options),  # type: ignore[arg-type]
         "eng",
@@ -74,6 +95,154 @@ def test_coverage_is_the_share_of_ink_inside_word_boxes() -> None:
     assert P_MIN < 0.95
     # Confident, but half the ink is outside every word: not accepted.
     assert recognition.reason == "ocr_low_confidence"
+
+
+def illustrated_page() -> Image.Image:
+    """``page()`` with a black 600 x 400 px picture plate above its text, as a book's
+    illustration: ink no word box holds that is not text."""
+    image = page()
+    ImageDraw.Draw(image).rectangle((600, 150, 1199, 549), fill=0)
+    return image
+
+
+def low_boxes(request: OcrRequest) -> OcrPageResult:
+    """``boxes(request, 1.0, 0.95)`` with every box moved down by half a line's glyph
+    height: each glyph's top half lies above every box."""
+    full = boxes(request, 1.0, 0.95)
+    shift = GLYPH_HEIGHT // 2
+    lines = [
+        OcrLine(
+            tuple(replace(w, top=w.top + shift, bottom=w.bottom + shift) for w in line.words),
+            line.height,
+        )
+        for line in full.lines
+    ]
+    return OcrPageResult(lines=tuple(lines))
+
+
+def missing_lines(count: int) -> Callable[[int, OcrRequest], OcrPageResult]:
+    """Words for every line but the last ``count``."""
+
+    def read(call: int, request: OcrRequest) -> OcrPageResult:
+        full = boxes(request, 1.0, 0.95)
+        return OcrPageResult(lines=full.lines[: LINES - count])
+
+    return read
+
+
+# One glyph is 20 x 30 px of ink and a unit (OCR-R16) is a square one box height (40 px)
+# across, so a glyph is 600 / 1600 = 0.375 units and a line of 40 glyphs 15 units.
+UNITS_PER_LINE = GLYPHS * GLYPH_WIDTH * GLYPH_HEIGHT / (GLYPH_HEIGHT + 2 * LINE_MARGIN) ** 2
+
+
+@pytest.mark.ac("OCR-AC26")
+def test_a_picture_and_boxes_set_low_on_their_glyphs_leave_coverage_full() -> None:
+    recognition = run(FakeEngine(lambda call, request: low_boxes(request)), illustrated_page())
+
+    assert recognition.result.coverage == 1.0
+    assert recognition.reason is None
+
+
+@pytest.mark.ac("OCR-AC26")
+def test_text_missed_under_the_allowance_leaves_coverage_full() -> None:
+    # 5 lines missed: 75 units, under the 80-unit allowance.
+    assert 5 * UNITS_PER_LINE < 80 <= 6 * UNITS_PER_LINE
+
+    recognition = run(FakeEngine(missing_lines(5)), quality="fast")
+
+    assert recognition.result.coverage == 1.0
+    assert recognition.reason is None
+
+
+@pytest.mark.ac("OCR-AC26")
+def test_text_missed_over_the_allowance_makes_coverage_the_share() -> None:
+    # 7 lines of 30 missed: 105 units, so coverage is the share of glyphs boxed, 23 / 30,
+    # below C_MIN: the confident attempt is not accepted.
+    recognition = run(FakeEngine(missing_lines(7)), quality="fast")
+
+    assert recognition.result.coverage == pytest.approx(23 / 30, abs=0.001)
+    assert recognition.reason == "ocr_low_confidence"
+
+
+def dark_plate_page(halftone: bool = False) -> Image.Image:
+    """Dark print beside a dark picture: a black 1700 x 1600 px plate, more than half the
+    page, above 14 lines of ``page()``'s glyph blocks. A ``halftone`` plate has a grid of
+    40 x 40 px white patches, every 90 px, as a halftone scan breaks up."""
+    image = Image.new("L", (1800, 2700), 255)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((50, 100, 1749, 1699), fill=0)
+    if halftone:
+        for top in range(140, 1640, 90):
+            for left in range(90, 1690, 90):
+                draw.rectangle((left, top, left + 39, top + 39), fill=255)
+    for line in range(14):
+        top = 1800 + line * LINE_STEP
+        for glyph in range(GLYPHS):
+            left = GLYPH_LEFT + glyph * GLYPH_STEP
+            draw.rectangle((left, top, left + GLYPH_WIDTH - 1, top + GLYPH_HEIGHT - 1), fill=0)
+    return image
+
+
+@pytest.mark.parametrize("halftone", [False, True], ids=["solid", "halftone"])
+def test_a_page_mostly_dark_from_a_picture_is_not_read_as_light_print(halftone: bool) -> None:
+    # Words for the first 7 of the 14 lines: 105 units of the print missed, so coverage is
+    # the share, 1/2. Read inverted, the page would have no text-like ink to miss (solid
+    # plate), or only the halftone's white patches (halftone plate).
+    assert 7 * UNITS_PER_LINE >= 80
+
+    def half(call: int, request: OcrRequest) -> OcrPageResult:
+        words = []
+        for line in range(7):
+            top = 1800 + line * LINE_STEP - LINE_MARGIN
+            bottom = top + GLYPH_HEIGHT + 2 * LINE_MARGIN
+            words.append(Word("word", 0, top, request.image.size[0], bottom, 0.95, 95))
+        return OcrPageResult(lines=tuple(OcrLine((w,), w.bottom - w.top) for w in words))
+
+    recognition = run(FakeEngine(half), dark_plate_page(halftone), quality="fast")
+
+    assert recognition.result.coverage == pytest.approx(0.5, abs=0.001)
+    assert recognition.reason == "ocr_low_confidence"
+
+
+def no_words(call: int, request: OcrRequest) -> OcrPageResult:
+    return OcrPageResult(lines=())
+
+
+@pytest.mark.parametrize(
+    "picture",
+    [(300, 600, 1499, 2099), (50, 1300, 1749, 1399)],
+    ids=["plate", "banner"],
+)
+def test_a_picture_only_page_read_as_no_words_has_full_coverage(
+    picture: tuple[int, int, int, int],
+) -> None:
+    # A picture and no text, a plate or a thin banner across the page: with no words there
+    # are no boxes to measure text height by, but a picture is still no text, so nothing
+    # is missed.
+    image = Image.new("L", (1800, 2700), 255)
+    ImageDraw.Draw(image).rectangle(picture, fill=0)
+
+    recognition = run(FakeEngine(no_words), image)
+
+    assert recognition.result.coverage == 1.0
+
+
+def test_a_noisy_text_page_read_as_no_words_has_no_coverage() -> None:
+    # page()'s text with 1 px specks every 20 px between its lines and around it (more
+    # specks than glyphs): read as no words, all the text is missed.
+    image = page()
+    draw = ImageDraw.Draw(image)
+    for top in range(10, 2690, 20):
+        if not any(
+            LINE_TOP + line * LINE_STEP - 5 <= top < LINE_TOP + line * LINE_STEP + 35
+            for line in range(LINES)
+        ):
+            for left in range(10, 1790, 20):
+                draw.point((left, top), fill=0)
+
+    recognition = run(FakeEngine(no_words), image, quality="fast")
+
+    assert recognition.result.coverage == 0.0
 
 
 def test_a_word_box_off_the_image_covers_no_ink() -> None:

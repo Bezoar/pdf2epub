@@ -35,6 +35,9 @@ INVENTORY: dict[str, dict[str, str]] = {
         "at 150 DPI": "scanned/novel-150dpi.pdf",
         "image-only scan with no text layer": "scanned/image-only.pdf",
         "scan with a good invisible OCR layer": "scanned/ocr-layer.pdf",
+        "the same with the layer's lines set low": "scanned/low-boxes-layer.pdf",
+        "the same scan with a dark film border": "scanned/dark-border.pdf",
+        "an illustrated scan with a good layer of its text": "scanned/illustrated.pdf",
     },
     "Encrypted": {
         "AES-256 (R6) user password": "encrypted/aes256-user.pdf",
@@ -48,6 +51,8 @@ INVENTORY: dict[str, dict[str, str]] = {
         "font with no ToUnicode map": "must-reject/no-tounicode.pdf",
         "garbled invisible OCR layer": "must-reject/garbled-layer.pdf",
         "invisible OCR layer covering half of each page": "must-reject/half-layer.pdf",
+        "the same on a scan with a dark film border": "must-reject/half-layer-border.pdf",
+        "the same on a negative scan": "must-reject/half-layer-negative.pdf",
     },
     "Damaged": {
         "truncated file": "damaged/truncated.pdf",

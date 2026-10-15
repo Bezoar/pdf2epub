@@ -6,9 +6,15 @@ must-trust page passes and every must-reject page fails; this script shows the v
 were chosen from and the margins they leave. Run it after changing a signal, a threshold
 or a fixture.
 
-Usage: ``uv run python scripts/calibrate_text_layer.py [--pages]`` (``--pages`` prints one
-row per page; by default one row per fixture, with the range (lowest to highest) of each
-signal over its pages).
+Usage: ``uv run python scripts/calibrate_text_layer.py [--pages] [PDF ...]`` (``--pages``
+prints one row per page; by default one row per fixture, with the range (lowest to
+highest) of each signal over its pages). Each ``PDF`` named is measured as must-trust too:
+the smoke set's Internet Archive scans S7 and S9 (TST-R4), from the smoke cache, are the
+real-world part of the calibration.
+
+Coverage (OCR-R16) is printed three ways: the coverage itself (the signal), the share of
+text-like ink inside the boxes, and the text-like ink outside every box, in units; the
+coverage is the share only from ``MAX_UNCOVERED`` units up.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from pdf2epub.ocr.coverage import MAX_UNCOVERED
 from pdf2epub.ocr.languages import ocr_languages
 from pdf2epub.ocr.pages import ocr_directly
 from pdf2epub.ocr.signals import language_scripts
@@ -50,11 +57,14 @@ def must_trust() -> list[Path]:
         *sorted(p for p in born.glob("*.pdf") if p.name not in _NO_TEXT_LAYER),
         scanned / "ocr-layer.pdf",
         *sorted(scanned.glob("page-numbers-*.pdf")),
+        scanned / "low-boxes-layer.pdf",
+        scanned / "dark-border.pdf",
+        scanned / "illustrated.pdf",
     ]
 
 
 def must_reject() -> list[Path]:
-    """The three must-reject fixtures (TST-R3)."""
+    """The must-reject fixtures (TST-R3)."""
     return sorted((FIXTURES / "must-reject").glob("*.pdf"))
 
 
@@ -79,34 +89,42 @@ def checks(path: Path) -> list[Row]:
     words = wordlist(options.language or declared or DEFAULT_LANGUAGE)
     layered = [p for p in pages if p.lines and not ocr_directly(p, images.get(p.page, []))]
     found = check_layers(path, None, layered, images, language_scripts(languages), words)
-    name = path.relative_to(FIXTURES).as_posix()
+    name = path.relative_to(FIXTURES).as_posix() if path.is_relative_to(FIXTURES) else path.name
     return [Row(name, number, check) for number, check in sorted(found.items())]
 
 
-def _range(values: list[float]) -> str:
+def _range(values: list[float], digits: int = 3) -> str:
     if not values:
         return "—"
-    low, high = min(values), max(values)
-    return f"{low:.3f}" if f"{low:.3f}" == f"{high:.3f}" else f"{low:.3f} to {high:.3f}"
+    low, high = f"{min(values):.{digits}f}", f"{max(values):.{digits}f}"
+    return low if low == high else f"{low} to {high}"
 
 
 def main(argv: list[str]) -> int:
     per_page = "--pages" in argv
+    extra = [Path(arg) for arg in argv if not arg.startswith("--")]
     print(
         f"Thresholds: garbage ratio > {MAX_GARBAGE_RATIO} → garbled; word plausibility < "
         f"{MIN_PLAUSIBILITY} (pages with ≥ {MIN_TOKENS} tokens) → implausible_words; "
-        f"prior-OCR coverage < {MIN_LAYER_COVERAGE} → low_coverage\n"
+        f"prior-OCR coverage < {MIN_LAYER_COVERAGE} → low_coverage (coverage is the share "
+        f"from {MAX_UNCOVERED:g} uncovered units up)\n"
     )
     wrong = 0
     totals: dict[str, dict[str, list[float]]] = {}
     for label, paths, should_reject in (
-        ("must-trust", must_trust(), False),
+        ("must-trust", [*must_trust(), *extra], False),
         ("must-reject", must_reject(), True),
     ):
         print(f"## {label}\n")
-        print("| fixture | pages | layer | garbage | plausibility | tokens | coverage | verdicts |")
-        print("|---|---|---|---|---|---|---|---|")
-        total = totals.setdefault(label, {"garbage": [], "plausibility": [], "coverage": []})
+        print(
+            "| fixture | pages | layer | garbage | plausibility | tokens | coverage "
+            "| share | uncovered | verdicts |"
+        )
+        print("|---|---|---|---|---|---|---|---|---|---|")
+        total = totals.setdefault(
+            label,
+            {"garbage": [], "plausibility": [], "coverage": [], "share": [], "uncovered": []},
+        )
         for path in paths:
             rows = checks(path)
             groups = [[row] for row in rows] if per_page else [rows]
@@ -117,9 +135,13 @@ def main(argv: list[str]) -> int:
                 garbage = [c.garbage for c in found]
                 plausible = [c.plausibility for c in found if c.tokens >= MIN_TOKENS]
                 coverage = [c.coverage for c in found if c.coverage is not None]
+                shares = [c.ink.share for c in found if c.ink is not None]
+                uncovered = [c.ink.uncovered for c in found if c.ink is not None]
                 total["garbage"] += garbage
                 total["plausibility"] += plausible
                 total["coverage"] += coverage
+                total["share"] += shares
+                total["uncovered"] += uncovered
                 verdicts: dict[str, int] = {}
                 for check in found:
                     verdict = check.reason or "trusted"
@@ -131,13 +153,15 @@ def main(argv: list[str]) -> int:
                 print(
                     f"| {group[0].fixture} | {pages} | {', '.join(layers)} | {_range(garbage)} "
                     f"| {_range(plausible)} | {min(tokens)} to {max(tokens)} | {_range(coverage)} "
+                    f"| {_range(shares)} | {_range(uncovered, 1)} "
                     f"| {', '.join(f'{v} {k}' for k, v in sorted(verdicts.items()))} |"
                 )
         print()
     print("## Ranges over all checked pages\n")
     for label, signals in totals.items():
         for signal, values in signals.items():
-            print(f"- {label} {signal}: {_range(values)} ({len(values)} pages)")
+            digits = 1 if signal == "uncovered" else 3
+            print(f"- {label} {signal}: {_range(values, digits)} ({len(values)} pages)")
     print(f"\n{wrong} page(s) on the wrong side of a threshold")
     return 1 if wrong else 0
 

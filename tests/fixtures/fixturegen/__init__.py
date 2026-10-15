@@ -47,6 +47,7 @@ def registry() -> list[Fixture]:
         novel,
         oversized,
         pagenumbers,
+        scanlayers,
         scans,
         structure,
         textlayers,
@@ -168,6 +169,19 @@ def registry() -> list[Fixture]:
             textlayers.build_garbled_layer,
         ),
         Fixture(textlayers.HALF_LAYER, textlayers.HALF_LAYER_TRUTH, textlayers.build_half_layer),
+        Fixture(scanlayers.LOW_BOXES, scanlayers.LOW_BOXES_TRUTH, scanlayers.build_low_boxes),
+        Fixture(scanlayers.DARK_BORDER, scanlayers.DARK_BORDER_TRUTH, scanlayers.build_dark_border),
+        Fixture(scanlayers.ILLUSTRATED, scanlayers.ILLUSTRATED_TRUTH, scanlayers.build_illustrated),
+        Fixture(
+            scanlayers.HALF_LAYER_BORDER,
+            scanlayers.HALF_LAYER_BORDER_TRUTH,
+            scanlayers.build_half_layer_border,
+        ),
+        Fixture(
+            scanlayers.HALF_LAYER_NEGATIVE,
+            scanlayers.HALF_LAYER_NEGATIVE_TRUTH,
+            scanlayers.build_half_layer_negative,
+        ),
         Fixture(
             textlayers.NO_TOUNICODE, textlayers.NO_TOUNICODE_TRUTH, textlayers.build_no_tounicode
         ),
