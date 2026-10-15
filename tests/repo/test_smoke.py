@@ -4,6 +4,7 @@ the real network or a real smoke-set file."""
 
 import hashlib
 import http.server
+import os
 import re
 import socket
 import subprocess
@@ -144,7 +145,7 @@ def refused_url() -> str:
 
 
 def run_smoke(
-    manifest: Path, cache: Path, out: Path, *extra: str
+    manifest: Path, cache: Path, out: Path, *extra: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -162,7 +163,35 @@ def run_smoke(
         capture_output=True,
         text=True,
         timeout=300,
+        env=env,
     )
+
+
+def test_smoke_script_supplies_only_the_manifest_passwords(server: Server, tmp_path: Path) -> None:
+    # The first batch unlocks the file with the manifest's password; the second batch has no
+    # password at all, even when the caller's environment holds the right one.
+    locked = (FIXTURES / "encrypted" / "aes256-user.pdf").read_bytes()
+    server.files = {"/locked.pdf": locked}
+    manifest = tmp_path / "smoke.toml"
+    manifest.write_text(
+        f"""
+[[entries]]
+id = "F"
+url = "{server.url("/locked.pdf")}"
+sha256 = "{hashlib.sha256(locked).hexdigest()}"
+license = "test"
+password = "hunter2"
+expect = {{ outcome = "converted" }}
+expect_without_password = "missing_password"
+""",
+        encoding="utf-8",
+    )
+    env = {**os.environ, "PDF2EPUB_PASSWORD": "hunter2"}
+
+    proc = run_smoke(manifest, tmp_path / "cache", tmp_path / "out", env=env)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "  F: ok (converted)" in proc.stdout.splitlines()
 
 
 @pytest.mark.ac("TST-AC6")

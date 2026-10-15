@@ -50,6 +50,7 @@ NETWORK_TIMEOUT = 60
 CONVERSION_TIMEOUT = 4 * 60 * 60
 """Seconds per conversion; the scanned books OCR hundreds of pages (pdf2epub's default is
 30 minutes)."""
+PASSWORD_VARIABLE = "PDF2EPUB_PASSWORD"
 USER_AGENT = "pdf2epub-smoke (+https://github.com/Bezoar/pdf2epub)"
 
 
@@ -306,8 +307,13 @@ def run_pdf2epub(
         *extra,
         *arguments,
     ]
+    # Only the manifest's passwords may reach pdf2epub, so the caller's environment cannot
+    # unlock a file (and the no-password run really has none).
+    env = {key: value for key, value in os.environ.items() if key != PASSWORD_VARIABLE}
     results: dict[str, dict[str, Any]] = {}
-    with subprocess.Popen(command, stdout=subprocess.PIPE, text=True, encoding="utf-8") as proc:
+    with subprocess.Popen(
+        command, stdout=subprocess.PIPE, text=True, encoding="utf-8", env=env
+    ) as proc:
         assert proc.stdout is not None
         for event in events(proc.stdout):
             if event.get("type") == "conversion_finished":
@@ -315,7 +321,8 @@ def run_pdf2epub(
                 results[name] = event
                 issues = ", ".join(issue_label(i) for i in event["issues"]) or "no issues"
                 say(f"  {name}: {event['outcome']} in {event['duration']:.0f} s ({issues})")
-    return proc.returncode, results
+        code = proc.wait()
+    return code, results
 
 
 def events(lines: Iterator[str]) -> Iterator[dict[str, Any]]:
