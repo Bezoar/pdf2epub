@@ -27,6 +27,7 @@ These rules apply to every change in this repository. They are instructions, not
 | Tests with branch coverage | `uv run coverage run -m pytest && uv run coverage report` |
 | Run the CLI from the checkout | `uv run pdf2epub --help` |
 | Fetch the real-world smoke set | `uv run python scripts/smoke.py fetch` |
+| Fetch, convert and check the smoke set (hours: the scans are OCR'd; `--only S4,S15` picks entries, pdf2epub options go after `--`) | `uv run python scripts/smoke.py run` |
 
 Before pushing, you must run lint, the format check, mypy and the full test suite locally, and all must pass.
 
