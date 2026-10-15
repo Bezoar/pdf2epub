@@ -20,6 +20,8 @@ Footnotes, tables and math as content, fixed layout, multi-column reading order,
 
 <a id="rfl-r3"></a>**RFL-R3**: When the parser opens the document only by recovering from damage (for example a rebuilt cross-reference table or a truncated file), the conversion shall continue and record [`repaired_pdf`](api.md#code-repaired_pdf).
 
+<a id="rfl-r37"></a>**RFL-R37**: The two parsers of [RFL-R1](#rfl-r1) shall agree on the document's pages. When pdfminer.six reads a different number of pages than pdfium, the cross-reference table shall be rebuilt by scanning the file, as damage under [RFL-R3](#rfl-r3); when the two still disagree, or when pdfium can't load a page it counts, the conversion shall fail with [`corrupt_pdf`](api.md#code-corrupt_pdf). Damage that loops back on itself (cross-reference sections that lead back to one already read, an object stored inside itself) shall be handled like any other damage under [RFL-R2](#rfl-r2) and [RFL-R3](#rfl-r3), and no depth of nesting in the file (a long chain of incremental updates, for example) shall end the conversion any other way.
+
 <a id="rfl-r4"></a>**RFL-R4**: A document with zero pages shall fail with [`empty_document`](api.md#code-empty_document).
 
 <a id="rfl-r35"></a>**RFL-R35**: A document that has pages but none of whose pages yields any content shall also fail with [`empty_document`](api.md#code-empty_document), and no EPUB shall be written. A page yields content if its text (from its text layer or from OCR, after normalisation and before furniture removal) has at least one non-whitespace character, or if the document model gets any image from it: a book image kept under [RFL-R26](#rfl-r26), a page-image fallback, or a scanned page's rendered image kept under [OCR-R17](ocr.md#ocr-r17). This is the registry's "no page yields any text or image"; whether an image counts is decided by those rules, not by a separate significance test. Blank pages are still handled page by page as [OCR-R1](ocr.md#ocr-r1) and [OCR-R17](ocr.md#ocr-r17) say (no OCR, no page-level issue); `empty_document` is a document-level failure raised only when every page is like that, whatever `OcrOptions.mode` is.
@@ -213,6 +215,16 @@ The EPUB writer ([epub](epub.md)) renders only from this model.
 <a id="rfl-ac3"></a>**RFL-AC3** (covers [RFL-R3](#rfl-r3)): **Given** the novel fixture with its cross-reference table removed, **when** it is converted, **then**:
 - the outcome is `converted`;
 - the issues include [`repaired_pdf`](api.md#code-repaired_pdf) (warning).
+
+<a id="rfl-ac29"></a>**RFL-AC29** (covers [RFL-R2](#rfl-r2), [RFL-R3](#rfl-r3), [RFL-R37](#rfl-r37)): **Given** each of these synthetic damaged fixtures, **when** it is converted, **then** its outcome is the one listed, and no conversion ends with [`internal_error`](api.md#code-internal_error):
+- every cross-reference offset short by a comment inserted after the header: `converted` with [`repaired_pdf`](api.md#code-repaired_pdf), both pages' text in the book;
+- a page tree that pdfminer.six reads as two pages and pdfium as one, even after repair: `failed` with [`corrupt_pdf`](api.md#code-corrupt_pdf);
+- a page whose cross-reference entry points at another object, so pdfium can't load it: `failed` with `corrupt_pdf`;
+- two cross-reference sections that name each other as `/Prev`: `converted` with `repaired_pdf`, the book holding the latest revision's text;
+- an object stream that the cross-reference stream says is stored inside itself, with and without the trailer's `/Root` naming it: `failed` with `corrupt_pdf`;
+- an intact two-page PDF followed by 1,500 incremental updates, each naming the one before as `/Prev`: `converted`, without `repaired_pdf`.
+
+Each also holds when the conversion runs in a worker process.
 
 <a id="rfl-ac4"></a>**RFL-AC4** (covers [RFL-R4](#rfl-r4)): **Given** a valid PDF with zero pages, **when** it is converted, **then** the outcome is `failed` with [`empty_document`](api.md#code-empty_document) (error) and no EPUB is written.
 
