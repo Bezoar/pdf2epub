@@ -15,7 +15,8 @@ masked image drawn over an earlier image is composited onto it, so the two are o
 picture, as on the page. Other images keep their decoded pixels
 (``FPDFImageObj_GetBitmap``, so every PDF image filter is handled) unless they must be
 cut. Images with the same pixels share one asset, downscaled and re-encoded by
-``reflow.render.encode``.
+``reflow.render.encode``; anything still transparent is put on white first unless the
+image background is ``transparent`` (RFL-R27).
 """
 
 import hashlib
@@ -29,6 +30,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from PIL import Image
 
+from pdf2epub.options import ImageBackground
 from pdf2epub.passwords import Secret
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 from pdf2epub.reflow.model import ImageAsset
@@ -60,12 +62,16 @@ class PlacedImage:
 
 
 def read_images(
-    path: Path, password: Secret | None = None, skip: Collection[int] = ()
+    path: Path,
+    password: Secret | None = None,
+    skip: Collection[int] = (),
+    *,
+    background: ImageBackground,
 ) -> dict[int, list[PlacedImage]]:
     """The images on each page of ``path`` (opened with ``password`` if it needs one),
     by 1-based page index, top to bottom, leaving out the pages in ``skip`` (unreadable
-    pages, RFL-R37). Raises ``ResourceLimitExceeded`` for an image above the pixel
-    limit."""
+    pages, RFL-R37), with transparency kept or put on white as ``background`` says
+    (RFL-R27). Raises ``ResourceLimitExceeded`` for an image above the pixel limit."""
     images: dict[int, list[PlacedImage]] = {}
     seen: dict[str, ImageAsset] = {}
     """Each asset by the hash of its pixels (RFL-R26)."""
@@ -78,7 +84,7 @@ def read_images(
                 continue
             page = document[index]
             try:
-                placed = _page_images(page, seen)
+                placed = _page_images(page, seen, background)
             except ResourceLimitExceeded as error:
                 raise error.on_page(index + 1) from None
             finally:
@@ -132,7 +138,9 @@ class _Layer:
     masked: bool
 
 
-def _page_images(page: pdfium.PdfPage, seen: dict[str, ImageAsset]) -> list[PlacedImage]:
+def _page_images(
+    page: pdfium.PdfPage, seen: dict[str, ImageAsset], background: ImageBackground
+) -> list[PlacedImage]:
     frame = _Frame.of(page)
     visible: Box = (0.0, 0.0, *frame.size)
     groups: list[list[_Layer]] = []
@@ -178,13 +186,13 @@ def _page_images(page: pdfium.PdfPage, seen: dict[str, ImageAsset]) -> list[Plac
     for group in groups:
         picture, box = _composite(group)
         picture, box = _cut(picture, box, visible)
-        picture = canonical(picture)
+        picture = canonical(picture, background)
         key = hashlib.sha256(
             f"{picture.mode} {picture.size}".encode() + picture.tobytes()
         ).hexdigest()
         asset = seen.get(key)
         if asset is None:
-            asset = seen[key] = encode(picture)
+            asset = seen[key] = encode(picture, background)
         placed.append(PlacedImage(asset, box[0], box[2], box[1], box[3]))
     return placed
 

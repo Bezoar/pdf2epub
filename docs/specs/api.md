@@ -79,7 +79,7 @@ class PasswordProvider(Protocol):
 |---|---|---|
 | `DiscoveryOptions` | `recursive`, `output` | [batch §6](batch.md#6-options) |
 | `BatchOptions` | `timeout`, `overwrite`, `isolation`, `strict` | [batch §6](batch.md#6-options) |
-| `ConversionOptions` | `mode`, `language`, `title`, `authors`, `cover`, `ocr: OcrOptions` | [reflow](reflow.md) (all but `ocr`) |
+| `ConversionOptions` | `mode`, `language`, `title`, `authors`, `cover`, `ocr: OcrOptions`, `image_background` | [reflow](reflow.md) (all but `ocr`) |
 | `OcrOptions` | `mode`, `languages`, `quality`, `page_timeout`, `min_confidence`, `engine_options`, `tesseract_path`, `tessdata_dir` | [ocr](ocr.md) |
 | `PasswordSources` | `map_file`, `values`, `env_value`, `password_file`, `prompt` | [passwords](passwords.md) |
 

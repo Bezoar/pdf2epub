@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 Isolation = Literal["subprocess", "inprocess"]
+ImageBackground = Literal["white", "transparent"]
 
 
 @dataclass(frozen=True)
@@ -55,3 +56,4 @@ class ConversionOptions:
     authors: list[str] | None = None
     cover: Literal["page1"] | Path | None = "page1"
     ocr: OcrOptions = field(default_factory=OcrOptions)
+    image_background: ImageBackground = "white"

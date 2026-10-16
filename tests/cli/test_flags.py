@@ -68,7 +68,7 @@ def test_each_flag_sets_its_option(tmp_path: Path, sample: Path) -> None:
         [
             *["-r", "-o", "out", "--overwrite", "--timeout", "60", "--strict"],
             *["--mode", "reflow", "--title", "T", "--author", "A", "--author", "B"],
-            *["--language", "de", "--cover", "none"],
+            *["--language", "de", "--cover", "none", "--image-background", "transparent"],
             *["--ocr", "always", "--ocr-lang", "fra+eng", "--ocr-quality", "best"],
             *["--ocr-page-timeout", "90", "--ocr-min-confidence", "0.8"],
             *["--ocr-engine-opt", "tesseract.preserve_interword_spaces=1"],
@@ -85,6 +85,7 @@ def test_each_flag_sets_its_option(tmp_path: Path, sample: Path) -> None:
         title="T",
         authors=["A", "B"],
         cover=None,
+        image_background="transparent",
         ocr=OcrOptions(
             mode="always",
             languages="fra+eng",
@@ -103,6 +104,29 @@ def test_a_cover_path_is_the_cover_option(tmp_path: Path, sample: Path) -> None:
     options = captured_options(["--cover", "front.png"], tmp_path)
 
     assert options["conversion"] == ConversionOptions(cover=Path("front.png"))
+
+
+@pytest.mark.ac("CLI-AC18")
+@pytest.mark.parametrize("value", ["black", "WHITE", ""])
+def test_an_unknown_image_background_is_a_usage_error(
+    tmp_path: Path, sample: Path, value: str
+) -> None:
+    proc = subprocess.run(
+        [str(PDF2EPUB), "--image-background", value, "sample.pdf"],
+        cwd=tmp_path,
+        env=clean_environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert proc.returncode == 2, proc.stderr
+    assert proc.stderr.startswith("usage: pdf2epub")
+    assert "--image-background" in proc.stderr
+    assert "unrecognized arguments" not in proc.stderr  # refused for its value
+    assert proc.stdout == ""
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["sample.pdf"]
 
 
 # One run per CLI-R7 combination; every other argument is valid.

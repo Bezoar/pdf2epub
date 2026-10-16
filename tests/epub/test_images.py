@@ -130,13 +130,23 @@ def test_a_cover_image_file_is_downscaled_and_used(tmp_path: Path) -> None:
         assert image.convert("RGB").getcolors() == [(1600 * 500, (200, 30, 30))]
 
 
-def test_a_cover_with_a_transparent_colour_key_stays_transparent(tmp_path: Path) -> None:
-    # RFL-R27: transparency keeps an image PNG, with its transparency.
-    given = tmp_path / "cover.png"
+def keyed_cover(folder: Path) -> Path:
+    """A 40 x 20 cover: its left half near-white, its right half black, and black is its
+    transparent colour key."""
+    given = folder / "cover.png"
     keyed = Image.new("RGB", (40, 20), (0, 0, 0))
     keyed.paste((250, 250, 250), (0, 0, 20, 20))
     keyed.save(given, transparency=(0, 0, 0))
-    _, path = convert(NOVEL, tmp_path, ConversionOptions(cover=given))
+    return given
+
+
+@pytest.mark.ac("RFL-AC33")
+def test_a_cover_with_a_transparent_colour_key_stays_transparent_on_request(
+    tmp_path: Path,
+) -> None:
+    # RFL-R27: transparency kept means an image PNG, with its transparency.
+    options = ConversionOptions(cover=keyed_cover(tmp_path), image_background="transparent")
+    _, path = convert(NOVEL, tmp_path, options)
     epub = open_epub(path)
 
     [item] = cover_items(epub)
@@ -146,11 +156,29 @@ def test_a_cover_with_a_transparent_colour_key_stays_transparent(tmp_path: Path)
         assert (alpha.getpixel((0, 0)), alpha.getpixel((39, 0))) == (255, 0)
 
 
+@pytest.mark.ac("RFL-AC33")
+def test_a_cover_with_a_transparent_colour_key_is_put_on_white_by_default(
+    tmp_path: Path,
+) -> None:
+    _, path = convert(NOVEL, tmp_path, ConversionOptions(cover=keyed_cover(tmp_path)))
+    epub = open_epub(path)
+
+    [item] = cover_items(epub)
+    with picture(epub, str(item.get("href"))) as image:
+        assert image.mode in ("1", "L", "RGB")  # nothing see-through is stored
+        rgb = image.convert("RGB")
+    assert rgb.getpixel((0, 0)) == (250, 250, 250)
+    assert rgb.getpixel((39, 0)) == (255, 255, 255)  # the transparent half, on white
+
+
 MASKED_LAYERS = FIXTURES / "images" / "masked-layers.pdf"
 CROPPED = FIXTURES / "images" / "cropped.pdf"
 # The fixtures' documented content (tests/fixtures/fixturegen/imagelayers.py).
 BACKGROUND, SMEAR = (236, 226, 196), (200, 30, 30)
 CAPTION = "Figure 1. A picture on a trimmed page."
+ALPHA = FIXTURES / "images" / "alpha.pdf"
+GRID = (20, 60, 160)
+WHITE = (255, 255, 255)
 
 
 def body_items(epub: Epub) -> list[etree._Element]:
@@ -221,3 +249,73 @@ def test_images_on_a_cropped_page_keep_their_place_and_caption(tmp_path: Path) -
     (width, height), (cut_width, cut_height) = sizes
     assert width / height == pytest.approx(300 / 180, rel=0.02)
     assert cut_width / cut_height == pytest.approx(300 / 75, rel=0.03)
+
+
+def alpha_pictures(epub: Epub) -> tuple[bytes, Image.Image]:
+    """The alpha fixture's two pictures, in reading order: the grid's stored bytes and the
+    masked red H as stored."""
+    sources = [
+        str(img.get("src")) for name in epub.spine for img in epub.xml(name).iter(f"{XHTML}img")
+    ]
+    assert len(sources) == 2
+    grid, letter = sources
+    image = picture(epub, letter)
+    image.load()
+    return epub.archive.read(f"OEBPS/{grid}"), image
+
+
+def letter_at(image: Image.Image, x: float, y: float) -> tuple[int, ...]:
+    """The RGBA colour at a point given in the fixture's 120 x 80 picture pixels."""
+    pixel = image.convert("RGBA").getpixel((int(x * image.width / 120), int(y * image.height / 80)))
+    assert isinstance(pixel, tuple)
+    return pixel
+
+
+@pytest.mark.ac("RFL-AC33")
+@pytest.mark.parametrize(
+    "options",
+    [ConversionOptions(cover=None), ConversionOptions(cover=None, image_background="white")],
+    ids=["default", "white"],
+)
+def test_an_image_with_an_alpha_mask_is_put_on_white(
+    tmp_path: Path, options: ConversionOptions
+) -> None:
+    _, path = convert(ALPHA, tmp_path, options)
+    _, letter = alpha_pictures(open_epub(path))
+
+    assert letter.mode in ("1", "L", "RGB", "P")
+    assert "transparency" not in letter.info
+    # The H shows its red; the rest of the picture, see-through on the page, is white.
+    assert near(letter_at(letter, 30, 40), SMEAR) and near(letter_at(letter, 60, 40), SMEAR)
+    assert letter_at(letter, 5, 5)[:3] == WHITE and letter_at(letter, 60, 20)[:3] == WHITE
+    assert letter_at(letter, 110, 75)[:3] == WHITE
+
+
+@pytest.mark.ac("RFL-AC33")
+def test_an_image_with_an_alpha_mask_keeps_it_on_request(tmp_path: Path) -> None:
+    options = ConversionOptions(cover=None, image_background="transparent")
+    _, path = convert(ALPHA, tmp_path, options)
+    _, letter = alpha_pictures(open_epub(path))
+
+    assert letter.format == "PNG"
+    assert near(letter_at(letter, 30, 40), SMEAR) and letter_at(letter, 30, 40)[3] == 255
+    assert letter_at(letter, 5, 5)[3] == 0 and letter_at(letter, 60, 20)[3] == 0
+    assert letter_at(letter, 110, 75)[3] == 0
+
+
+@pytest.mark.ac("RFL-AC33")
+def test_an_opaque_image_is_the_same_under_either_background(tmp_path: Path) -> None:
+    stored = []
+    for background in ("white", "transparent"):
+        folder = tmp_path / background
+        folder.mkdir()
+        options = ConversionOptions(cover=None, image_background=background)
+        _, path = convert(ALPHA, folder, options)
+        grid, _ = alpha_pictures(open_epub(path))
+        stored.append(grid)
+
+    white, transparent = stored
+    assert white == transparent
+    with Image.open(io.BytesIO(white)) as grid_image:
+        colours = {colour for _, colour in grid_image.convert("RGB").getcolors() or []}
+    assert colours == {GRID, WHITE}  # the grid as drawn, untouched

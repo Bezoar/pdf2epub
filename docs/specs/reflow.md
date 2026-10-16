@@ -141,6 +141,12 @@ Matching is case-insensitive, and number words cover one to one hundred. Lower h
 - downscaled so its long edge is at most 1600 px;
 - re-encoded as JPEG (quality 85) when photographic, or PNG when it is line art or has few colours or transparency.
 
+Transparency (an alpha channel, a soft mask, a stencil or a colour key, and a masked image cut at the visible page's edge, [RFL-R9](#rfl-r9)) follows `ConversionOptions.image_background` ([RFL-R33](#rfl-r33)):
+- `"white"` (the default): every image with transparency, the cover included, is composited onto opaque white before it is encoded, and is then encoded like any opaque image. It looks as it did on the printed page, but shows as a white box in a reader's dark or sepia mode.
+- `"transparent"`: transparency is kept, as PNG. The image sits on any page colour, but dark ink on it can vanish in a reader's dark mode.
+
+Images with no transparency are encoded the same way under either value.
+
 <a id="rfl-r28"></a>**RFL-R28**: `ConversionOptions.cover` shall be `"page1"` (default: a render of page 1), a path to an image file, or `None` (no cover). A cover path that can't be read or decoded is a usage error, reported before the batch starts.
 
 ## 9. Page sequence gaps
@@ -181,6 +187,7 @@ It fires only on a clear break.
 | `title` | Title override | `None` |
 | `authors` | Author override, an ordered list | `None` |
 | `cover` | `"page1"`, a path, or `None` ([RFL-R28](#rfl-r28)) | `"page1"` |
+| `image_background` | `"white"` or `"transparent"` ([RFL-R27](#rfl-r27)) | `"white"` |
 
 ## 11. Document model
 
@@ -308,6 +315,12 @@ Each also holds when the conversion runs in a worker process.
 <a id="rfl-ac31"></a>**RFL-AC31** (covers [RFL-R9](#rfl-r9), [RFL-R26](#rfl-r26)): **Given** a synthetic page with a line of text above a pale background image and, in the same box, a foreground image whose own pixels are all red and whose soft mask shows them only in the shape of a letter H, **when** it is converted, **then** the book has one image there, and it shows the red H on the pale background: the pixels outside the H are the background's colour, not red.
 
 <a id="rfl-ac32"></a>**RFL-AC32** (covers [RFL-R9](#rfl-r9), [RFL-R12](#rfl-r12), [RFL-R26](#rfl-r26)): **Given** a synthetic US Letter page whose CropBox is offset from its MediaBox, holding a paragraph, a picture with a caption in smaller type just below it, another paragraph, a picture cut by the CropBox's bottom edge, a picture wholly outside the CropBox and a picture with 3% of its area inside it, **when** it is converted, **then** the book reads the first paragraph, the picture with that caption as its `figcaption`, the second paragraph, then the cut picture, showing only its visible part (its aspect ratio is that of the part inside the CropBox); the other two pictures are left out; and the EPUB passes epubcheck.
+
+<a id="rfl-ac33"></a>**RFL-AC33** (covers [RFL-R27](#rfl-r27), [RFL-R33](#rfl-r33)): **Given** a synthetic page with an opaque two-colour grid picture and, on nothing, a red picture whose soft mask shows it only in the shape of a letter H, **when** it is converted:
+- **with** the default options, and **with** `image_background` `"white"`, **then** the H picture is stored with no transparency: red in the H, white elsewhere;
+- **with** `image_background` `"transparent"`, **then** it is a PNG that is opaque red in the H and fully transparent elsewhere;
+- **then** the grid picture's stored bytes are identical under both values;
+- **and given** a cover image file with a transparent colour key, **then** the cover is on white by default and keeps its transparency with `"transparent"`.
 
 <a id="rfl-ac19"></a>**RFL-AC19** (covers [RFL-R28](#rfl-r28)): **Given** the novel fixture:
 - **when** it is converted with default options, **then** the cover is a render of page 1;
