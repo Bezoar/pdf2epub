@@ -55,5 +55,5 @@ class ConversionOptions:
     title: str | None = None
     authors: list[str] | None = None
     cover: Literal["page1"] | Path | None = "page1"
-    image_background: ImageBackground = "white"
     ocr: OcrOptions = field(default_factory=OcrOptions)
+    image_background: ImageBackground = "white"
