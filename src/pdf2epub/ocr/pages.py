@@ -9,6 +9,8 @@ OCR'd only if its layer is rejected, each rejection reported in a ``text_layer_r
 issue. Under ``always`` every page that isn't blank is OCR'd. Under ``never`` none is: a
 page whose layer is rejected, or that would be OCR'd directly, becomes a page image with
 reason ``bad_text_layer``. A layer rejected as garbled is never kept as hidden text.
+A page that keeps a trusted prior OCR layer of invisible text shows that text, so the
+scan under it, an image covering the full page, stops being a book image (RFL-R26).
 
 Each OCR'd page is rendered at ``OCR_DPI``, cleaned and recognised through the retry
 ladder (``ocr.ladder``). The lines of an accepted attempt replace the page's text layer,
@@ -25,7 +27,7 @@ and failed pages are also listed in an issue of that code.
 
 import logging
 import time
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from statistics import median
@@ -188,7 +190,7 @@ def ocr_pages(
         pages = [
             _fall_back(p, BAD_TEXT_LAYER, checks.get(p.page)) if p.page in bad else p for p in pages
         ]
-        return OcrOutcome(pages, images, None, issues)
+        return OcrOutcome(pages, _book_images(pages, images, checks, {}), None, issues)
     routed = [
         (page, trigger)
         for page in pages
@@ -196,7 +198,7 @@ def ocr_pages(
         is not None
     ]
     if not routed:
-        return OcrOutcome(pages, images, None, issues)
+        return OcrOutcome(pages, _book_images(pages, images, checks, {}), None, issues)
     if probe is None:
         probe = ocr_engine.probe_engine(options)
     engine = probe.engine
@@ -208,12 +210,13 @@ def ocr_pages(
             _fall_back(p, OCR_UNAVAILABLE, checks.get(p.page)) if p.page in unrun else p
             for p in pages
         ]
-        return OcrOutcome(pages, images, None, [*issues, unavailable(missing if engine else None)])
+        kept = _book_images(pages, images, checks, {})
+        return OcrOutcome(pages, kept, None, [*issues, unavailable(missing if engine else None)])
     engine_options = {
         key.removeprefix("tesseract."): value for key, value in options.engine_options.items()
     }
     replaced: dict[int, PageText] = {}
-    kept_images = dict(images)
+    scans: dict[int, float] = {}
     failed: dict[str, list[int]] = {}
     # Asked once, before any page's budget starts.
     capabilities = engine.capabilities()
@@ -249,12 +252,9 @@ def ocr_pages(
             if text is not None:
                 replaced[page.page] = text
                 if text.ocr:
-                    # Only the scan the text was read from stops being a book image: the
-                    # large image that routed the page, or one covering the whole page.
-                    scan = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
-                    kept_images[page.page] = [
-                        placed for placed in images.get(page.page, []) if share(placed, page) < scan
-                    ]
+                    # The scan the text was read from: the large image that routed the
+                    # page, or one covering the whole page.
+                    scans[page.page] = LARGE_IMAGE if trigger == "no_text_layer" else FULL_PAGE
             progress(
                 "ocr",
                 done,
@@ -280,7 +280,41 @@ def ocr_pages(
         for reason in (OCR_TIMEOUT, OCR_FAILED)
         if reason in failed
     )
-    return OcrOutcome(pages, {k: v for k, v in kept_images.items() if v}, summary, issues)
+    return OcrOutcome(pages, _book_images(pages, images, checks, scans), summary, issues)
+
+
+def _book_images(
+    pages: Sequence[PageText],
+    images: Mapping[int, Sequence[PlacedImage]],
+    checks: Mapping[int, LayerCheck],
+    scans: Mapping[int, float],
+) -> dict[int, list[PlacedImage]]:
+    """Each page's book images: its images less the scan its text was read from (RFL-R26).
+
+    ``scans`` gives, for each page whose text OCR read, the share of the page from which
+    an image is that scan. A page that keeps a trusted prior OCR layer of invisible text
+    (OCR-R6) was read from its images that cover the full page. A page that falls back
+    keeps them all: its page image holds them."""
+    by_number = {page.page: page for page in pages}
+    kept: dict[int, list[PlacedImage]] = {}
+    for number, placed in images.items():
+        page = by_number.get(number)
+        scan = scans.get(number)
+        check = checks.get(number)
+        if (
+            scan is None
+            and page is not None
+            and page.fallback is None
+            and check is not None
+            and check.invisible
+            and check.reason is None
+        ):
+            scan = FULL_PAGE
+        if page is not None and scan is not None:
+            placed = [image for image in placed if share(image, page) < scan]
+        if placed:
+            kept[number] = list(placed)
+    return kept
 
 
 def unavailable(missing: list[str] | None) -> Issue:
