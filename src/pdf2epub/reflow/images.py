@@ -258,20 +258,19 @@ def _composite(group: list[_Layer]) -> tuple[Image.Image, Box]:
 
 
 def _cut(picture: Image.Image, box: Box, visible: Box) -> tuple[Image.Image, Box]:
-    """``picture``, drawn at ``box``, cut to the part inside ``visible``."""
+    """``picture``, drawn at ``box``, cut to the part inside ``visible``: every pixel that
+    shows at all is kept, so the cut is never empty. A masked picture keeps its
+    transparency, as an uncut one does (RFL-R27)."""
     shown = _intersection(box, visible)
     if _area(shown) >= _WHOLE * _area(box):
         return picture, box
     width, height = box[2] - box[0], box[3] - box[1]
     scale_x, scale_y = picture.width / max(width, 1e-9), picture.height / max(height, 1e-9)
-    crop = (
-        round((shown[0] - box[0]) * scale_x),
-        round((shown[1] - box[1]) * scale_y),
-        round((shown[2] - box[0]) * scale_x),
-        round((shown[3] - box[1]) * scale_y),
-    )
-    if crop[2] <= crop[0] or crop[3] <= crop[1]:
-        return picture, box
+    left = min(math.floor((shown[0] - box[0]) * scale_x), picture.width - 1)
+    top = min(math.floor((shown[1] - box[1]) * scale_y), picture.height - 1)
+    right = max(math.ceil((shown[2] - box[0]) * scale_x), left + 1)
+    bottom = max(math.ceil((shown[3] - box[1]) * scale_y), top + 1)
+    crop = (max(left, 0), max(top, 0), min(right, picture.width), min(bottom, picture.height))
     return picture.crop(crop), shown
 
 
