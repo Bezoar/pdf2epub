@@ -40,8 +40,6 @@ log = logging.getLogger(__name__)
 _MAX_FORM_DEPTH = 15
 # An image with less than this share of its area on the visible page is left out.
 MIN_VISIBLE = 0.05
-# An image with at least this share of its area visible is not cut.
-_WHOLE = 0.999
 # A rendered image is masked when more of it is see-through (alpha below half) than its
 # shape explains (a turned image's corners), by more than this share.
 _MASKED_EXCESS = 0.02
@@ -164,7 +162,7 @@ def _page_images(page: pdfium.PdfPage, seen: dict[str, ImageAsset]) -> list[Plac
         if shown < MIN_VISIBLE:
             continue
         try:
-            layer = _layer(obj, box, frame.rotation, whole=shown >= _WHOLE)
+            layer = _layer(obj, box, frame.rotation, whole=_intersection(box, visible) == box)
         except pdfium.PdfiumError:
             log.debug("an image could not be decoded; it is left out", exc_info=True)
             continue
@@ -262,7 +260,7 @@ def _cut(picture: Image.Image, box: Box, visible: Box) -> tuple[Image.Image, Box
     shows at all is kept, so the cut is never empty. A masked picture keeps its
     transparency, as an uncut one does (RFL-R27)."""
     shown = _intersection(box, visible)
-    if _area(shown) >= _WHOLE * _area(box):
+    if shown == box:
         return picture, box
     width, height = box[2] - box[0], box[3] - box[1]
     scale_x, scale_y = picture.width / max(width, 1e-9), picture.height / max(height, 1e-9)
