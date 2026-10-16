@@ -68,7 +68,7 @@ Results are word-level: no character-level detail and no alternative readings.
 4. A text-like component is **covered** when any of its pixels lies inside a box. The **share** is the covered text-like ink over all the text-like ink (1 when there is none).
 5. **Coverage** is the share, except that it is 1 when the boxes cover some of the text-like ink and fewer than 80 units of it lie outside every box: on a page with little text (front matter, a plate and its caption, a scanner's test chart) the boxes miss too little to matter. 80 units is about 14 lines of a scanned novel's body text. Boxes that cover none of it (no words, or words read away from the text) have a share, and so a coverage, of 0.
 
-<a id="ocr-r17"></a>**OCR-R17**: An empty OCR result (no words) on a page **with no text layer** shall not be an issue: such pages are blank or illustrations. The page keeps its rendered image if it has a significant image ([reflow](reflow.md) decides), and otherwise contributes no text.
+<a id="ocr-r17"></a>**OCR-R17**: An empty OCR result (no words) on a page **with no text layer** shall not be an issue: such pages are blank or illustrations. The page keeps its rendered image if it has a significant image ([reflow](reflow.md) decides), and otherwise contributes no text. A scanned page whose text does come from OCR, or from a trusted prior OCR layer of invisible text ([OCR-R6](#ocr-r6)), shows that text and not also the scan it was read from ([RFL-R26](reflow.md#rfl-r26)).
 
 ## 4. Preprocessing, acceptance and retry ladder
 
@@ -183,6 +183,13 @@ All page images below are synthetic fixtures from [testing](testing.md) unless n
 <a id="ocr-ac25"></a>**OCR-AC25** (covers [OCR-R31](#ocr-r31), [OCR-R17](#ocr-r17)): **Given** a fake engine that returns no words for every page, **when** a born-digital fixture with a good typeset text layer is converted with `mode = "always"`, **then** every page keeps its original text and no `page_fallback` issue is raised; **when** the must-reject garbled-layer fixture is converted with `mode = "always"`, **then** each of its pages is a page image with `page_fallback` reason `ocr_low_confidence` and no hidden text; **and when** a blank scanned page with no text layer is converted, **then** no issue is raised.
 
 <a id="ocr-ac26"></a>**OCR-AC26** (covers [OCR-R16](#ocr-r16)): **Given** a synthetic page of 30 lines of glyph-sized ink blocks, 15 units of ink to a line, **when** a fake engine result boxes every line with its boxes set half a glyph low and the page also carries a black picture plate no box holds, **then** coverage is 1 and the attempt is accepted; **when** the result boxes every line but 5 (75 units outside every box), **then** coverage is 1; **and when** it boxes every line but 7 (105 units), **then** coverage is the share of the ink boxed, 23/30, and the confident attempt is not accepted.
+
+<a id="ocr-ac27"></a>**OCR-AC27** (covers [OCR-R17](#ocr-r17), [RFL-R26](reflow.md#rfl-r26)): **Given** these fixtures, **when** each is converted, **then** each page's content is as listed, and every page has its text:
+- the scan with a good invisible OCR layer, under `auto` and under `never` (the layer is trusted), and under `always` with a fake engine reading the page's words: text only, no image;
+- the image-only scan, under `auto` with a fake engine reading the page's words: text only, no image;
+- the scan with an inset picture (a separate picture image over part of the page, under a good invisible layer of its text), under `auto`, `never`, and `always` with a fake engine reading the page's words: its text and one image, the inset picture;
+- the born-digital page that a photograph fills, under a visible caption: the caption and the photograph;
+- the must-reject half-layer scan under `never`: a page image per page, as before.
 
 ## Open points
 

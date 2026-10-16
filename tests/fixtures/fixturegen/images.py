@@ -6,6 +6,11 @@
   kilobytes); page 3 draws a 2-colour line drawing (a 1-bit grid, 800 x 600) through a
   form XObject, as many PDF producers place images. Its ground truth,
   ``photo-and-drawing.txt``, is the three lines of text.
+- ``full-page-photo.pdf``: one 6 x 9 in page that a 1200 x 1800 RGB "photograph" (the
+  same kind of gradient) fills, edge to edge, with a visible caption set over it: a
+  born-digital full-page picture, a book image to keep, though an image covers the whole
+  page under its text ([#107](https://github.com/Bezoar/pdf2epub/issues/107)). Its ground
+  truth, ``full-page-photo.txt``, is the caption.
 
 Written with ``rawpdf``, so the bytes don't depend on the zlib build.
 """
@@ -16,8 +21,11 @@ from fixturegen import rawpdf
 
 PATH = "images/photo-and-drawing.pdf"
 GROUND_TRUTH = "images/photo-and-drawing.txt"
+FULL_PAGE_PATH = "images/full-page-photo.pdf"
+FULL_PAGE_GROUND_TRUTH = "images/full-page-photo.txt"
 
 PHOTO_SIZE = (4000, 3000)
+FULL_PAGE_PHOTO_SIZE = (1200, 1800)
 DRAWING_SIZE = (800, 600)
 GRID = 50
 """The drawing's grid spacing, in pixels."""
@@ -28,13 +36,15 @@ LINES = [
     "The third page shows a line drawing.",
 ]
 
+CAPTION = "The harbour at dawn, seen from the lighthouse."
+
 _FONT = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
 
 
-def _photo() -> rawpdf.Periodic:
+def _photo(size: tuple[int, int] = PHOTO_SIZE) -> rawpdf.Periodic:
     """Every row is the same gradient: red rises, green and blue cycle at other rates,
     so it has thousands of colours."""
-    width, height = PHOTO_SIZE
+    width, height = size
     row = bytearray()
     for x in range(width):
         row += bytes((x * 255 // (width - 1), (x // 3) % 256, (x * 7) % 256))
@@ -96,3 +106,21 @@ def build(out_dir: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(rawpdf.document(objects))
     (out_dir / GROUND_TRUTH).write_text("\n\n".join(LINES) + "\n", encoding="utf-8")
+
+
+def build_full_page_photo(out_dir: Path) -> None:
+    photo = rawpdf.double_deflated(_photo(FULL_PAGE_PHOTO_SIZE))
+    # Objects: 1 catalog, 2 page tree, 3 font, 4 the page, 5 its content, 6 the photograph.
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [4 0 R] /Count 1 >>",
+        _FONT,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 432 648]"
+        b" /Resources << /Font << /F1 3 0 R >> /XObject << /X 6 0 R >> >> /Contents 5 0 R >>",
+        rawpdf.stream(b"", b"q 432 0 0 648 0 0 cm /X Do Q\n" + _text(CAPTION)),
+        _image(*FULL_PAGE_PHOTO_SIZE, b"/DeviceRGB", 8, photo, b"[/FlateDecode /FlateDecode]"),
+    ]
+    target = out_dir / FULL_PAGE_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(rawpdf.document(objects))
+    (out_dir / FULL_PAGE_GROUND_TRUTH).write_text(CAPTION + "\n", encoding="utf-8")

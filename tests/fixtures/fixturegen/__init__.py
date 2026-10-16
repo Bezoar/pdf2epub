@@ -148,6 +148,7 @@ def registry() -> list[Fixture]:
         Fixture(drm.LCP, None, drm.build_lcp),
         Fixture(drm.ACSM, None, drm.build_acsm),
         Fixture(images.PATH, images.GROUND_TRUTH, images.build),
+        Fixture(images.FULL_PAGE_PATH, images.FULL_PAGE_GROUND_TRUTH, images.build_full_page_photo),
         Fixture(metadata.JANE_DOE, None, metadata.build_jane_doe),
         Fixture(metadata.SCAN, None, metadata.build_scan),
         Fixture(metadata.LANG_FR, None, metadata.build_lang_fr),
@@ -174,6 +175,12 @@ def registry() -> list[Fixture]:
         Fixture(scanlayers.LOW_BOXES, scanlayers.LOW_BOXES_TRUTH, scanlayers.build_low_boxes),
         Fixture(scanlayers.DARK_BORDER, scanlayers.DARK_BORDER_TRUTH, scanlayers.build_dark_border),
         Fixture(scanlayers.ILLUSTRATED, scanlayers.ILLUSTRATED_TRUTH, scanlayers.build_illustrated),
+        # A scan with a smaller picture of its own, kept as a book image (#107).
+        Fixture(
+            scanlayers.INSET_PICTURE,
+            scanlayers.INSET_PICTURE_TRUTH,
+            scanlayers.build_inset_picture,
+        ),
         Fixture(
             scanlayers.HALF_LAYER_BORDER,
             scanlayers.HALF_LAYER_BORDER_TRUTH,

@@ -91,6 +91,9 @@ class LayerCheck:
     ink: Coverage | None = None
     """What coverage was computed from (its share and uncovered text-like ink); None for a
     typeset layer."""
+    invisible: bool = False
+    """Most of the layer's characters draw nothing (render mode 3 or 7): what is seen of
+    the page is what lies under the layer."""
 
     @property
     def reason(self) -> str | None:
@@ -272,7 +275,8 @@ def _check(
                     )
                 invisible += modes[key]
             scanned = any(share(image, page) >= FULL_PAGE for image in images)
-            prior_ocr = bool(counted) and (2 * invisible >= len(counted) or scanned)
+            hidden = bool(counted) and 2 * invisible >= len(counted)
+            prior_ocr = hidden or (bool(counted) and scanned)
             boxes = [_box(raw, index, left, top) for index in counted] if prior_ocr else []
         finally:
             textpage.close()
@@ -289,6 +293,7 @@ def _check(
         tokens=count,
         coverage=None if ink is None else ink.value,
         ink=ink,
+        invisible=hidden,
     )
 
 
