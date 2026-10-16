@@ -118,11 +118,22 @@ def test_a_scanned_page_keeps_its_smaller_picture(
 
 
 @pytest.mark.ac("OCR-AC27")
-def test_a_born_digital_page_keeps_the_photograph_that_fills_it(tmp_path: Path) -> None:
-    epub = converted(FULL_PAGE_PHOTO, tmp_path, "auto")
+def test_a_born_digital_page_keeps_the_photograph_that_fills_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = install(monkeypatch, FakeEngine(words_of(FULL_PAGE_PHOTO, 300)))
 
+    report, _ = convert([(FULL_PAGE_PHOTO, "book.pdf")], tmp_path, "auto")
+
+    [result] = report.conversions
+    assert result.outcome is Outcome.CONVERTED
+    assert engine.requests == []  # the caption is a trusted typeset layer: no OCR
+    assert [str(i.code) for i in result.issues if str(i.code) != "language_defaulted"] == []
+    assert result.output is not None
+    epub = Path(result.output)
     [elements] = page_contents(epub).values()
     [figure] = figures(elements)
+    assert "page-image" not in str(figure.get("class"))  # a book image, not a fallback
     assert image_size(epub, figure)[1] == 1600  # downscaled from 1200 x 1800 (RFL-R27)
     [caption] = paragraphs(FULL_PAGE_PHOTO)
     assert caption in text_of(elements)
