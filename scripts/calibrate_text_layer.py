@@ -84,7 +84,7 @@ def checks(path: Path) -> list[Row]:
     with ParsedPdf(path) as pdf:
         pages = list(read_pages(pdf))
         declared = source.language or read_xmp(pdf.xmp()).language
-    images = read_images(path)
+    images = read_images(path, background=options.image_background)
     languages = ocr_languages(options, declared)
     words = wordlist(options.language or declared or DEFAULT_LANGUAGE)
     layered = [p for p in pages if p.lines and not ocr_directly(p, images.get(p.page, []))]

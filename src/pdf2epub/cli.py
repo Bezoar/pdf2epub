@@ -139,6 +139,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="an image file to use as the cover, or none for no cover (default: a render "
         "of the first page)",
     )
+    content.add_argument(
+        "--image-background",
+        choices=["white", "transparent"],
+        default=argparse.SUPPRESS,
+        help="put images with transparency on white, or keep their transparency (default: "
+        f"{ConversionOptions().image_background})",
+    )
     ocr = parser.add_argument_group("OCR")
     ocr.add_argument(
         "--ocr",
@@ -332,7 +339,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ocr_fields["engine_options"] = dict(args.ocr_engine_opt)
     conversion_fields: dict[str, Any] = {
         name: getattr(args, name)
-        for name in ("mode", "title", "authors", "language", "cover")
+        for name in ("mode", "title", "authors", "language", "cover", "image_background")
         if name in args
     }
     conversion = ConversionOptions(**conversion_fields, ocr=OcrOptions(**ocr_fields))

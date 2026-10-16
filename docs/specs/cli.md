@@ -58,6 +58,7 @@ It does **not** define what an option means or its default. The owning spec does
 | `--author` | `TEXT` | yes | — | `ConversionOptions.authors`, in the order given ([reflow](reflow.md)) |
 | `--language` | BCP 47 tag, e.g. `en`, `de` | no | — | `ConversionOptions.language` ([reflow](reflow.md)) |
 | `--cover` | `PATH` or `none` | no | — | `ConversionOptions.cover` ([reflow](reflow.md)) |
+| `--image-background` | `{white,transparent}` | no | — | `ConversionOptions.image_background` ([reflow](reflow.md#rfl-r27)) |
 
 ### 2.4 Passwords
 
@@ -188,7 +189,7 @@ With `-q`, only sections 1 and 2 are printed.
 - **when** the CLI runs with no optional flags;
 - **then** every options object equals its core default instance.
 
-With `-r -o out --overwrite --timeout 60 --strict --mode reflow --title T --author A --author B --language de --cover none --ocr always --ocr-lang fra+eng --ocr-quality best --ocr-page-timeout 90 --ocr-min-confidence 0.8 --ocr-engine-opt tesseract.preserve_interword_spaces=1 --tessdata-dir td`, each field in the [§2](#2-flags) tables holds the given value: `authors == ["A","B"]` and `engine_options == {"preserve_interword_spaces": "1"}`.
+With `-r -o out --overwrite --timeout 60 --strict --mode reflow --title T --author A --author B --language de --cover none --image-background transparent --ocr always --ocr-lang fra+eng --ocr-quality best --ocr-page-timeout 90 --ocr-min-confidence 0.8 --ocr-engine-opt tesseract.preserve_interword_spaces=1 --tessdata-dir td`, each field in the [§2](#2-flags) tables holds the given value: `authors == ["A","B"]` and `engine_options == {"preserve_interword_spaces": "1"}`.
 
 <a id="cli-ac4"></a>**CLI-AC4** (covers [CLI-R5](#cli-r5)):
 
@@ -282,6 +283,12 @@ With `-v`, a `✓` line and a `- <path>: output_exists` line also appear. With `
 - **Given** a batch of two PDFs;
 - **when** it runs with `--report r.json`, once in human mode and once with `--json`;
 - **then** `r.json` is one JSON document, and it equals the `batch_finished` event emitted in the `--json` run, ignoring timing fields.
+
+<a id="cli-ac18"></a>**CLI-AC18** (covers [CLI-R3](#cli-r3)):
+
+- **Given** a valid input;
+- **when** the CLI runs with `--image-background` set to anything but `white` or `transparent` (e.g. `black`, `WHITE`, an empty value);
+- **then** it exits with code 2, prints a usage message naming the flag to stderr, emits nothing on stdout and creates no EPUB.
 
 <a id="cli-ac17"></a>**CLI-AC17** (covers [CLI-R19](#cli-r19)):
 

@@ -11,6 +11,10 @@
   picture cut by the CropBox's bottom edge (``CLIPPED_VISIBLE`` of its height shows).
   Outside it: a sliver wholly in the trimmed margin, and a picture of which only 3% of
   the width shows.
+- ``alpha.pdf``: one 6 x 9 in page, a line of text, an opaque two-colour grid picture,
+  and below it, on nothing, a picture whose own pixels are all ``SMEAR`` red and whose
+  soft mask shows them only in the shape of a capital H: on the page, a red H on the
+  white page, with the rest of the picture see-through.
 
 Pixel data is stored unfiltered, so the bytes don't depend on the zlib build.
 """
@@ -32,6 +36,15 @@ MASKED_SIZE = (120, 80)
 """Pixels of both layers."""
 MASKED_BOX = (108.0, 300.0, 324.0, 444.0)
 """Where both layers are drawn: (left, bottom, right, top) in page space."""
+
+ALPHA = "images/alpha.pdf"
+ALPHA_TRUTH = "images/alpha.txt"
+ALPHA_LINES = ["A grid, then a red letter drawn with a soft mask on nothing."]
+ALPHA_GRID = (20, 60, 160)
+"""The grid lines' colour (on white, every ``ALPHA_GRID_STEP`` pixels)."""
+ALPHA_GRID_STEP = 10
+ALPHA_GRID_BOX = (108.0, 460.0, 324.0, 568.0)
+"""Where the grid (``MASKED_SIZE`` pixels) is drawn: (left, bottom, right, top)."""
 
 MASKED_LINES = ["The picture below is a red letter on a pale page."]
 
@@ -162,3 +175,28 @@ def build_cropped(out_dir: Path) -> None:
         " ".join(p) for p in [CROPPED_PARAGRAPHS[0], [CAPTION], CROPPED_PARAGRAPHS[1]]
     )
     (out_dir / CROPPED_TRUTH).write_text(text + "\n", encoding="utf-8")
+
+
+def build_alpha(out_dir: Path) -> None:
+    def place(box: tuple[float, float, float, float], n: int) -> bytes:
+        left, bottom, right, top = box
+        return b"q %g 0 0 %g %g %g cm /X%d Do Q\n" % (right - left, top - bottom, left, bottom, n)
+
+    content = _text(54, 600, 12, ALPHA_LINES[0]) + place(ALPHA_GRID_BOX, 0)
+    content += place(MASKED_BOX, 1)
+    # Objects: 1 catalog, 2 page tree, 3 font, 4 page, 5 contents, 6 grid, 7 the red
+    # picture, 8 its soft mask.
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [4 0 R] /Count 1 >>",
+        _FONT,
+        _page(b"0 0 432 648", b"", 6, 2, 5),
+        rawpdf.stream(b"", content),
+        _image(MASKED_SIZE, b"/DeviceRGB", _grid(MASKED_SIZE, ALPHA_GRID, ALPHA_GRID_STEP)),
+        _image(MASKED_SIZE, b"/DeviceRGB", _solid(MASKED_SIZE, SMEAR), b" /SMask 8 0 R"),
+        _image(MASKED_SIZE, b"/DeviceGray", _letter_h(MASKED_SIZE)),
+    ]
+    target = out_dir / ALPHA
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(rawpdf.document(objects))
+    (out_dir / ALPHA_TRUTH).write_text("\n".join(ALPHA_LINES) + "\n", encoding="utf-8")

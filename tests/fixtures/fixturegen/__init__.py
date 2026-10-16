@@ -197,6 +197,8 @@ def registry() -> list[Fixture]:
         # Images taken as the page shows them: soft masks, CropBox (#105).
         Fixture(imagelayers.MASKED, imagelayers.MASKED_TRUTH, imagelayers.build_masked),
         Fixture(imagelayers.CROPPED, imagelayers.CROPPED_TRUTH, imagelayers.build_cropped),
+        # An image with an alpha mask, for the image background option (#111).
+        Fixture(imagelayers.ALPHA, imagelayers.ALPHA_TRUTH, imagelayers.build_alpha),
         # A must-trust page that reproduces a real-world rejection (#89).
         Fixture(trusted.TYPE3_NAMES, trusted.TYPE3_NAMES_TRUTH, trusted.build_type3_names),
     ]

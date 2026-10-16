@@ -166,7 +166,12 @@ def convert(
 
         unreadable = unreadable_pages(source, found, recovered, access.password, unparseable)
         source = with_page_count(source, page_count)
-        images = read_images(source_path, access.password, skip=unreadable.keys())
+        images = read_images(
+            source_path,
+            access.password,
+            skip=unreadable.keys(),
+            background=options.image_background,
+        )
         # RFL-R35: checked before anything else can add an issue (repaired_pdf included),
         # so empty_document is the only one. A page's content is its text and its book
         # images; an unreadable page's, its render or the text recovered from it.
@@ -201,7 +206,12 @@ def convert(
             add(issue)
         # A page 1 pdfium can't load has no render to make the cover from (RFL-R37).
         cover = None if options.cover == "page1" and 1 in source.unloadable else options.cover
-        document = replace(document, cover=book_cover(cover, source_path, access.password))
+        document = replace(
+            document,
+            cover=book_cover(
+                cover, source_path, access.password, background=options.image_background
+            ),
+        )
         progress("reflow", 1, 1)
 
         write_atomically(

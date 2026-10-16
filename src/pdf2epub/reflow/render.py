@@ -7,7 +7,9 @@ Interactive form fields are drawn as they appear; no script runs.
 
 ``encode`` is the one encoder for book images, page renders and the cover: downscaled to
 a long edge of at most ``MAX_EDGE`` pixels, stored as PNG when grey, of few colours or
-transparent, as text and line art are, and as JPEG otherwise.
+transparent, as text and line art are, and as JPEG otherwise. With the ``white`` image
+background (``ConversionOptions.image_background``), an image with transparency is put
+on opaque white first and is then stored like any opaque image.
 """
 
 import io
@@ -18,6 +20,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from PIL import Image, ImageChops
 
+from pdf2epub.options import ImageBackground
 from pdf2epub.passwords import Secret
 from pdf2epub.reflow.limits import ResourceLimitExceeded, check_image
 from pdf2epub.reflow.model import ImageAsset
@@ -91,15 +94,15 @@ def _render(page: pdfium.PdfPage) -> ImageAsset:
         image = bitmap.to_pil().convert("RGB")
     finally:
         bitmap.close()
-    return encode(image)
+    return encode(image, "white")  # a page render is opaque: the background is moot
 
 
-def encode(image: Image.Image) -> ImageAsset:
-    """``image`` for the book (RFL-R27): downscaled so its long edge is at most
-    ``MAX_EDGE`` pixels, as PNG when grey, of few colours or transparent, else as JPEG
-    (quality 85). Whether it is line art is judged before downscaling blends its edges
-    into new colours."""
-    image = canonical(image)
+def encode(image: Image.Image, background: ImageBackground) -> ImageAsset:
+    """``image`` for the book (RFL-R27): put on white first when ``background`` is
+    ``white``, downscaled so its long edge is at most ``MAX_EDGE`` pixels, as PNG when
+    grey, of few colours or transparent, else as JPEG (quality 85). Whether it is line
+    art is judged before downscaling blends its edges into new colours."""
+    image = canonical(image, background)
     lossless = image.mode in ("L", "RGBA") or _sample(image).getcolors(_FEW_COLOURS) is not None
     width, height = image.size
     if max(width, height) > MAX_EDGE:
@@ -114,11 +117,17 @@ def encode(image: Image.Image) -> ImageAsset:
     return ImageAsset(buffer.getvalue(), "image/jpeg")
 
 
-def canonical(image: Image.Image) -> Image.Image:
+def canonical(image: Image.Image, background: ImageBackground) -> Image.Image:
     """``image``'s pixels in one fixed form, so the same pixels always compare equal: grey
     (``L``) when every pixel is grey, else colour (``RGB``), or colour with alpha
-    (``RGBA``) only when something in it is transparent."""
+    (``RGBA``) only when something in it is transparent and ``background`` is
+    ``transparent``. With a ``white`` background, anything transparent is put on opaque
+    white."""
     image = _plain(image)
+    if image.mode == "RGBA" and background == "white":
+        flat = Image.new("RGBA", image.size, (255, 255, 255, 255))
+        flat.alpha_composite(image)
+        image = flat.convert("RGB")
     if image.mode == "RGB":
         grey = image.convert("L")
         if ImageChops.difference(image, grey.convert("RGB")).getbbox() is None:
