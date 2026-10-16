@@ -355,24 +355,24 @@ def test_a_scanned_two_column_page_falls_back_with_column_ordered_text(
     source = BORN_DIGITAL / "two-column.pdf"
     install(monkeypatch, FakeEngine(words_of(source, 300)))
     truth = source.with_suffix(".txt").read_text(encoding="utf-8")
-    # Pages 2-4 are set in two columns (fixturegen/layouts.py); the truth lists each
-    # column's paragraphs after a [left] or [right] marker.
+    # Pages 2-6 are set in two columns, 5 under a title block across them and 6 over a
+    # figure (fixturegen/layouts.py); the truth lists each column's paragraphs after a
+    # [left] or [right] marker, and the lines across the columns after [across].
     columns: dict[int, dict[str, str]] = {}
-    pattern = r"\[page (\d+): two-column\]\n\n(.*?)(?=\[page|\Z)"
+    pattern = r"\[page (\d+): (?:two-column|titled|figured)\]\n\n(.*?)(?=\[page|\Z)"
     for number, body in re.findall(pattern, truth, re.S):
-        left, right = body.split("[right]")
-        columns[int(number)] = {
-            "left": squash(left.replace("[left]", "")),
-            "right": squash(right),
-        }
-    assert sorted(columns) == [2, 3, 4]
+        sections = dict(re.findall(r"\[(left|right|across)\]\n\n(.*?)(?=\n\n\[|\Z)", body, re.S))
+        columns[int(number)] = {side: squash(sections[side]) for side in ("left", "right")}
+    assert sorted(columns) == [2, 3, 4, 5, 6]
 
     report, sink = convert([(SCANNED / "two-column.pdf", "scan.pdf")], tmp_path)
 
     [result] = report.conversions
     fallbacks = {i.reason: i.pages for i in result.issues if str(i.code) == "page_fallback"}
-    assert fallbacks == {"multi_column": [2, 3, 4]}
-    assert [e["fell_back"] for e in ocr_events(sink)] == [False, True, True, True]
+    assert fallbacks == {"multi_column": [2, 3, 4, 5, 6]}
+    # Page 7, one column with a code listing, reflows.
+    fell_back = [e["fell_back"] for e in ocr_events(sink)]
+    assert fell_back == [False, True, True, True, True, True, False]
     assert result.output is not None
     pages = page_contents(Path(result.output))
     for number, sides in columns.items():
