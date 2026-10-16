@@ -208,7 +208,7 @@ def _layer(obj: pdfium.PdfImage, box: Box, rotation: int, whole: bool) -> _Layer
     if masked:
         return _Layer(_turned(rendered, rotation), box, True)
     if whole:
-        return _Layer(obj.get_bitmap().to_pil(), box, False)
+        return _Layer(_turned(obj.get_bitmap().to_pil(), rotation), box, False)
     flat = Image.new("RGBA", rendered.size, (255, 255, 255, 255))
     flat.alpha_composite(rendered)
     return _Layer(_turned(flat.convert("RGB"), rotation), box, False)
