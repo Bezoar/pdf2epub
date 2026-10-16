@@ -22,7 +22,15 @@ from typing import BinaryIO, ClassVar
 from pdfminer.ascii85 import ascii85decode, asciihexdecode
 from pdfminer.ccitt import ccittfaxdecode
 from pdfminer.converter import PDFPageAggregator
-from pdfminer.layout import LAParams, LTChar, LTContainer, LTImage, LTItem, LTPage
+from pdfminer.layout import (
+    LAParams,
+    LTChar,
+    LTComponent,
+    LTContainer,
+    LTImage,
+    LTItem,
+    LTPage,
+)
 from pdfminer.lzw import LZWDecoder
 from pdfminer.pdfcolor import PDFColorSpace
 from pdfminer.pdfdocument import (
@@ -163,6 +171,7 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
                 interpreter.process_page(page)
                 layout = device.get_result()
                 _check_images(layout)
+                _to_visible(layout, page)
             except ResourceLimitExceeded as error:
                 raise error.on_page(number) from None
             # pdfminer catches zlib.error today; RecursionError: damage that loops or
@@ -188,6 +197,44 @@ class ParsedPdf(AbstractContextManager["ParsedPdf"]):
         traceback: TracebackType | None,
     ) -> None:
         self._file.close()
+
+
+def _to_visible(layout: LTPage, page: PDFPage) -> None:
+    """Move ``layout`` into the visible page's frame: its CropBox (cut to its MediaBox),
+    turned as ``/Rotate`` says, with the origin at its bottom-left corner. pdfminer lays a
+    page out on its MediaBox; PDFium renders, and book images are placed on, the visible
+    page (RFL-R9)."""
+    media = page.mediabox
+    crop = page.cropbox
+    box = (
+        max(crop[0], media[0]),
+        max(crop[1], media[1]),
+        min(crop[2], media[2]),
+        min(crop[3], media[3]),
+    )
+    if box[2] <= box[0] or box[3] <= box[1] or tuple(box) == tuple(media):
+        return
+    # The same turn and shift pdfminer's interpreter applies to the MediaBox.
+    x0, y0, x1, y1 = media
+    a, b, c, d, e, f = {
+        90: (0, -1, 1, 0, -y0, x1),
+        180: (-1, 0, 0, -1, x1, y1),
+        270: (0, 1, -1, 0, y1, -x0),
+    }.get(page.rotate, (1, 0, 0, 1, -x0, -y0))
+    xs, ys = zip(
+        *((a * x + c * y + e, b * x + d * y + f) for x in box[0::2] for y in box[1::2]),
+        strict=True,
+    )
+    dx, dy = min(xs), min(ys)
+    stack: list[LTItem] = [layout]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, LTComponent):
+            left, bottom, right, top = item.bbox
+            item.set_bbox((left - dx, bottom - dy, right - dx, top - dy))
+        if isinstance(item, LTContainer):
+            stack.extend(item)
+    layout.set_bbox((0, 0, max(xs) - dx, max(ys) - dy))
 
 
 def _shared(found: int | None, page_count: int) -> int:

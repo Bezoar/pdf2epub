@@ -12,12 +12,14 @@ makes a page complex:
   into three or more parts by wide gaps, as in a table set without rules.
 
 A page whose score reaches 1 is complex. The levels are internal constants, calibrated
-on the fixtures and the public-domain sample.
+on the fixtures and the public-domain sample. Shares are of the visible page (its
+CropBox, RFL-R9): the sample's opening photograph and its caption cover 70% of it, and
+reflow as a captioned image.
 """
 
 from pdf2epub.reflow.extract import Line, PageText, Rule
 
-_COVERED = 0.6
+_COVERED = 0.75
 _MATH = 0.03
 _UNCLASSIFIED = 0.3
 # A grid has at least this many crossings of a horizontal and a vertical rule.
