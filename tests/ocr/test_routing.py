@@ -359,11 +359,14 @@ def test_a_scanned_two_column_page_falls_back_with_column_ordered_text(
     # figure (fixturegen/layouts.py); the truth lists each column's paragraphs after a
     # [left] or [right] marker, and the lines across the columns after [across].
     columns: dict[int, dict[str, str]] = {}
+    across: dict[int, list[str]] = {}
     pattern = r"\[page (\d+): (?:two-column|titled|figured)\]\n\n(.*?)(?=\[page|\Z)"
     for number, body in re.findall(pattern, truth, re.S):
         sections = dict(re.findall(r"\[(left|right|across)\]\n\n(.*?)(?=\n\n\[|\Z)", body, re.S))
         columns[int(number)] = {side: squash(sections[side]) for side in ("left", "right")}
+        across[int(number)] = sections.get("across", "").splitlines()
     assert sorted(columns) == [2, 3, 4, 5, 6]
+    assert all(across[n] for n in (5, 6))
 
     report, sink = convert([(SCANNED / "two-column.pdf", "scan.pdf")], tmp_path)
 
@@ -383,6 +386,9 @@ def test_a_scanned_two_column_page_falls_back_with_column_ordered_text(
         assert sides["left"] in text
         assert sides["right"] in text
         assert text.index(sides["left"]) + len(sides["left"]) <= text.index(sides["right"])
+        # The title block's or figure's lines are kept too.
+        for line in across[number]:
+            assert squash(line) in text
 
 
 @pytest.mark.ac("OCR-AC24")

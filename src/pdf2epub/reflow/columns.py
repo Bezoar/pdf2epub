@@ -153,6 +153,10 @@ def _bands(pieces: Sequence[Piece]) -> list[list[Piece]]:
             bands[-1].extend(alone)
         alone = []
         bands[-1].append(piece)
+    if len(alone) >= 2:
+        bands.append(alone)
+    else:
+        bands[-1].extend(alone)
     return bands
 
 
@@ -171,8 +175,8 @@ def _gaps(
 ) -> list[Gutter]:
     """Runs of bins covered by no more than ``limit`` pieces, at least ``min_width`` wide,
     not touching either edge. Each is narrowed to the stretch between its first and last
-    least-covered bin, if that is still wide enough: the edges of a ragged column can
-    reach into a gap that its lines all but fill."""
+    least-covered bin, if that is still wide enough: the longest lines of a ragged column
+    reach a little way into the gap, and would otherwise seem to cross its middle."""
     gaps: list[Gutter] = []
     start: int | None = None
     for index, covered in enumerate(coverage):
