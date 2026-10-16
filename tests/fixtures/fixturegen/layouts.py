@@ -2,11 +2,18 @@
 table page and the math page, in four born-digital fixtures.
 
 Every page is US Letter, with a centred running header (9 pt Times-Italic) and a centred
-page number in the footer (9 pt), both of them furniture. Pages are of four kinds:
+page number in the footer (9 pt), both of them furniture. Pages are of these kinds:
 
 - **prose**: indented paragraphs of 10 pt Times-Roman across the full text width;
 - **two-column**: two columns of prose, 243 pt wide with an 18 pt gutter, each holding
   two whole paragraphs; the centred header and page number cross the gutter;
+- **titled**: a two-column page under a centred title block across both columns (a 16 pt
+  title, two 11 pt lines of authors, two 9 pt lines of affiliation);
+- **figured**: a two-column page over a figure across both columns: ten lines of 9 pt
+  Courier code, each crossing the gutter, and a one-line caption;
+- **listing**: one column: two paragraphs of prose across the full text width, then a
+  listing of twelve lines of 9 pt Courier code, each with a comment beside it in 9 pt
+  Courier (a narrow column of code and a wider one of comments, side by side);
 - **table**: a short paragraph, then a ruled grid of 4 columns and 5 rows of cell text,
   then a displayed equation in Times-Italic;
 - **math**: a short paragraph, then ten displayed equations in Times-Italic, made of
@@ -15,7 +22,8 @@ page number in the footer (9 pt), both of them furniture. Pages are of four kind
 
 The fixtures (pages by kind):
 
-- ``born-digital/two-column.pdf``: 1 prose, 2-4 two-column (RFL-AC8, EPUB-AC7, MAIN-AC-B);
+- ``born-digital/two-column.pdf``: 1 prose, 2-4 two-column, 5 titled, 6 figured, 7 listing
+  (RFL-AC8, EPUB-AC7, MAIN-AC-B);
 - ``born-digital/complex-page.pdf``: 1 and 3 prose, 2 table with its equation (RFL-AC9);
 - ``born-digital/fallbacks.pdf``: 3 table, 5 two-column, 7 math, the other 5 of its 8
   pages prose (API-AC8);
@@ -24,10 +32,13 @@ The fixtures (pages by kind):
 
 Each ground truth (``.txt`` beside the PDF) holds the pages in order, without furniture.
 Each page starts with a line ``[page N: KIND]``; then, separated by blank lines, its
-paragraphs on one line each; a two-column page has ``[left]`` and ``[right]`` lines before
-each column's paragraphs; a table page gives its rows as cell texts separated by `` | ``
-after a ``[table]`` line, then its equation after ``[equation]``; a math page gives its
-equations after ``[equations]``, one per line.
+paragraphs on one line each; a two-column page (of any of the three kinds) has ``[left]``
+and ``[right]`` lines before each column's paragraphs, and an ``[across]`` line before the
+title block's or the figure's lines, one per line, where they are on the page; a listing
+page gives its listing after ``[listing]``, one line of code and comment per line; a table
+page gives its rows as cell texts separated by `` | `` after a ``[table]`` line, then its
+equation after ``[equation]``; a math page gives its equations after ``[equations]``, one
+per line.
 """
 
 import random
@@ -57,6 +68,42 @@ BODY_FONT, BODY_SIZE, LEADING, INDENT = "Times-Roman", 10.0, 12.5, 15.0
 MATH_FONT = "Times-Italic"
 HEADER_FONT, SMALL_SIZE, HEADER_Y, FOLIO_Y = "Times-Italic", 9.0, 750.0, 40.0
 CELL_HEIGHT = 20.0
+TITLE_BLOCK = [
+    ("Times-Bold", 16.0, "Notes on the Northern Coast"),
+    ("Times-Roman", 11.0, "Ada Fenwick, Tomas Reyes and Mira Holt"),
+    ("Times-Roman", 11.0, "with drawings by Elias Brandt"),
+    ("Times-Italic", SMALL_SIZE, "Harbour Survey Office, Port Ellen"),
+    ("Times-Italic", SMALL_SIZE, "survey office at the old customs house"),
+]
+CODE_FONT, CODE_LEADING = "Courier", 11.0
+CODE = [
+    "for station in survey.stations: station.record(high_tide, low_tide, wind)",
+    "    if station.depth < shallow_limit: mark_channel(station, warning=True)",
+    "    reading = station.gauge.read(minutes=15) and station.gauge.reset()",
+    "    tides.append((station.name, reading.height, reading.time_of_day))",
+    "    if reading.height > storm_limit: send_signal(lighthouse, reading)",
+    "for name, height, time in sorted(tides): print(name, height, time)",
+    "    chart.plot(name, height, colour=depth_colour(height), label=time)",
+    "    if height == max_height: chart.annotate(name, 'highest of the day')",
+    "    harbour.log.write(name + ' ' + str(height) + ' at ' + str(time))",
+    "chart.save('northern-coast-tides.pdf') and harbour.log.close()",
+]
+LISTING = [
+    ("v0 := ld state[748]", "load the gauge readings from the record"),
+    ("st sp[0], v0", "store the readings to the station stack"),
+    ("v1 := ld state[764]", "load the tide count from the record"),
+    ("v2 := i2f(v1)", "convert the count from integer to float"),
+    ("st sp[8], v1", "store the count to the station stack"),
+    ("v3 := ld v0[4]", "load the class word for the readings"),
+    ("v4 := and v3, -4", "mask out the class tag of the readings"),
+    ("v5 := eq v4, Array", "test whether the readings are a list"),
+    ("xf v5", "leave the trace if the readings are not"),
+    ("v6 := set(v0, v2)", "call the function that sets the entry"),
+    ("v7 := eq v6, 0", "test the value the call returned"),
+    ("xt v7", "leave the trace if the call failed"),
+]
+LISTING_COMMENT_X = MARGIN_X + 140
+CAPTION = "Figure 1. The program that records and charts the tides at each survey station."
 
 TABLE = [
     ["Vessel", "Departs", "Arrives", "Passengers"],
@@ -142,12 +189,62 @@ class _Book:
 
     def two_column(self) -> None:
         self._start("two-column")
+        self._columns(TOP)
+        self.canvas.showPage()
+
+    def _columns(self, top: float) -> float:
+        """Two columns of two paragraphs from ``top``; the lower column's end."""
+        ends = []
         for side, x in (("left", MARGIN_X), ("right", MARGIN_X + COLUMN_WIDTH + GUTTER)):
             texts = [prose.paragraph(self.rng, 6, 8) for _ in range(2)]
-            _paragraphs(self.canvas, texts, x, COLUMN_WIDTH, TOP)
+            ends.append(_paragraphs(self.canvas, texts, x, COLUMN_WIDTH, top))
             self.truth.append(f"[{side}]")
             self.truth.extend(texts)
+        return min(ends)
+
+    def titled(self) -> None:
+        self._start("titled")
+        y = TOP
+        for font, size, text in TITLE_BLOCK:
+            self.canvas.setFont(font, size)
+            self.canvas.drawCentredString(PAGE_WIDTH / 2, y, text)
+            y -= size * 1.5
+        self.truth.append("[across]")
+        self.truth.append("\n".join(text for _, _, text in TITLE_BLOCK))
+        self._columns(y - LEADING)
         self.canvas.showPage()
+
+    def figured(self) -> None:
+        self._start("figured")
+        canvas = self.canvas
+        y = self._columns(TOP) - 2 * LEADING
+        canvas.setFont(CODE_FONT, SMALL_SIZE)
+        for line in CODE:
+            assert MARGIN_X + stringWidth(line, CODE_FONT, SMALL_SIZE) > PAGE_WIDTH / 2 + GUTTER
+            canvas.drawString(MARGIN_X, y, line)
+            y -= CODE_LEADING
+        canvas.setFont(BODY_FONT, SMALL_SIZE)
+        canvas.drawString(MARGIN_X, y - CODE_LEADING, CAPTION)
+        assert y - CODE_LEADING > BOTTOM, "page overflows"
+        self.truth.append("[across]")
+        self.truth.append("\n".join([*CODE, CAPTION]))
+        canvas.showPage()
+
+    def listing(self) -> None:
+        self._start("listing")
+        canvas = self.canvas
+        texts = [prose.paragraph(self.rng, 5, 7) for _ in range(2)]
+        y = _paragraphs(canvas, texts, MARGIN_X, TEXT_WIDTH, TOP) - LEADING
+        canvas.setFont(CODE_FONT, SMALL_SIZE)
+        for code, comment in LISTING:
+            canvas.drawString(MARGIN_X, y, code)
+            canvas.drawString(LISTING_COMMENT_X, y, f"// {comment}")
+            y -= CODE_LEADING
+        assert y > BOTTOM, "page overflows"
+        self.truth.extend(texts)
+        self.truth.append("[listing]")
+        self.truth.append("\n".join(f"{code} // {comment}" for code, comment in LISTING))
+        canvas.showPage()
 
     def table(self) -> None:
         self._start("table")
@@ -190,16 +287,25 @@ class _Book:
 
 
 def _build(out_dir: Path, path: str, truth: str, title: str, seed: int, kinds: str) -> None:
-    """``kinds`` gives each page's kind by its initial: prose, two-column, table, math."""
+    """``kinds`` gives each page's kind by its initial: prose, two-column, titled (h),
+    figured, listing, table, math."""
     book = _Book(out_dir, path, title, seed)
-    pages = {"p": book.prose, "c": book.two_column, "t": book.table, "m": book.math}
+    pages = {
+        "p": book.prose,
+        "c": book.two_column,
+        "h": book.titled,
+        "f": book.figured,
+        "l": book.listing,
+        "t": book.table,
+        "m": book.math,
+    }
     for kind in kinds:
         pages[kind]()
     book.save(out_dir, truth)
 
 
 def build_two_column(out_dir: Path) -> None:
-    _build(out_dir, TWO_COLUMN, TWO_COLUMN_TRUTH, "Two Columns of the Coast", 38, "pccc")
+    _build(out_dir, TWO_COLUMN, TWO_COLUMN_TRUTH, "Two Columns of the Coast", 38, "pccchfl")
 
 
 def build_complex_page(out_dir: Path) -> None:
