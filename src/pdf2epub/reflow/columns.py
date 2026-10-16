@@ -7,6 +7,13 @@ a centred running header, a page number or a title over both columns. The stretc
 between gutters are columns; they count only when each holds enough lines, wide enough
 for its column, side by side with the others. That leaves out tables (narrow cells),
 verse and ragged text (whose gaps don't line up) and a lone label beside a block.
+
+A block across the columns, such as a title block over them or a figure under them, can
+cross the gutter with more lines than that allows. Its lines stand alone on their rows,
+while each column's lines have the next column's beside them, so the page is looked at
+again in bands between such blocks: a band's columns count when they are alike, of one
+width and one type size, as columns of running text are (a code listing with its comments
+beside it is not).
 """
 
 import math
@@ -28,6 +35,11 @@ _GUTTER_EM, _CROSSING_SHARE = 0.8, 0.1
 # line fills at least this share of it, and its lines sit beside the next column's for
 # at least this share of the shorter column's height.
 _MIN_LINES, _MIN_WIDTH_EM, _FILL, _BESIDE = 5, 8.0, 0.5, 0.5
+# When lines across the columns cross a gutter too often, the gutter is looked for again
+# in bands of the page holding at least this share of its pieces, for columns alike:
+# their widths within this share of each other and their type the same size. A piece is
+# compared with at most this many below it for a piece beside it.
+_BAND_SHARE, _EQUAL, _NEIGHBOURS = 0.25, 0.75, 64
 
 
 @dataclass(frozen=True)
@@ -76,6 +88,23 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
     if len(pieces) < 2 * _MIN_LINES:
         return []
     size = median(piece.size for piece in pieces)
+    gutters = _gutters_among(pieces, size)
+    if gutters:
+        return gutters
+    # A block across the columns (a title over them, a figure under or between them) can
+    # cross the gutter with more lines than a page allows. Look again in each band of the
+    # page between such blocks, largest first, for columns alike.
+    for band in sorted(_bands(pieces), key=len, reverse=True):
+        if len(band) < max(2 * _MIN_LINES, _BAND_SHARE * len(pieces)):
+            break
+        gutters = _gutters_among(band, size)
+        if gutters and _alike(band, gutters):
+            return gutters
+    return []
+
+
+def _gutters_among(pieces: Sequence[Piece], size: float) -> list[Gutter]:
+    """The gutters in the x-projection of ``pieces`` that their columns bear out."""
     left = min(piece.x0 for piece in pieces)
     span = max(piece.x1 for piece in pieces) - left
     step = max(_STEP, span / _MAX_BINS)
@@ -86,8 +115,7 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
         for x0, x1 in piece.glyphs:
             covered[int((x0 - left) / step) : math.ceil((x1 - left) / step)] = True
         coverage += covered
-    nearly_empty = coverage <= _CROSSING_SHARE * len(pieces)
-    candidates = _gaps(nearly_empty, left, step, _GUTTER_EM * size)
+    candidates = _gaps(coverage, _CROSSING_SHARE * len(pieces), left, step, _GUTTER_EM * size)
     if not candidates:
         return []
     if _columns_hold(pieces, candidates, size):
@@ -99,16 +127,69 @@ def find_gutters(pieces: Sequence[Piece]) -> list[Gutter]:
     return []
 
 
-def _gaps(empty: NDArray[np.bool_], left: float, step: float, min_width: float) -> list[Gutter]:
-    """Runs of nearly empty bins at least ``min_width`` wide, not touching either edge."""
+def _bands(pieces: Sequence[Piece]) -> list[list[Piece]]:
+    """The page's pieces, top to bottom, cut into bands wherever two or more pieces in a
+    row stand alone: with no piece beside them on the same line, as the lines of a title
+    or a figure across the columns do. A column's line has the next column's beside it."""
+    ordered = sorted(pieces, key=lambda piece: piece.top)
+    beside = [False] * len(ordered)
+    for index, piece in enumerate(ordered):
+        for offset, other in enumerate(ordered[index + 1 : index + 1 + _NEIGHBOURS], 1):
+            if other.top >= piece.bottom:
+                break
+            shorter = min(piece.bottom - piece.top, other.bottom - other.top)
+            overlap = min(piece.bottom, other.bottom) - other.top
+            if overlap >= shorter / 2 and (other.x0 >= piece.x1 or other.x1 <= piece.x0):
+                beside[index] = beside[index + offset] = True
+    bands: list[list[Piece]] = [[]]
+    alone: list[Piece] = []
+    for piece, is_beside in zip(ordered, beside, strict=True):
+        if not is_beside:
+            alone.append(piece)
+            continue
+        if len(alone) >= 2:
+            bands.append([])
+        else:
+            bands[-1].extend(alone)
+        alone = []
+        bands[-1].append(piece)
+    if len(alone) >= 2:
+        bands.append(alone)
+    else:
+        bands[-1].extend(alone)
+    return bands
+
+
+def _alike(pieces: Sequence[Piece], gutters: list[Gutter]) -> bool:
+    """The columns' lines span widths within ``_EQUAL`` of each other and are set in type
+    of one size, as columns of running text are; a code listing with comments beside it,
+    or a caption beside a narrowed paragraph, is not."""
+    columns = [column_lines(pieces, gutters, index) for index in range(len(gutters) + 1)]
+    widths = [max(p.x1 for p in lines) - min(p.x0 for p in lines) for lines in columns]
+    sizes = {median(p.size for p in lines) for lines in columns}
+    return min(widths) >= _EQUAL * max(widths) and len(sizes) == 1
+
+
+def _gaps(
+    coverage: NDArray[np.int32], limit: float, left: float, step: float, min_width: float
+) -> list[Gutter]:
+    """Runs of bins covered by no more than ``limit`` pieces, at least ``min_width`` wide,
+    not touching either edge. Each is narrowed to the stretch between its first and last
+    least-covered bin, if that is still wide enough: the longest lines of a ragged column
+    reach a little way into the gap, and would otherwise seem to cross its middle."""
     gaps: list[Gutter] = []
     start: int | None = None
-    for index, is_empty in enumerate(empty):
-        if is_empty and start is None:
+    for index, covered in enumerate(coverage):
+        if covered <= limit and start is None:
             start = index
-        elif not is_empty and start is not None:
+        elif covered > limit and start is not None:
             if start > 0 and (index - start) * step >= min_width:
-                gaps.append(Gutter(left + start * step, left + index * step))
+                run = coverage[start:index]
+                least = np.flatnonzero(run == run.min())
+                first, last = start + int(least[0]), start + int(least[-1]) + 1
+                if (last - first) * step < min_width:
+                    first, last = start, index
+                gaps.append(Gutter(left + first * step, left + last * step))
             start = None
     return gaps
 

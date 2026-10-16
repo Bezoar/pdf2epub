@@ -46,6 +46,8 @@ class TruthPage:
     """Prose paragraphs; on a two-column page, the left column's then the right's."""
     columns: dict[str, list[str]] = field(default_factory=dict)
     """A two-column page's paragraphs by side, ``left`` and ``right``."""
+    across: list[str] = field(default_factory=list)
+    """The lines of a title block or figure across a two-column page's columns."""
     cells: list[str] = field(default_factory=list)
     """A table page's cell texts."""
 
@@ -63,12 +65,22 @@ def ground_truth(pdf: Path) -> dict[int, TruthPage]:
             section = ""
             continue
         assert page is not None
-        if entry in ("[left]", "[right]", "[table]", "[equation]", "[equations]"):
+        if entry in (
+            "[left]",
+            "[right]",
+            "[across]",
+            "[listing]",
+            "[table]",
+            "[equation]",
+            "[equations]",
+        ):
             section = entry.strip("[]")
         elif section == "table":
             page.cells = [c.strip() for row in entry.splitlines() for c in row.split("|")]
-        elif section in ("equation", "equations"):
+        elif section in ("equation", "equations", "listing"):
             pass
+        elif section == "across":
+            page.across.extend(entry.splitlines())
         else:
             page.paragraphs.append(entry)
             if section in ("left", "right"):
@@ -152,8 +164,10 @@ def test_two_column_pages_fall_back_with_column_ordered_text(
     tmp_path: Path, mode: Literal["auto", "reflow"]
 ) -> None:
     truth = ground_truth(TWO_COLUMN)
-    two_column = sorted(n for n, page in truth.items() if page.kind == "two-column")
-    assert two_column == [2, 3, 4]
+    two_column = sorted(n for n, page in truth.items() if page.columns)
+    # Pages 5 and 6 have a title block over the columns and a figure under them.
+    assert two_column == [2, 3, 4, 5, 6]
+    assert [truth[n].kind for n in (5, 6)] == ["titled", "figured"]
 
     epub, issues = convert(TWO_COLUMN, tmp_path, mode)
 
@@ -168,9 +182,14 @@ def test_two_column_pages_fall_back_with_column_ordered_text(
         assert left in text
         assert right in text
         assert text.index(left) + len(left) <= text.index(right)
-    # The single-column page reflows, in reading order.
-    assert pages[1].figures == []
-    assert pages[1].paragraphs == truth[1].paragraphs
+        for line in truth[number].across:
+            assert squash(line) in text
+    # The single-column pages reflow, in reading order: page 7's code listing, with its
+    # comments beside it, is not taken for two columns.
+    assert truth[7].kind == "listing"
+    for number in (1, 7):
+        assert pages[number].figures == []
+        assert pages[number].paragraphs[: len(truth[number].paragraphs)] == truth[number].paragraphs
 
 
 @pytest.mark.ac("RFL-AC8")
@@ -183,7 +202,13 @@ def test_no_paragraph_holds_text_from_both_columns(tmp_path: Path) -> None:
     sources = [
         squash(" ".join(page.columns[side])) for page in truth.values() for side in page.columns
     ] + [squash(" ".join(page.paragraphs)) for page in truth.values() if not page.columns]
-    paragraphs = [p for page in read_pages(epub).values() for p in page.paragraphs]
+    # Page 7's code listing is not prose (that it reflows is checked above).
+    paragraphs = [
+        p
+        for number, page in read_pages(epub).items()
+        if truth[number].kind != "listing"
+        for p in page.paragraphs
+    ]
     assert paragraphs
     for paragraph in paragraphs:
         sentences = [s for s in paragraph.split(". ") if s]
